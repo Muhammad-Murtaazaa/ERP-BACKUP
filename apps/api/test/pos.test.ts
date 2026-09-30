@@ -327,6 +327,23 @@ describe('POS retail checkout (big-box)', () => {
     expect(noSale.status).toBe(403);
   });
 
+  it('journals client-side cashier actions (line void, cart void) and rejects unknown event types', async () => {
+    const ok = await makeRequest('POST', `/api/pos/sessions/${sessionId}/events`, { event_type: 'LINE_VOIDED', details: { item: 'RTL-PEPSI-15', quantity: '1' } }, cashier);
+    expect(ok.status).toBe(201);
+    const bad = await makeRequest('POST', `/api/pos/sessions/${sessionId}/events`, { event_type: 'SALE_COMPLETED', details: {} }, cashier);
+    expect(bad.status).toBe(400);
+    const other = await makeRequest('POST', `/api/pos/sessions/${sessionId}/events`, { event_type: 'CART_VOIDED' }, accountant);
+    expect(other.status).toBe(403);
+    const audit = await makeRequest('GET', `/api/pos/sessions/${sessionId}/audit`, undefined, manager);
+    expect(audit.body.data.some((e: any) => e.event_type === 'LINE_VOIDED')).toBe(true);
+  });
+
+  it('order numbers use the register code once (no double POS- prefix)', async () => {
+    const r = await makeRequest('GET', `/api/pos/orders?session_id=${sessionId}`, undefined, cashier);
+    expect(r.body.data.length).toBeGreaterThan(0);
+    for (const o of r.body.data) expect(o.order_number).toMatch(/^POS-01-\d{4}-\d{6}$/);
+  });
+
   it('receipt reprint is counted and audited', async () => {
     const rp = await makeRequest('POST', `/api/pos/orders/${sale1.id}/reprint`, {}, cashier);
     expect(rp.status).toBe(200);

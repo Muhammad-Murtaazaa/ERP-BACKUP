@@ -600,6 +600,19 @@ export function registerPosRoutes(app: Express): void {
     return ok(req, res, out, 201);
   });
 
+  // Client-side cashier actions that never reach the server otherwise (line voids before
+  // tender, cart clears, not-found scans, price checks) are journaled for accountability.
+  const CLIENT_EVENTS = ['LINE_VOIDED', 'CART_VOIDED', 'SCAN_NOT_FOUND', 'PRICE_CHECK', 'QTY_CHANGED'] as const;
+  app.post('/api/pos/sessions/:id/events', authenticate, terminal, async (req: Request, res: Response) => {
+    const type = oneOf(req.body.event_type, 'event_type', CLIENT_EVENTS);
+    const raw = req.body.details && typeof req.body.details === 'object' && !Array.isArray(req.body.details) ? req.body.details : {};
+    const details = JSON.parse(JSON.stringify(raw, (_k, v) => (typeof v === 'string' ? v.slice(0, 200) : v)));
+    if (JSON.stringify(details).length > 2000) throw validationError('details too large', { field: 'details' });
+    const { session, register } = await loadSession(db, req, req.params.id);
+    await posEvent(db, req, { registerId: register.id, sessionId: session.id, type, details });
+    return ok(req, res, { recorded: true, event_type: type }, 201);
+  });
+
   app.post('/api/pos/sessions/:id/drawer-open', authenticate, terminal, async (req: Request, res: Response) => {
     const reason = str(req.body.reason, 'reason', { max: 200 });
     const out = await db.transaction(async (tx) => {
@@ -843,7 +856,7 @@ export function registerPosRoutes(app: Express): void {
 
       const orderNumber = present(req.body.order_number)
         ? str(req.body.order_number, 'order_number', { max: 64 })
-        : await nextDocumentNumber(tx, orgId, `POS-${register.register_code}`, businessDate, 6);
+        : await nextDocumentNumber(tx, orgId, /^POS/i.test(register.register_code) ? register.register_code : `POS-${register.register_code}`, businessDate, 6);
       const tenderTotals: Record<string, Money> = {};
       for (const t of settled.tenders) tenderTotals[t.type] = (tenderTotals[t.type] || Money.zero()).add(t.applied_amount);
       const methods = Object.keys(tenderTotals);

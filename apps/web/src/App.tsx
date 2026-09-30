@@ -65,6 +65,7 @@ export const App: React.FC = () => {
     { email: 'controller@omnysync.internal', name: 'Controller', role: 'CONTROLLER' },
     { email: 'accountant@omnysync.internal', name: 'Accountant', role: 'ACCOUNTANT' },
     { email: 'cashier@omnysync.internal', name: 'Cashier', role: 'CASHIER' },
+    { email: 'storemanager@omnysync.internal', name: 'Store Mgr', role: 'STORE_MANAGER' },
     { email: 'auditor@omnysync.internal', name: 'Auditor', role: 'AUDITOR' },
     { email: 'viewer@omnysync.internal', name: 'Viewer', role: 'VIEWER' },
   ];
