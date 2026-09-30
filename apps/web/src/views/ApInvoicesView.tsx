@@ -190,7 +190,7 @@ export const ApInvoicesView: React.FC = () => {
         />
       </Card>
 
-      {/* Create Modal */}
+      {/* Create Drawer */}
       <Drawer
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}

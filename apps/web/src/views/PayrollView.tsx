@@ -330,7 +330,7 @@ export const PayrollView: React.FC = () => {
         </div>
       </div>
 
-      {/* Process Monthly Payroll Modal */}
+      {/* Process Monthly Payroll Drawer */}
       <Drawer isOpen={isNewRunModalOpen} onClose={() => setIsNewRunModalOpen(false)} title="Process Monthly Payroll Batch">
         <form onSubmit={handleCreateRun} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}

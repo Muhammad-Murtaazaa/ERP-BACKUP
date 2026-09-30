@@ -431,7 +431,7 @@ export const PlantMaintenanceView: React.FC = () => {
         </Card>
       )}
 
-      {/* Register Equipment Modal */}
+      {/* Register Equipment Drawer */}
       <Drawer isOpen={isEquipModalOpen} onClose={() => setIsEquipModalOpen(false)} title="Register Machinery / Equipment">
         <form onSubmit={handleCreateEquip} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
@@ -491,7 +491,7 @@ export const PlantMaintenanceView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* Add PM Schedule Modal */}
+      {/* Add PM Schedule Drawer */}
       <Drawer isOpen={isScheduleModalOpen} onClose={() => setIsScheduleModalOpen(false)} title="Create Preventive Maintenance Schedule">
         <form onSubmit={handleCreateSchedule} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
@@ -517,7 +517,7 @@ export const PlantMaintenanceView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* Create Work Order Modal */}
+      {/* Create Work Order Drawer */}
       <Drawer isOpen={isWoModalOpen} onClose={() => setIsWoModalOpen(false)} title="Create Maintenance Work Order">
         <form onSubmit={handleCreateWo} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
@@ -595,7 +595,7 @@ export const PlantMaintenanceView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* Complete Work Order Modal */}
+      {/* Complete Work Order Drawer */}
       <Drawer isOpen={isCompleteModalOpen} onClose={() => setIsCompleteModalOpen(false)} title={`Complete Work Order: ${selectedWo?.work_order_number}`}>
         <form onSubmit={handleCompleteWo} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
@@ -611,7 +611,7 @@ export const PlantMaintenanceView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* Log Calibration Modal */}
+      {/* Log Calibration Drawer */}
       <Drawer isOpen={isCalibModalOpen} onClose={() => setIsCalibModalOpen(false)} title="Log Equipment Calibration">
         <form onSubmit={handleCreateCalib} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}

@@ -228,7 +228,7 @@ export const CoaView: React.FC = () => {
         </Card>
       )}
 
-      {/* Add Account Modal */}
+      {/* Add Account Drawer */}
       <Drawer
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}

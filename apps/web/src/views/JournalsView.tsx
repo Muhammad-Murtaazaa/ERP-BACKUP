@@ -319,7 +319,7 @@ export const JournalsView: React.FC = () => {
         />
       </Card>
 
-      {/* Create Journal Draft Modal */}
+      {/* Create Journal Draft Drawer */}
       <Drawer
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
@@ -474,7 +474,7 @@ export const JournalsView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* Journal Detail Modal */}
+      {/* Journal Detail Drawer */}
       <Drawer
         isOpen={isDetailOpen}
         onClose={() => setIsDetailOpen(false)}
@@ -610,7 +610,7 @@ export const JournalsView: React.FC = () => {
         )}
       </Drawer>
 
-      {/* Linked Reversal Confirmation Modal */}
+      {/* Linked Reversal Confirmation Drawer */}
       <Drawer
         isOpen={isReverseOpen}
         onClose={() => setIsReverseOpen(false)}

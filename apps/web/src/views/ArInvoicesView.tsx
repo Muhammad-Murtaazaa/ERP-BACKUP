@@ -200,7 +200,7 @@ export const ArInvoicesView: React.FC = () => {
         />
       </Card>
 
-      {/* View Detail Modal */}
+      {/* View Detail Drawer */}
       {selectedInvoice && (
         <Drawer
           isOpen={Boolean(selectedInvoice)}
@@ -259,7 +259,7 @@ export const ArInvoicesView: React.FC = () => {
         </Drawer>
       )}
 
-      {/* Create Modal */}
+      {/* Create Drawer */}
       <Drawer
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}

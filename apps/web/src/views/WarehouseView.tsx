@@ -451,7 +451,7 @@ export const WarehouseView: React.FC = () => {
         </Card>
       )}
 
-      {/* New Warehouse Modal */}
+      {/* New Warehouse Drawer */}
       <Drawer isOpen={isWarehouseModalOpen} onClose={() => setIsWarehouseModalOpen(false)} title="Create New Warehouse / Storage Facility">
         <form onSubmit={handleCreateWarehouse} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
@@ -467,7 +467,7 @@ export const WarehouseView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* New Stock Transfer Modal */}
+      {/* New Stock Transfer Drawer */}
       <Drawer isOpen={isTransferModalOpen} onClose={() => setIsTransferModalOpen(false)} title="Initiate Inter-Facility Stock Transfer">
         <form onSubmit={handleCreateTransfer} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
@@ -522,7 +522,7 @@ export const WarehouseView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* Start Cycle Count Modal */}
+      {/* Start Cycle Count Drawer */}
       <Drawer isOpen={isCountModalOpen} onClose={() => setIsCountModalOpen(false)} title="Initialize Physical Inventory Count">
         <form onSubmit={handleCreateCount} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
@@ -564,7 +564,7 @@ export const WarehouseView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* Record / Audit Counts Modal */}
+      {/* Record / Audit Counts Drawer */}
       <Drawer isOpen={isRecordCountModalOpen} onClose={() => setIsRecordCountModalOpen(false)} title={`Record Physical Counts: ${activeCount?.count_number}`}>
         <form onSubmit={handleSaveCounted} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}

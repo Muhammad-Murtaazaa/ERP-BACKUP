@@ -311,7 +311,7 @@ export const EmployeesView: React.FC = () => {
         </Card>
       )}
 
-      {/* Onboard Employee Modal */}
+      {/* Onboard Employee Drawer */}
       <Drawer isOpen={isEmployeeModalOpen} onClose={() => setIsEmployeeModalOpen(false)} title="Onboard New Employee">
         <form onSubmit={handleCreateEmployee} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
@@ -380,7 +380,7 @@ export const EmployeesView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* Salary Structure Modal */}
+      {/* Salary Structure Drawer */}
       <Drawer isOpen={isStructureModalOpen} onClose={() => setIsStructureModalOpen(false)} title="Create Salary Structure">
         <form onSubmit={handleCreateStructure} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
@@ -406,7 +406,7 @@ export const EmployeesView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* Department Modal */}
+      {/* Department Drawer */}
       <Drawer isOpen={isDeptModalOpen} onClose={() => setIsDeptModalOpen(false)} title="Create Department">
         <form onSubmit={handleCreateDepartment} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}

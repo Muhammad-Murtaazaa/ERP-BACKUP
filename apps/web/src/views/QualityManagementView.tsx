@@ -475,7 +475,7 @@ export const QualityManagementView: React.FC = () => {
         </Card>
       )}
 
-      {/* Create Inspection Plan Modal */}
+      {/* Create Inspection Plan Drawer */}
       <Drawer isOpen={isPlanModalOpen} onClose={() => setIsPlanModalOpen(false)} title="Create Quality Inspection Plan">
         <form onSubmit={handleCreatePlan} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
@@ -512,7 +512,7 @@ export const QualityManagementView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* Create Inspection Lot Modal */}
+      {/* Create Inspection Lot Drawer */}
       <Drawer isOpen={isLotModalOpen} onClose={() => setIsLotModalOpen(false)} title="Create Quality Inspection Lot">
         <form onSubmit={handleCreateLot} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
@@ -540,7 +540,7 @@ export const QualityManagementView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* Perform QA Inspection Modal */}
+      {/* Perform QA Inspection Drawer */}
       <Drawer isOpen={isInspectModalOpen} onClose={() => setIsInspectModalOpen(false)} title={`Perform QA: ${selectedLot?.lot_number}`}>
         <form onSubmit={handleInspectLot} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
@@ -560,7 +560,7 @@ export const QualityManagementView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* File NCR Modal */}
+      {/* File NCR Drawer */}
       <Drawer isOpen={isNcrModalOpen} onClose={() => setIsNcrModalOpen(false)} title="Raise Non-Conformance Report (NCR)">
         <form onSubmit={handleCreateNcr} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
@@ -600,7 +600,7 @@ export const QualityManagementView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* Issue CoA Modal */}
+      {/* Issue CoA Drawer */}
       <Drawer isOpen={isCoaModalOpen} onClose={() => setIsCoaModalOpen(false)} title="Issue Certificate of Analysis (CoA)">
         <form onSubmit={handleIssueCoA} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}

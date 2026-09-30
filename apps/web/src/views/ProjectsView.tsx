@@ -676,7 +676,7 @@ export const ProjectsView: React.FC = () => {
         </div>
       )}
 
-      {/* New Project Modal */}
+      {/* New Project Drawer */}
       <Drawer isOpen={isProjectModalOpen} onClose={() => setIsProjectModalOpen(false)} title="Create New Project">
         <form onSubmit={handleCreateProject} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
@@ -728,7 +728,7 @@ export const ProjectsView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* New Cost Center Modal */}
+      {/* New Cost Center Drawer */}
       <Drawer isOpen={isCostCenterModalOpen} onClose={() => setIsCostCenterModalOpen(false)} title="Create Cost Center">
         <form onSubmit={handleCreateCostCenter} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
@@ -758,7 +758,7 @@ export const ProjectsView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* New BOQ Modal */}
+      {/* New BOQ Drawer */}
       <Drawer isOpen={isBoqModalOpen} onClose={() => setIsBoqModalOpen(false)} title="Create Bill of Quantities (BOQ)">
         <form onSubmit={handleCreateBOQ} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
@@ -785,7 +785,7 @@ export const ProjectsView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* New Progress Certificate Modal */}
+      {/* New Progress Certificate Drawer */}
       <Drawer isOpen={isCertModalOpen} onClose={() => setIsCertModalOpen(false)} title="Create Interim Payment Certificate (IPC)">
         <form onSubmit={handleCreateCertificate} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}

@@ -206,7 +206,7 @@ export const SalesOrdersView: React.FC = () => {
         />
       </Card>
 
-      {/* View Order Detail Modal */}
+      {/* View Order Detail Drawer */}
       {selectedOrder && (
         <Drawer
           isOpen={Boolean(selectedOrder)}
@@ -267,7 +267,7 @@ export const SalesOrdersView: React.FC = () => {
         </Drawer>
       )}
 
-      {/* Create Order Modal */}
+      {/* Create Order Drawer */}
       <Drawer
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}

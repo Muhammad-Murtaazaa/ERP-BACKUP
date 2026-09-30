@@ -378,7 +378,7 @@ export const FixedAssetsView: React.FC = () => {
         </Card>
       )}
 
-      {/* Register Asset Modal */}
+      {/* Register Asset Drawer */}
       <Drawer isOpen={isAssetModalOpen} onClose={() => setIsAssetModalOpen(false)} title="Register Fixed Asset">
         <form onSubmit={handleCreateAsset} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
@@ -429,7 +429,7 @@ export const FixedAssetsView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* Create Category Modal */}
+      {/* Create Category Drawer */}
       <Drawer isOpen={isCategoryModalOpen} onClose={() => setIsCategoryModalOpen(false)} title="Create Asset Category">
         <form onSubmit={handleCreateCategory} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
@@ -458,7 +458,7 @@ export const FixedAssetsView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* Run Depreciation Modal */}
+      {/* Run Depreciation Drawer */}
       <Drawer isOpen={isDepreciateModalOpen} onClose={() => setIsDepreciateModalOpen(false)} title={`Run Depreciation: ${selectedAsset?.asset_number}`}>
         <form onSubmit={handleRunDepreciation} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
@@ -475,7 +475,7 @@ export const FixedAssetsView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* Dispose Asset Modal */}
+      {/* Dispose Asset Drawer */}
       <Drawer isOpen={isDisposeModalOpen} onClose={() => setIsDisposeModalOpen(false)} title={`Dispose Asset: ${selectedAsset?.asset_number}`}>
         <form onSubmit={handleDisposeAsset} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}

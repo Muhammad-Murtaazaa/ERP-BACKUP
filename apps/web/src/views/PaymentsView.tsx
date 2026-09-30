@@ -212,7 +212,7 @@ export const PaymentsView: React.FC = () => {
         />
       </Card>
 
-      {/* Payment Entry Modal */}
+      {/* Payment Entry Drawer */}
       <Drawer
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}

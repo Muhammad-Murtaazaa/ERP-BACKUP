@@ -414,7 +414,7 @@ export const ManufacturingView: React.FC = () => {
         </Card>
       )}
 
-      {/* New BOM Modal */}
+      {/* New BOM Drawer */}
       <Drawer isOpen={isBOMModalOpen} onClose={() => setIsBOMModalOpen(false)} title="Create Bill of Materials (BOM)">
         <form onSubmit={handleCreateBOM} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
@@ -467,7 +467,7 @@ export const ManufacturingView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* New Work Order Modal */}
+      {/* New Work Order Drawer */}
       <Drawer isOpen={isWOModalOpen} onClose={() => setIsWOModalOpen(false)} title="Create Production Work Order">
         <form onSubmit={handleCreateWO} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
@@ -510,7 +510,7 @@ export const ManufacturingView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* Issue Materials Modal */}
+      {/* Issue Materials Drawer */}
       <Drawer isOpen={isConsumeModalOpen} onClose={() => setIsConsumeModalOpen(false)} title="Issue Raw Materials to WIP">
         <form onSubmit={handleRecordConsumption} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
@@ -537,7 +537,7 @@ export const ManufacturingView: React.FC = () => {
         </form>
       </Drawer>
 
-      {/* Complete Work Order Modal */}
+      {/* Complete Work Order Drawer */}
       <Drawer isOpen={isCompleteModalOpen} onClose={() => setIsCompleteModalOpen(false)} title="Complete Assembly & Settle WIP to Finished Goods">
         <form onSubmit={handleCompleteWO} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}

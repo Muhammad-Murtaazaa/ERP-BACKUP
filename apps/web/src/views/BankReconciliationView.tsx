@@ -291,7 +291,7 @@ export const BankReconciliationView: React.FC = () => {
         </div>
       </div>
 
-      {/* Upload Statement Modal */}
+      {/* Upload Statement Drawer */}
       <Drawer
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}

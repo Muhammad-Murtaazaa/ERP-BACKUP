@@ -170,7 +170,7 @@ export const FxRatesView: React.FC = () => {
         </div>
       </div>
 
-      {/* Add Rate Modal */}
+      {/* Add Rate Drawer */}
       <Drawer
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
