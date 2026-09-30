@@ -29,6 +29,7 @@ import { registerTimeRoutes } from './routes/time.js';
 import { registerSupplierRoutes } from './routes/supplier.js';
 import { registerLogisticsRoutes } from './routes/logistics.js';
 import { registerBiRoutes } from './routes/bi.js';
+import { registerDocumentRoutes } from './routes/documents.js';
 
 export function createApp() {
   const app = express();
@@ -63,7 +64,10 @@ export function createApp() {
       exposedHeaders: ['x-correlation-id', 'idempotent-replay'],
     }),
   );
-  app.use(express.json({ limit: '1mb' }));
+  // Document version uploads (DOC) carry base64 content up to 5 MB decoded; everything else stays at 1 MB.
+  const smallJson = express.json({ limit: '1mb' });
+  const uploadJson = express.json({ limit: '8mb' });
+  app.use((req, res, next) => (/^\/api\/doc\/documents\/[^/]+\/versions$/.test(req.path) ? uploadJson(req, res, next) : smallJson(req, res, next)));
 
   // Baseline security headers.
   app.use((_req: Request, res: Response, next: NextFunction) => {
@@ -101,6 +105,7 @@ export function createApp() {
   registerSupplierRoutes(app);
   registerLogisticsRoutes(app);
   registerBiRoutes(app);
+  registerDocumentRoutes(app);
 
   app.use('/api', (req: Request, res: Response) => {
     res.status(404).json({
