@@ -1011,6 +1011,203 @@ describe('API Modular Monolith: Financial & Trading Workflows E2E Integration', 
     expect(tbRes.body.data.is_balanced).toBe(true);
     expect(tbRes.body.data.net_difference).toBe('0.00');
   });
+
+  it('Fixed Assets Workflow: Asset Category -> Asset Registration -> Monthly Depreciation -> Asset Disposal with Gain -> Verify Trial Balance (M7)', async () => {
+    // 1. Fetch open period
+    const periodsRes = await makeRequest('GET', '/api/periods', undefined, accountantToken);
+    expect(periodsRes.status).toBe(200);
+    const openPeriod = periodsRes.body.data.find((p: any) => p.status === 'OPEN');
+    expect(openPeriod).toBeDefined();
+
+    // 2. Create Asset Category (IT Equipment)
+    const catRes = await makeRequest(
+      'POST',
+      '/api/assets/categories',
+      {
+        code: 'CAT-IT',
+        name: 'IT & Computing Equipment',
+        depreciation_method: 'STRAIGHT_LINE',
+        useful_life_months: 36,
+        salvage_value_percentage: 5.0,
+      },
+      adminToken,
+    );
+    expect(catRes.status).toBe(201);
+    const catId = catRes.body.data.id;
+
+    // 3. Register Fixed Asset: High-Performance Dev Workstation
+    // Cost: 360,000 PKR, Salvage: 18,000 PKR, Useful Life: 36 Months
+    // Depreciable Base: 342,000 PKR => Monthly Depreciation: 342,000 / 36 = 9,500 PKR
+    const assetRes = await makeRequest(
+      'POST',
+      '/api/assets',
+      {
+        asset_number: 'FA-IT-2026-001',
+        name: 'Dev Studio Workstation Max',
+        category_id: catId,
+        acquisition_date: '2026-01-15',
+        acquisition_cost: '360000.00',
+        salvage_value: '18000.00',
+        useful_life_months: 36,
+        depreciation_method: 'STRAIGHT_LINE',
+        location: 'Head Office - Engineering Bay',
+        custodian_name: 'Lead Architect',
+        serial_number: 'SN-APPLE-99281',
+      },
+      adminToken,
+    );
+    expect(assetRes.status).toBe(201);
+    expect(assetRes.body.data.status).toBe('ACTIVE');
+    const assetId = assetRes.body.data.id;
+
+    // 4. Run Monthly Depreciation for the Asset
+    const depRes = await makeRequest(
+      'POST',
+      `/api/assets/${assetId}/depreciate`,
+      {
+        period_id: openPeriod.id,
+        period_months: 1,
+      },
+      adminToken,
+    );
+    expect(depRes.status).toBe(200);
+    expect(new Money(depRes.body.data.depreciation_amount).format()).toBe('9500.00');
+    expect(new Money(depRes.body.data.accumulated_depreciation).format()).toBe('9500.00');
+    expect(new Money(depRes.body.data.current_book_value).format()).toBe('350500.00');
+    expect(depRes.body.data.journal_id).toBeDefined();
+
+    // 5. Dispose Asset at Proceeds of 370,000 PKR
+    // Book value was 350,500 PKR => Gain on Disposal: 19,500 PKR
+    // Debits: Bank 370,000 + AccumDeprec 9,500 = 379,500
+    // Credits: AssetCost 360,000 + Gain 19,500 = 379,500
+    const dispRes = await makeRequest(
+      'POST',
+      `/api/assets/${assetId}/dispose`,
+      {
+        proceeds: '370000.00',
+        disposal_date: '2026-03-31',
+      },
+      adminToken,
+    );
+    expect(dispRes.status).toBe(200);
+    expect(dispRes.body.data.status).toBe('DISPOSED');
+    expect(dispRes.body.data.journal_id).toBeDefined();
+
+    // 6. Verify Trial Balance is balanced
+    const tbRes = await makeRequest('GET', '/api/ledger/trial-balance?as_of_date=2026-03-31', undefined, controllerToken);
+    expect(tbRes.status).toBe(200);
+    expect(tbRes.body.data.is_balanced).toBe(true);
+    expect(tbRes.body.data.net_difference).toBe('0.00');
+  });
+
+  it('Point of Sale (POS) Workflow: Cashier Register -> Open Shift -> Process Cash & Card Sales -> Close Shift with Drawer Count & GL Posting -> Verify Trial Balance', async () => {
+    // 1. Fetch an Item from catalog
+    const itemsRes = await makeRequest('GET', '/api/items', undefined, accountantToken);
+    expect(itemsRes.status).toBe(200);
+    const item = itemsRes.body.data[0];
+    expect(item).toBeDefined();
+
+    // 2. Create POS Register
+    const regRes = await makeRequest(
+      'POST',
+      '/api/pos/registers',
+      {
+        register_code: 'POS-TERM-01',
+        name: 'Main Store Express Checkout',
+      },
+      adminToken,
+    );
+    expect(regRes.status).toBe(201);
+    const registerId = regRes.body.data.id;
+
+    // 3. Open POS Cashier Shift with 5,000 PKR Float
+    const openSessRes = await makeRequest(
+      'POST',
+      '/api/pos/sessions/open',
+      {
+        register_id: registerId,
+        opening_float: '5000.00',
+      },
+      adminToken,
+    );
+    expect(openSessRes.status).toBe(201);
+    expect(openSessRes.body.data.status).toBe('OPEN');
+    const sessionId = openSessRes.body.data.id;
+
+    // 4. Process POS Order 1: Cash Sale
+    // 2 units @ 500 = 1000, 100 discount = 900, 16% Tax = 144 => Total = 1044 PKR
+    // Tendered: 1100 PKR, Change: 56 PKR
+    const order1Res = await makeRequest(
+      'POST',
+      '/api/pos/orders',
+      {
+        session_id: sessionId,
+        payment_method: 'CASH',
+        items: [
+          {
+            item_id: item.id,
+            item_code: item.code,
+            item_name: item.name,
+            quantity: '2.00',
+            unit_price: '500.00',
+          },
+        ],
+        discount_amount: '100.00',
+        tax_percentage: '16.00',
+        cash_tendered: '1100.00',
+      },
+      adminToken,
+    );
+    expect(order1Res.status).toBe(201);
+    expect(new Money(order1Res.body.data.total_amount).format()).toBe('1044.00');
+    expect(new Money(order1Res.body.data.change_due).format()).toBe('56.00');
+
+    // 5. Process POS Order 2: Card Sale
+    // 4 units @ 500 = 2000, 0 discount, 16% Tax = 320 => Total = 2320 PKR
+    const order2Res = await makeRequest(
+      'POST',
+      '/api/pos/orders',
+      {
+        session_id: sessionId,
+        payment_method: 'CARD',
+        items: [
+          {
+            item_id: item.id,
+            item_code: item.code,
+            item_name: item.name,
+            quantity: '4.00',
+            unit_price: '500.00',
+          },
+        ],
+        discount_amount: '0.00',
+        tax_percentage: '16.00',
+      },
+      adminToken,
+    );
+    expect(order2Res.status).toBe(201);
+    expect(new Money(order2Res.body.data.total_amount).format()).toBe('2320.00');
+
+    // 6. Close POS Session with exact cash count
+    // Opening float = 5,000 + Cash sales = 1,044 => Expected cash = 6,044 PKR
+    const closeRes = await makeRequest(
+      'POST',
+      `/api/pos/sessions/${sessionId}/close`,
+      {
+        actual_cash_drawer: '6044.00',
+      },
+      adminToken,
+    );
+    expect(closeRes.status).toBe(200);
+    expect(closeRes.body.data.status).toBe('CLOSED');
+    expect(new Money(closeRes.body.data.cash_difference).format()).toBe('0.00');
+    expect(closeRes.body.data.closing_journal_id).toBeDefined();
+
+    // 7. Verify Trial Balance is balanced
+    const tbRes = await makeRequest('GET', '/api/ledger/trial-balance?as_of_date=2026-03-31', undefined, controllerToken);
+    expect(tbRes.status).toBe(200);
+    expect(tbRes.body.data.is_balanced).toBe(true);
+    expect(tbRes.body.data.net_difference).toBe('0.00');
+  });
 });
 
 

@@ -15,6 +15,8 @@ import {
   ManufacturingEngine,
   InventoryReconciliationEngine,
   ProjectsEngine,
+  FixedAssetsEngine,
+  POSEngine,
 } from '../src/index.js';
 import {
   Account,
@@ -903,6 +905,155 @@ describe('Financial Engine: Projects, BOQ & Progress Certificates (IPC)', () => 
     expect(totalDr.format()).toBe(totalCr.format());
   });
 });
+
+describe('Financial Engine: Fixed Assets, Depreciation & Disposals (M7)', () => {
+  it('calculates Straight-Line depreciation and caps at salvage value', () => {
+    // Cost: 120,000, Salvage: 20,000, Useful Life: 10 months => 10,000 / month
+    const month1 = FixedAssetsEngine.calculateDepreciation('120000.00', '0.00', '20000.00', 10, 'STRAIGHT_LINE', 1);
+    expect(month1.depreciation_amount).toBe('10000.00000000');
+    expect(month1.accumulated_depreciation_after).toBe('10000.00000000');
+    expect(month1.book_value_after).toBe('110000.00000000');
+
+    // When accumulated is 95,000 (book value 25,000), monthly deprec is 10,000 but only 5,000 remaining to salvage (20,000)
+    const capMonth = FixedAssetsEngine.calculateDepreciation('120000.00', '95000.00', '20000.00', 10, 'STRAIGHT_LINE', 1);
+    expect(capMonth.depreciation_amount).toBe('5000.00000000');
+    expect(capMonth.book_value_after).toBe('20000.00000000');
+
+    // Fully depreciated down to salvage
+    const zeroMonth = FixedAssetsEngine.calculateDepreciation('120000.00', '100000.00', '20000.00', 10, 'STRAIGHT_LINE', 1);
+    expect(zeroMonth.depreciation_amount).toBe('0.00000000');
+  });
+
+  it('calculates Declining-Balance depreciation', () => {
+    // Cost: 100,000, 24 months (2 years) => DDB rate = 2/2 = 100% per year = 8.333% per month
+    const res = FixedAssetsEngine.calculateDepreciation('100000.00', '0.00', '5000.00', 24, 'DECLINING_BALANCE', 1);
+    expect(parseFloat(res.depreciation_amount)).toBeGreaterThan(8000);
+    expect(parseFloat(res.book_value_after)).toBeLessThan(92000);
+  });
+
+  it('generates balanced depreciation journal voucher (Dr 521004 / Cr 121002)', () => {
+    const draft = FixedAssetsEngine.generateDepreciationJournal({
+      organization_id: 'org-1',
+      legal_entity_id: 'le-1',
+      period_id: 'per-1',
+      posting_date: '2026-03-31',
+      asset_number: 'FA-MACBOOK-01',
+      asset_name: 'Apple MacBook Pro M3',
+      depreciation_amount: '12500.00000000',
+      expense_account_id: 'acc-deprec-exp-521004',
+      accumulated_account_id: 'acc-accum-dep-121002',
+    });
+
+    expect(draft.lines).toHaveLength(2);
+    expect(draft.lines[0].account_id).toBe('acc-deprec-exp-521004');
+    expect(draft.lines[0].debit_amount).toBe('12500.00000000');
+    expect(draft.lines[1].account_id).toBe('acc-accum-dep-121002');
+    expect(draft.lines[1].credit_amount).toBe('12500.00000000');
+  });
+
+  it('generates balanced asset disposal journal with gain on disposal', () => {
+    // Cost: 100,000, Accum Deprec: 40,000 => Net Book Value = 60,000
+    // Sold for Proceeds: 75,000 => Gain on Disposal = 15,000
+    const draft = FixedAssetsEngine.generateDisposalJournal({
+      organization_id: 'org-1',
+      legal_entity_id: 'le-1',
+      period_id: 'per-1',
+      posting_date: '2026-03-31',
+      asset_number: 'FA-VEHICLE-01',
+      asset_name: 'Delivery Van',
+      acquisition_cost: '100000.00000000',
+      accumulated_depreciation: '40000.00000000',
+      proceeds: '75000.00000000',
+      asset_cost_account_id: 'acc-cost-121001',
+      accumulated_deprec_account_id: 'acc-accum-121002',
+      bank_account_id: 'acc-bank-111002',
+      gain_account_id: 'acc-gain-411002',
+      loss_account_id: 'acc-loss-511001',
+    });
+
+    // Total debits = Proceeds 75,000 + AccumDep 40,000 = 115,000
+    // Total credits = Cost 100,000 + Gain 15,000 = 115,000
+    let totalDr = Money.zero();
+    let totalCr = Money.zero();
+    for (const l of draft.lines) {
+      totalDr = totalDr.add(new Money(l.debit_amount));
+      totalCr = totalCr.add(new Money(l.credit_amount));
+    }
+    expect(totalDr.format()).toBe('115000.00');
+    expect(totalCr.format()).toBe('115000.00');
+  });
+});
+
+describe('Financial Engine: Point of Sale (POS) & Cashier Shifts', () => {
+  it('calculates POS cart totals, discounts, taxes, and change due', () => {
+    const order = POSEngine.calculateOrder(
+      [
+        {
+          item_id: 'item-1',
+          item_code: 'SKU-COFFEE',
+          item_name: 'Espresso Blend 1kg',
+          quantity: '2.00000000',
+          unit_price: '2500.00000000', // 5,000
+        },
+        {
+          item_id: 'item-2',
+          item_code: 'SKU-MUG',
+          item_name: 'Ceramic Mug',
+          quantity: '1.00000000',
+          unit_price: '1000.00000000', // 1,000
+        },
+      ],
+      '500.00', // 500 PKR discount => Subtotal 6,000 - 500 = 5,500
+      '10.00',  // 10% tax = 550 => Total 6,050
+      '7000.00' // Tendered 7,000 => Change 950
+    );
+
+    expect(order.subtotal).toBe('6000.00000000');
+    expect(order.discount_amount).toBe('500.00000000');
+    expect(order.tax_amount).toBe('550.00000000');
+    expect(order.total_amount).toBe('6050.00000000');
+    expect(order.change_due).toBe('950.00000000');
+  });
+
+  it('reconciles POS shift drawer and generates balanced session closing journal', () => {
+    // Float: 5,000, Cash Sales: 15,000, Card Sales: 25,000
+    // Expected Cash = 5,000 + 15,000 = 20,000
+    // Actual Cash Count = 19,800 (Shortage of 200)
+    const reconciled = POSEngine.reconcileSession('5000.00', '15000.00', '25000.00', '19800.00');
+    expect(reconciled.expected_cash_drawer).toBe('20000.00000000');
+    expect(reconciled.cash_difference).toBe('-200.00000000');
+
+    const draft = POSEngine.generateSessionClosingJournal({
+      organization_id: 'org-1',
+      legal_entity_id: 'le-1',
+      period_id: 'per-1',
+      posting_date: '2026-03-31',
+      session_id: 'sess-01',
+      register_code: 'REG-KARACHI-01',
+      cash_sales: '15000.00000000',
+      card_sales: '25000.00000000',
+      tax_amount: '4000.00000000',
+      cash_difference: '-200.00000000',
+      cash_account_id: 'acc-cash-111001',
+      card_clearing_account_id: 'acc-card-111002',
+      sales_account_id: 'acc-sales-411001',
+      tax_payable_account_id: 'acc-tax-212001',
+      cash_variance_expense_account_id: 'acc-var-511002',
+    });
+
+    // Debits = Cash 14,800 + Shortage 200 + Card 25,000 = 40,000
+    // Credits = Net Sales 36,000 + Tax 4,000 = 40,000 => Balance is exact!
+    let totalDr = Money.zero();
+    let totalCr = Money.zero();
+    for (const l of draft.lines) {
+      totalDr = totalDr.add(new Money(l.debit_amount));
+      totalCr = totalCr.add(new Money(l.credit_amount));
+    }
+    expect(totalDr.format()).toBe('40000.00');
+    expect(totalCr.format()).toBe('40000.00');
+  });
+});
+
 
 
 

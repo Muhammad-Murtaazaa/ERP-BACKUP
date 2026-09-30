@@ -67,6 +67,10 @@ export const AccountingPurpose = {
   MANUFACTURING_WIP_ISSUE: 'MANUFACTURING_WIP_ISSUE',
   MANUFACTURING_ASSEMBLY_RECEIPT: 'MANUFACTURING_ASSEMBLY_RECEIPT',
   PROJECT_PROGRESS_INVOICE: 'PROJECT_PROGRESS_INVOICE',
+  FIXED_ASSET_ACQUISITION: 'FIXED_ASSET_ACQUISITION',
+  FIXED_ASSET_DEPRECIATION: 'FIXED_ASSET_DEPRECIATION',
+  FIXED_ASSET_DISPOSAL: 'FIXED_ASSET_DISPOSAL',
+  POS_SESSION_CLOSE: 'POS_SESSION_CLOSE',
 } as const;
 export type AccountingPurpose = (typeof AccountingPurpose)[keyof typeof AccountingPurpose];
 
@@ -910,6 +914,136 @@ export interface ProgressCertificate {
 }
 
 // ==========================================
+// Fixed Assets & Depreciation (M7)
+// ==========================================
+export type DepreciationMethod = 'STRAIGHT_LINE' | 'DECLINING_BALANCE' | 'UNITS_OF_PRODUCTION';
+export type AssetStatus = 'DRAFT' | 'ACTIVE' | 'FULLY_DEPRECIATED' | 'DISPOSED' | 'WRITTEN_OFF';
+
+export interface AssetCategory {
+  id: string;
+  organization_id: string;
+  code: string;
+  name: string;
+  depreciation_method: DepreciationMethod;
+  useful_life_months: number;
+  salvage_value_percentage: string;
+  asset_cost_account_id?: string | null;
+  accumulated_deprec_account_id?: string | null;
+  deprec_expense_account_id?: string | null;
+  created_at?: string;
+}
+
+export interface FixedAsset {
+  id: string;
+  organization_id: string;
+  asset_number: string;
+  name: string;
+  category_id: string;
+  category_name?: string;
+  acquisition_date: string;
+  acquisition_cost: string;
+  salvage_value: string;
+  useful_life_months: number;
+  depreciation_method: DepreciationMethod;
+  status: AssetStatus;
+  location?: string | null;
+  custodian_name?: string | null;
+  serial_number?: string | null;
+  current_book_value: string;
+  accumulated_depreciation: string;
+  disposal_date?: string | null;
+  disposal_proceeds?: string;
+  disposal_journal_id?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AssetDepreciationEntry {
+  id: string;
+  organization_id: string;
+  asset_id: string;
+  period_id: string;
+  entry_date: string;
+  depreciation_amount: string;
+  accumulated_depreciation_after: string;
+  book_value_after: string;
+  journal_id?: string | null;
+  created_at?: string;
+}
+
+// ==========================================
+// Point of Sale (POS) Terminal & Sessions
+// ==========================================
+export interface POSRegister {
+  id: string;
+  organization_id: string;
+  register_code: string;
+  name: string;
+  warehouse_id?: string | null;
+  warehouse_name?: string | null;
+  cash_account_id?: string | null;
+  card_clearing_account_id?: string | null;
+  is_active: boolean;
+  created_at?: string;
+}
+
+export type POSSessionStatus = 'OPEN' | 'CLOSED';
+
+export interface POSSession {
+  id: string;
+  organization_id: string;
+  register_id: string;
+  register_name?: string;
+  cashier_id: string;
+  cashier_name: string;
+  opened_at: string;
+  closed_at?: string | null;
+  opening_float: string;
+  cash_sales_total: string;
+  card_sales_total: string;
+  expected_cash_drawer: string;
+  actual_cash_drawer?: string | null;
+  cash_difference: string;
+  status: POSSessionStatus;
+  closing_journal_id?: string | null;
+  created_at?: string;
+}
+
+export type POSPaymentMethod = 'CASH' | 'CARD' | 'SPLIT';
+export type POSOrderStatus = 'COMPLETED' | 'VOIDED' | 'REFUNDED';
+
+export interface POSOrderLine {
+  id?: string;
+  order_id?: string;
+  item_id: string;
+  item_code: string;
+  item_name: string;
+  quantity: string;
+  unit_price: string;
+  line_total: string;
+  tax_amount?: string;
+}
+
+export interface POSOrder {
+  id: string;
+  organization_id: string;
+  session_id: string;
+  order_number: string;
+  customer_id?: string | null;
+  customer_name?: string | null;
+  subtotal: string;
+  discount_amount: string;
+  tax_amount: string;
+  total_amount: string;
+  payment_method: POSPaymentMethod;
+  cash_tendered: string;
+  change_due: string;
+  status: POSOrderStatus;
+  lines?: POSOrderLine[];
+  created_at?: string;
+}
+
+// ==========================================
 // Organization, Legal Entity, User & Auth
 // ==========================================
 export const UserRole = {
@@ -922,6 +1056,7 @@ export const UserRole = {
   PRODUCTION_MANAGER: 'PRODUCTION_MANAGER',
   WAREHOUSE_OPERATOR: 'WAREHOUSE_OPERATOR',
   PROJECT_MANAGER: 'PROJECT_MANAGER',
+  CASHIER: 'CASHIER',
   AUDITOR: 'AUDITOR',
   VIEWER: 'VIEWER',
 } as const;
@@ -975,6 +1110,14 @@ export const Permission = {
   BOQ_MANAGE: 'boq.manage',
   PROGRESS_CERTIFY: 'progress.certify',
   PROGRESS_INVOICE: 'progress.invoice',
+  // Fixed Assets (M7)
+  ASSET_MANAGE: 'asset.manage',
+  ASSET_DEPRECIATE: 'asset.depreciate',
+  ASSET_DISPOSE: 'asset.dispose',
+  // POS Terminal
+  POS_TERMINAL: 'pos.terminal',
+  POS_REGISTER_MANAGE: 'pos.register.manage',
+  POS_SESSION_CLOSE: 'pos.session.close',
   // Audit
   AUDIT_VIEW: 'audit.view',
 } as const;
@@ -1021,6 +1164,11 @@ export const ErrorCode = {
   OVER_CERTIFICATION: 'OVER_CERTIFICATION',
   RETENTION_LIMIT_EXCEEDED: 'RETENTION_LIMIT_EXCEEDED',
   PROJECT_CLOSED: 'PROJECT_CLOSED',
+  ASSET_ALREADY_DISPOSED: 'ASSET_ALREADY_DISPOSED',
+  ASSET_NOT_ACTIVE: 'ASSET_NOT_ACTIVE',
+  POS_SESSION_ALREADY_OPEN: 'POS_SESSION_ALREADY_OPEN',
+  POS_SESSION_CLOSED: 'POS_SESSION_CLOSED',
+  INSUFFICIENT_PAYMENT_TENDER: 'INSUFFICIENT_PAYMENT_TENDER',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

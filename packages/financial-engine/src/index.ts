@@ -10,3 +10,5 @@ export * from './payroll.js';
 export * from './manufacturing.js';
 export * from './inventory.js';
 export * from './projects.js';
+export * from './assets.js';
+export * from './pos.js';

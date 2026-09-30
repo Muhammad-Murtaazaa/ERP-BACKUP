@@ -43,6 +43,12 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.BOQ_MANAGE,
     Permission.PROGRESS_CERTIFY,
     Permission.PROGRESS_INVOICE,
+    Permission.ASSET_MANAGE,
+    Permission.ASSET_DEPRECIATE,
+    Permission.ASSET_DISPOSE,
+    Permission.POS_TERMINAL,
+    Permission.POS_REGISTER_MANAGE,
+    Permission.POS_SESSION_CLOSE,
     Permission.AUDIT_VIEW,
   ],
   [UserRole.CONTROLLER]: [
@@ -84,6 +90,12 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.BOQ_MANAGE,
     Permission.PROGRESS_CERTIFY,
     Permission.PROGRESS_INVOICE,
+    Permission.ASSET_MANAGE,
+    Permission.ASSET_DEPRECIATE,
+    Permission.ASSET_DISPOSE,
+    Permission.POS_TERMINAL,
+    Permission.POS_REGISTER_MANAGE,
+    Permission.POS_SESSION_CLOSE,
     Permission.AUDIT_VIEW,
   ],
   [UserRole.HR_MANAGER]: [
@@ -106,6 +118,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.TREASURY_BANK_RECONCILE,
     Permission.PAYROLL_MANAGE,
     Permission.PROGRESS_INVOICE,
+    Permission.ASSET_MANAGE,
+    Permission.ASSET_DEPRECIATE,
+    Permission.ASSET_DISPOSE,
   ],
   [UserRole.SALES_OPERATOR]: [
     Permission.FINANCE_COA_VIEW,
@@ -114,6 +129,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.ITEMS_MANAGE,
     Permission.SALES_ORDER_MANAGE,
     Permission.AR_INVOICE_MANAGE,
+    Permission.POS_TERMINAL,
   ],
   [UserRole.INVENTORY_MANAGER]: [
     Permission.FINANCE_COA_VIEW,
@@ -151,6 +167,11 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.PROJECT_MANAGE,
     Permission.BOQ_MANAGE,
     Permission.PROGRESS_CERTIFY,
+  ],
+  [UserRole.CASHIER]: [
+    Permission.ITEMS_MANAGE,
+    Permission.POS_TERMINAL,
+    Permission.POS_SESSION_CLOSE,
   ],
   [UserRole.AUDITOR]: [
     Permission.FINANCE_COA_VIEW,

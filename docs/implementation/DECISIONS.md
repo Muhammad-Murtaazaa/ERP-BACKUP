@@ -61,3 +61,22 @@
 - **Consequences**:
   - Eliminates contract over-billing, automates retention money accounting on balance sheets, and provides real-time project profitability tracking.
 
+## ADR-007: Fixed Assets Capitalization, Automated Depreciation & POS Shift Reconciliation
+- **Context**: Tangible asset lifecycles (capitalization, periodic depreciation schedules, and derecognition upon disposal/write-off) and retail Point of Sale operations (cashier shift sessions, cash drawer floats, touch checkout, and cash drawer reconciliations) require strict adherence to double-entry ledger invariants.
+- **Decision**:
+  1. **Fixed Assets Engine**:
+     - Category defaults configure depreciation method (Straight-Line, Double-Declining Balance), useful life, and salvage value percentage.
+     - Assets track acquisition cost, accumulated depreciation, and net book value (`cost - accumulated_deprec`).
+     - Periodic depreciation runs generate balanced vouchers (`Dr Depreciation Expense 521004 / Cr Accumulated Depreciation 121002`).
+     - Asset disposal clears gross cost and accumulated depreciation, recognizing bank proceeds and calculating exact gain or loss:
+       $$\text{Dr Bank} + \text{Dr Accum. Depreciation} + \text{Dr Loss on Disposal} = \text{Cr Fixed Asset Cost} + \text{Cr Gain on Disposal}$$
+  2. **Dedicated Point of Sale (POS) Engine**:
+     - POS registers link to warehouse locations and dedicated GL settlement accounts.
+     - Cashier shift sessions track opening float, gross sales by tender (Cash / Card), and calculate expected drawer cash ($\text{Expected} = \text{Opening Float} + \text{Cash Sales}$).
+     - Shift closing (Z-report) reconciles physical cash drawer counts, calculating cash difference ($\text{Actual} - \text{Expected}$) and posting a consolidated balanced General Ledger session voucher:
+       $$\text{Dr Cash (Actual Collected)} + \text{Dr Shortage (or Cr Surplus)} + \text{Dr Card Clearing} = \text{Cr Net Sales} + \text{Cr Output Tax Payable}$$
+- **Consequences**:
+  - Full statutory asset register compliance with zero floating-point drift.
+  - POS fast touch transactions decrement inventory in real time while cashier shift closings post single balanced aggregate journals with transparent cash variance accounting.
+
+

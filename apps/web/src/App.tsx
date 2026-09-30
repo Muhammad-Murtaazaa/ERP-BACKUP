@@ -21,6 +21,8 @@ import { PayrollView } from './views/PayrollView.js';
 import { WarehouseView } from './views/WarehouseView.js';
 import { ManufacturingView } from './views/ManufacturingView.js';
 import { ProjectsView } from './views/ProjectsView.js';
+import { FixedAssetsView } from './views/FixedAssetsView.js';
+import { PosTerminalView } from './views/PosTerminalView.js';
 import { Badge } from '@omnysync/ui';
 import {
   LayoutDashboard,
@@ -45,6 +47,7 @@ import {
   Warehouse as WarehouseIcon,
   Factory,
   Briefcase,
+  Store,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -57,6 +60,7 @@ export const App: React.FC = () => {
     { email: 'admin@omnysync.internal', name: 'Admin', role: 'ADMIN' },
     { email: 'controller@omnysync.internal', name: 'Controller', role: 'CONTROLLER' },
     { email: 'accountant@omnysync.internal', name: 'Accountant', role: 'ACCOUNTANT' },
+    { email: 'cashier@omnysync.internal', name: 'Cashier', role: 'CASHIER' },
     { email: 'auditor@omnysync.internal', name: 'Auditor', role: 'AUDITOR' },
     { email: 'viewer@omnysync.internal', name: 'Viewer', role: 'VIEWER' },
   ];
@@ -97,6 +101,7 @@ export const App: React.FC = () => {
     {
       title: 'Order-to-Cash',
       items: [
+        { id: 'pos', label: 'Retail POS Terminal', icon: Store },
         { id: 'sales-orders', label: 'Sales Orders', icon: ShoppingCart },
         { id: 'ar-invoices', label: 'AR Customer Invoices', icon: Receipt },
       ],
@@ -132,6 +137,7 @@ export const App: React.FC = () => {
       title: 'Treasury & Finance',
       items: [
         { id: 'payments', label: 'Payments & Allocations', icon: CreditCard },
+        { id: 'assets', label: 'Fixed Assets Register', icon: Landmark },
         { id: 'treasury-reconciliation', label: 'Bank Reconciliation', icon: Landmark },
         { id: 'fx-rates', label: 'FX & Exchange Rates', icon: ArrowRightLeft },
         { id: 'journals', label: 'Journal Vouchers', icon: BookOpen },
@@ -263,6 +269,7 @@ export const App: React.FC = () => {
           ) : (
             <>
               {currentTab === 'dashboard' && <DashboardView onNavigate={setCurrentTab} />}
+              {currentTab === 'pos' && <PosTerminalView />}
               {currentTab === 'parties' && <PartiesView />}
               {currentTab === 'items' && <ItemsView />}
               {currentTab === 'sales-orders' && <SalesOrdersView />}
@@ -272,6 +279,7 @@ export const App: React.FC = () => {
               {currentTab === 'warehouses' && <WarehouseView />}
               {currentTab === 'manufacturing' && <ManufacturingView />}
               {currentTab === 'projects' && <ProjectsView />}
+              {currentTab === 'assets' && <FixedAssetsView />}
               {currentTab === 'employees' && <EmployeesView />}
               {currentTab === 'payroll' && <PayrollView />}
               {currentTab === 'payments' && <PaymentsView />}

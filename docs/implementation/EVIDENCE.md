@@ -61,11 +61,24 @@
 - **Interim Payment Certificates (IPC)**: Cumulative measurement calculation, contract over-certification guard, and automated retention money withholding (`gross * retention_pct / 100`).
 - **Progress Invoice GL Posting**: Balanced General Ledger voucher generation (`Dr Trade AR Control 112001 [Net] + Dr Project Retention Receivable 112003 [Retention] = Cr Project Milestone Revenue 411003 [Gross]`), with guaranteed zero net difference on Trial Balance.
 
+## Milestone 7: Fixed Assets, Depreciation Engine & Capitalization (Verified)
+- **Database Migration**: `packages/platform/src/db/migrations/007_fixed_assets.sql` applied cleanly (`asset_categories`, `fixed_assets`, `asset_depreciation_entries`).
+- **Asset Categories & Register**: Standard categories (IT Equipment, Office Furniture, Plant & Machinery) with straight-line and double-declining depreciation methods, useful life, salvage values, and custodian/location assignment.
+- **Automated Depreciation Engine**: Monthly depreciation schedules with automated balanced General Ledger vouchers (`Dr Depreciation Expense 521004 / Cr Accumulated Depreciation 121002`).
+- **Asset Disposals & Derecognition**: Asset retirement, bank proceeds collection, gain/loss on disposal calculation, and balanced GL settlement (`Dr Bank / Dr AccumDeprec / Dr Loss or Cr Gain / Cr AssetCost`).
+
+## Dedicated Point of Sale (POS) Module (Verified)
+- **Database Migration**: `packages/platform/src/db/migrations/008_pos_module.sql` applied cleanly (`pos_registers`, `pos_sessions`, `pos_orders`, `pos_order_lines`).
+- **POS Registers & Shifts**: Terminal registers with warehouse linking and dedicated cash drawer & card clearing GL accounts. Shift sessions track opening float and cash/card sales.
+- **Fast Touch Order Processing**: Fast catalog lookup, instant line calculations, cart discounts, VAT/sales tax, cash tender & change due, and real-time inventory stock decrements.
+- **Shift Close & Drawer Reconciliation**: Physical cash count comparison, shortage/overage detection, and consolidated balanced session closing General Ledger voucher posting (`Dr Cash [Actual] + Dr Shortage / Cr Surplus + Dr Card = Cr Product Sales + Cr Output Tax Payable`).
+
 ## Automated Test Summary
 - **Test Command**: `npx vitest run`
-- **Result**: 3 test files, 46 tests passed, 0 failures.
-  - `packages/financial-engine/test/financial-engine.test.ts`: 30/30 passed.
+- **Result**: 3 test files, 54 tests passed, 0 failures (100% pass rate).
+  - `packages/financial-engine/test/financial-engine.test.ts`: 36/36 passed.
   - `packages/platform/test/platform.test.ts`: 3/3 passed.
-  - `apps/api/test/api.test.ts`: 13/13 passed.
+  - `apps/api/test/api.test.ts`: 15/15 passed.
 - **Build Command**: `npm run build`
-- **Result**: All monorepo packages and React UI bundle compiled cleanly with 0 type errors in 53.42s.
+- **Result**: All monorepo packages and React UI bundle compiled cleanly with 0 type errors.
+
