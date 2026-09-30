@@ -79,4 +79,26 @@
   - Full statutory asset register compliance with zero floating-point drift.
   - POS fast touch transactions decrement inventory in real time while cashier shift closings post single balanced aggregate journals with transparent cash variance accounting.
 
+## ADR-008: Quality Inspection Lots, Tolerance Bounds & Scrap Write-Off
+- **Context**: Strict quality compliance (ISO 9001, GMP, receiving inspections) requires parameter tolerance verification (`min <= measured <= max`), automated acceptance/rejection decisions, Non-Conformance Reports (NCR) with CAPA tracking, and write-off of defective scrap to financial expense accounts.
+- **Decision**:
+  1. Inspection plans define numeric and qualitative parameters with upper/lower bounds.
+  2. When lot inspections are submitted, `QualityEngine.evaluateLot` evaluates all parameter results. Any failing parameter marks the lot `REJECTED`; all passing parameters mark the lot `ACCEPTED`.
+  3. Rejected lots raise NCRs with defect severity and disposition (`SCRAP`, `REWORK`, `RETURN_TO_VENDOR`).
+  4. Approving an NCR scrap disposition triggers `QualityEngine.generateScrapJournal`, posting a balanced General Ledger inventory write-off voucher:
+     $$\text{Dr Manufacturing Scrap (511003)} = \text{Cr Raw Materials / Spares Inventory (113002)}$$
+  5. Accepted lots can generate a formal Certificate of Analysis (CoA) tied to a customer sales order or generic commercial release.
+- **Consequences**:
+  - Uncompromised quality control with automated financial scrap tracking and zero manual inventory balance manipulation.
 
+## ADR-009: Plant Maintenance Work Order Costing & Settlement
+- **Context**: Industrial manufacturing plant machinery requires preventive maintenance (PM) schedules, unplanned corrective breakdown logging, spare parts consumption, technician labor costing, equipment downtime tracking, and calibration certificates.
+- **Decision**:
+  1. Equipment register tracks machinery with criticality ratings (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`), operational status, and optional fixed asset links.
+  2. PM schedules define frequency intervals in days, automatically recalculating `next_due_date` upon work order completion.
+  3. Work orders capture itemized spare parts (`quantity * unit_cost`) and technician labor (`hours * hourly_rate`) using exact decimal precision.
+  4. Completing a work order executes `MaintenanceEngine.generateSettlementJournal`, posting a balanced General Ledger repair & maintenance voucher:
+     $$\text{Dr Equipment Maintenance Expense (521005)} = \text{Cr Spare Parts Inventory (113002)} + \text{Cr Net Accrued Salaries / Labor (211004)}$$
+  5. Equipment calibrations log accredited lab certificates and validity dates, alerting before certification expiry.
+- **Consequences**:
+  - Complete plant engineering visibility, accurate machine operational costs, and automated GL expense settlement.

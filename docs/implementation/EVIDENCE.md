@@ -73,12 +73,23 @@
 - **Fast Touch Order Processing**: Fast catalog lookup, instant line calculations, cart discounts, VAT/sales tax, cash tender & change due, and real-time inventory stock decrements.
 - **Shift Close & Drawer Reconciliation**: Physical cash count comparison, shortage/overage detection, and consolidated balanced session closing General Ledger voucher posting (`Dr Cash [Actual] + Dr Shortage / Cr Surplus + Dr Card = Cr Product Sales + Cr Output Tax Payable`).
 
+## Milestone 8: Quality Management & Inspection Lots (Verified)
+- **Database Migration**: `packages/platform/src/db/migrations/009_quality_management.sql` applied cleanly (`quality_inspection_plans`, `quality_inspection_plan_params`, `quality_inspection_lots`, `quality_inspection_results`, `quality_non_conformance_reports`, `quality_certificates_of_analysis`).
+- **Inspection Plans & Lots**: Dynamic numeric bounds (`min <= measured <= max`), pass/fail usage decision evaluation (`ACCEPTED` vs `REJECTED`).
+- **Non-Conformance Reports (NCR) & Defective Scrap Write-Off**: Root cause analysis, CAPA corrective actions, and automated balanced General Ledger inventory scrap vouchers (`Dr Manufacturing Scrap 511003 / Cr Inventory 113002`).
+- **Certificates of Analysis (CoA)**: Formal certificate generation with quality officer sign-off.
+
+## Milestone 9: Plant Maintenance & Equipment Engineering (Verified)
+- **Database Migration**: `packages/platform/src/db/migrations/010_plant_maintenance.sql` applied cleanly (`maintenance_equipment`, `pm_schedules`, `maintenance_work_orders`, `maint_order_parts`, `maint_order_labor`, `equipment_calibrations`).
+- **Machinery Register & PM Schedules**: Machinery register with criticality levels, recurring maintenance interval schedules, and automatic next due date calculations.
+- **Maintenance Work Orders & GL Settlement**: Exact decimal parts consumption (`quantity * unit_cost`), labor hours (`hours * hourly_rate`), equipment downtime logging, and automated balanced GL repair & maintenance settlement vouchers (`Dr Equipment Maintenance Expense 521005 / Cr Spare Parts 113002 / Cr Accrued Labor Salaries 211004`).
+- **Equipment Calibrations**: Calibration certificate tracking, testing lab validation, and expiration monitoring.
+
 ## Automated Test Summary
 - **Test Command**: `npx vitest run`
-- **Result**: 3 test files, 54 tests passed, 0 failures (100% pass rate).
-  - `packages/financial-engine/test/financial-engine.test.ts`: 36/36 passed.
+- **Result**: 3 test files, 61 tests passed, 0 failures (100% pass rate).
+  - `packages/financial-engine/test/financial-engine.test.ts`: 41/41 passed.
   - `packages/platform/test/platform.test.ts`: 3/3 passed.
-  - `apps/api/test/api.test.ts`: 15/15 passed.
+  - `apps/api/test/api.test.ts`: 17/17 passed.
 - **Build Command**: `npm run build`
 - **Result**: All monorepo packages and React UI bundle compiled cleanly with 0 type errors.
-

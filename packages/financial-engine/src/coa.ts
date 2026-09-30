@@ -198,6 +198,7 @@ export const STANDARD_COA_TEMPLATE: CoaTemplateItem[] = [
   { code: '521002', name: 'Salaries Expense', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '521003', name: 'Utilities Expense', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '521004', name: 'Depreciation Expense', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '521005', name: 'Equipment Maintenance & Repairs Expense', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
 
   // --- 9. TECHNICAL ACCOUNTS ---
   { code: '9000', name: 'Technical Accounts', level: 1, statementClass: StatementClass.EQUITY, normalBalance: NormalBalance.CREDIT, postingAllowed: false, controlType: AccountControlType.GENERAL },

@@ -23,6 +23,8 @@ import { ManufacturingView } from './views/ManufacturingView.js';
 import { ProjectsView } from './views/ProjectsView.js';
 import { FixedAssetsView } from './views/FixedAssetsView.js';
 import { PosTerminalView } from './views/PosTerminalView.js';
+import { QualityManagementView } from './views/QualityManagementView.js';
+import { PlantMaintenanceView } from './views/PlantMaintenanceView.js';
 import { Badge } from '@omnysync/ui';
 import {
   LayoutDashboard,
@@ -48,6 +50,8 @@ import {
   Factory,
   Briefcase,
   Store,
+  ShieldCheck,
+  Wrench,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -118,6 +122,13 @@ export const App: React.FC = () => {
       items: [
         { id: 'warehouses', label: 'Warehouses & Logistics', icon: WarehouseIcon },
         { id: 'manufacturing', label: 'Manufacturing & Assembly', icon: Factory },
+      ],
+    },
+    {
+      title: 'Plant & Quality',
+      items: [
+        { id: 'quality', label: 'Quality & Inspection (QM)', icon: ShieldCheck },
+        { id: 'maintenance', label: 'Plant Maintenance (PM)', icon: Wrench },
       ],
     },
     {
@@ -278,6 +289,8 @@ export const App: React.FC = () => {
               {currentTab === 'ap-invoices' && <ApInvoicesView />}
               {currentTab === 'warehouses' && <WarehouseView />}
               {currentTab === 'manufacturing' && <ManufacturingView />}
+              {currentTab === 'quality' && <QualityManagementView />}
+              {currentTab === 'maintenance' && <PlantMaintenanceView />}
               {currentTab === 'projects' && <ProjectsView />}
               {currentTab === 'assets' && <FixedAssetsView />}
               {currentTab === 'employees' && <EmployeesView />}

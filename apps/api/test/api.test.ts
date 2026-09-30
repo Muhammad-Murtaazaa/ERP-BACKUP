@@ -1208,6 +1208,275 @@ describe('API Modular Monolith: Financial & Trading Workflows E2E Integration', 
     expect(tbRes.body.data.is_balanced).toBe(true);
     expect(tbRes.body.data.net_difference).toBe('0.00');
   });
+
+  it('Quality Management (QM) Workflow: Inspection Plan -> Lot Inspection Rejection -> NCR & Scrap Write-off -> Passing Lot -> Issue CoA -> Verify Trial Balance (M8)', async () => {
+    // 1. Fetch an Item from catalog
+    const itemsRes = await makeRequest('GET', '/api/items', undefined, accountantToken);
+    expect(itemsRes.status).toBe(200);
+    const item = itemsRes.body.data[0];
+    expect(item).toBeDefined();
+
+    // 2. Create Quality Inspection Plan
+    const planRes = await makeRequest(
+      'POST',
+      '/api/quality/plans',
+      {
+        plan_code: 'QP-CHEM-001',
+        name: 'Chemical & Physical Property Verification',
+        item_id: item.id,
+        inspection_type: 'RECEIVING',
+        sample_size: '5.00',
+        params: [
+          {
+            param_name: 'Purity Percentage',
+            data_type: 'NUMERIC',
+            min_tolerance: '98.00000000',
+            max_tolerance: '100.00000000',
+            uom: '%',
+            is_mandatory: true,
+          },
+        ],
+      },
+      adminToken,
+    );
+    expect(planRes.status).toBe(201);
+    expect(planRes.body.data.plan_code).toBe('QP-CHEM-001');
+
+    // 3. Create Defective Inspection Lot 1
+    const lot1Res = await makeRequest(
+      'POST',
+      '/api/quality/lots',
+      {
+        item_id: item.id,
+        quantity: '50.00000000',
+        batch_number: 'BATCH-DEFECT-01',
+        source_type: 'GRN',
+      },
+      adminToken,
+    );
+    expect(lot1Res.status).toBe(201);
+    const lot1Id = lot1Res.body.data.id;
+
+    // 4. Perform QA on Lot 1 with out-of-spec value (94.50% < 98.00%) -> Should REJECT
+    const inspect1Res = await makeRequest(
+      'POST',
+      `/api/quality/lots/${lot1Id}/inspect`,
+      {
+        usage_decision_notes: 'Failed purity test below acceptable threshold',
+        results: [
+          {
+            param_name: 'Purity Percentage',
+            measured_numeric_value: '94.50000000',
+          },
+        ],
+      },
+      adminToken,
+    );
+    expect(inspect1Res.status).toBe(200);
+    expect(inspect1Res.body.data.status).toBe('REJECTED');
+    expect(inspect1Res.body.data.all_mandatory_passed).toBe(false);
+
+    // 5. File Non-Conformance Report (NCR) with SCRAP disposition
+    const ncrRes = await makeRequest(
+      'POST',
+      '/api/quality/ncr',
+      {
+        lot_id: lot1Id,
+        defect_severity: 'CRITICAL',
+        root_cause: 'Contaminated chemical precursor',
+        corrective_action: 'Quarantine vendor and reject batch',
+        disposition: 'SCRAP',
+      },
+      adminToken,
+    );
+    expect(ncrRes.status).toBe(201);
+    expect(ncrRes.body.data.status).toBe('OPEN');
+    const ncrId = ncrRes.body.data.id;
+
+    // 6. Authorize Scrap & Post Balanced GL Scrap Write-off Voucher
+    const scrapRes = await makeRequest(
+      'POST',
+      `/api/quality/ncr/${ncrId}/scrap`,
+      {},
+      adminToken,
+    );
+    expect(scrapRes.status).toBe(200);
+    expect(scrapRes.body.data.status).toBe('CLOSED');
+    expect(scrapRes.body.data.scrap_journal_id).toBeDefined();
+
+    // 7. Create Passing Inspection Lot 2
+    const lot2Res = await makeRequest(
+      'POST',
+      '/api/quality/lots',
+      {
+        item_id: item.id,
+        quantity: '200.00000000',
+        batch_number: 'BATCH-PASS-01',
+        source_type: 'GRN',
+      },
+      adminToken,
+    );
+    expect(lot2Res.status).toBe(201);
+    const lot2Id = lot2Res.body.data.id;
+
+    // 8. Perform QA on Lot 2 with in-spec value (99.20%) -> Should ACCEPT
+    const inspect2Res = await makeRequest(
+      'POST',
+      `/api/quality/lots/${lot2Id}/inspect`,
+      {
+        usage_decision_notes: 'Passed all certified specifications',
+        results: [
+          {
+            param_name: 'Purity Percentage',
+            measured_numeric_value: '99.20000000',
+          },
+        ],
+      },
+      adminToken,
+    );
+    expect(inspect2Res.status).toBe(200);
+    expect(inspect2Res.body.data.status).toBe('ACCEPTED');
+    expect(inspect2Res.body.data.all_mandatory_passed).toBe(true);
+
+    // 9. Issue Certificate of Analysis (CoA)
+    const coaRes = await makeRequest(
+      'POST',
+      '/api/quality/coa',
+      {
+        lot_id: lot2Id,
+        certified_by: 'Lead Quality Inspector',
+      },
+      adminToken,
+    );
+    expect(coaRes.status).toBe(201);
+    expect(coaRes.body.data.status).toBe('ISSUED');
+
+    // 10. Verify Trial Balance is balanced
+    const tbRes = await makeRequest('GET', '/api/ledger/trial-balance?as_of_date=2026-03-31', undefined, controllerToken);
+    expect(tbRes.status).toBe(200);
+    expect(tbRes.body.data.is_balanced).toBe(true);
+    expect(tbRes.body.data.net_difference).toBe('0.00');
+  });
+
+  it('Plant Maintenance (PM) Workflow: Equipment Register -> PM Schedule -> Work Order with Parts & Labor -> Completion GL Settlement -> Calibration Log -> Verify Trial Balance (M9)', async () => {
+    // 1. Fetch spare part item from catalog
+    const itemsRes = await makeRequest('GET', '/api/items', undefined, accountantToken);
+    expect(itemsRes.status).toBe(200);
+    const spareItem = itemsRes.body.data[0];
+    expect(spareItem).toBeDefined();
+
+    // 2. Register Maintenance Equipment
+    const equipRes = await makeRequest(
+      'POST',
+      '/api/maintenance/equipment',
+      {
+        equipment_code: 'EQ-LATHE-01',
+        name: 'Precision Heavy Lathe Machine',
+        category: 'MACHINERY',
+        location: 'Bay 3 Workshop',
+        criticality: 'HIGH',
+        serial_number: 'SN-DMG-9921',
+      },
+      adminToken,
+    );
+    expect(equipRes.status).toBe(201);
+    expect(equipRes.body.data.status).toBe('OPERATIONAL');
+    const equipId = equipRes.body.data.id;
+
+    // 3. Create Preventive Maintenance Schedule (Every 30 Days)
+    const schedRes = await makeRequest(
+      'POST',
+      '/api/maintenance/schedules',
+      {
+        equipment_id: equipId,
+        schedule_name: 'Monthly Spindle Lubrication & Alignment',
+        frequency_type: 'TIME_BASED_DAYS',
+        frequency_interval: '30',
+      },
+      adminToken,
+    );
+    expect(schedRes.status).toBe(201);
+    expect(schedRes.body.data.status).toBe('ACTIVE');
+
+    // 4. Create Maintenance Work Order with Parts & Labor
+    // Parts: 2 units @ 3,000 PKR = 6,000 PKR
+    // Labor: 5 hours @ 2,000 PKR/hr = 10,000 PKR
+    // Total Cost = 16,000 PKR
+    const woRes = await makeRequest(
+      'POST',
+      '/api/maintenance/work-orders',
+      {
+        equipment_id: equipId,
+        order_type: 'PREVENTIVE',
+        priority: 'MEDIUM',
+        description: 'Monthly 30-day preventive servicing and seal replacement',
+        parts: [
+          {
+            item_id: spareItem.id,
+            quantity: '2.00000000',
+            unit_cost: '3000.00000000',
+          },
+        ],
+        labor: [
+          {
+            technician_name: 'Senior Maintenance Specialist',
+            labor_hours: '5.00000000',
+            hourly_rate: '2000.00000000',
+          },
+        ],
+      },
+      adminToken,
+    );
+    expect(woRes.status).toBe(201);
+    expect(woRes.body.data.status).toBe('IN_PROGRESS');
+    expect(new Money(woRes.body.data.total_cost).format()).toBe('16000.00');
+    const woId = woRes.body.data.id;
+
+    // Verify equipment status changed to UNDER_MAINTENANCE
+    const equipCheckRes = await makeRequest('GET', '/api/maintenance/equipment', undefined, adminToken);
+    const updatedEquip = equipCheckRes.body.data.find((e: any) => e.id === equipId);
+    expect(updatedEquip.status).toBe('UNDER_MAINTENANCE');
+
+    // 5. Complete Work Order & Post Balanced Maintenance Settlement GL Journal
+    const completeRes = await makeRequest(
+      'POST',
+      `/api/maintenance/work-orders/${woId}/complete`,
+      {
+        downtime_hours: '3.50000000',
+      },
+      adminToken,
+    );
+    expect(completeRes.status).toBe(200);
+    expect(completeRes.body.data.status).toBe('COMPLETED');
+    expect(completeRes.body.data.settlement_journal_id).toBeDefined();
+
+    // Verify equipment status reset to OPERATIONAL
+    const equipResetRes = await makeRequest('GET', '/api/maintenance/equipment', undefined, adminToken);
+    const resetEquip = equipResetRes.body.data.find((e: any) => e.id === equipId);
+    expect(resetEquip.status).toBe('OPERATIONAL');
+
+    // 6. Log Equipment Calibration Certificate
+    const calibRes = await makeRequest(
+      'POST',
+      '/api/maintenance/calibrations',
+      {
+        equipment_id: equipId,
+        calibration_certificate_no: 'CAL-CERT-2026-9901',
+        calibration_agency: 'National Calibration Authority',
+        result: 'PASS',
+        notes: 'Passed ISO 17025 precision calibration standards',
+      },
+      adminToken,
+    );
+    expect(calibRes.status).toBe(201);
+    expect(calibRes.body.data.result).toBe('PASS');
+
+    // 7. Verify Trial Balance is strictly balanced
+    const tbRes = await makeRequest('GET', '/api/ledger/trial-balance?as_of_date=2026-03-31', undefined, controllerToken);
+    expect(tbRes.status).toBe(200);
+    expect(tbRes.body.data.is_balanced).toBe(true);
+    expect(tbRes.body.data.net_difference).toBe('0.00');
+  });
 });
 
 

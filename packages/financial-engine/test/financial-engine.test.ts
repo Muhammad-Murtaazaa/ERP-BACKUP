@@ -17,6 +17,8 @@ import {
   ProjectsEngine,
   FixedAssetsEngine,
   POSEngine,
+  QualityEngine,
+  MaintenanceEngine,
 } from '../src/index.js';
 import {
   Account,
@@ -1051,6 +1053,126 @@ describe('Financial Engine: Point of Sale (POS) & Cashier Shifts', () => {
     }
     expect(totalDr.format()).toBe('40000.00');
     expect(totalCr.format()).toBe('40000.00');
+  });
+});
+
+describe('Financial Engine: Quality Management & Inspection Lots (M8)', () => {
+  it('validates measured parameters against tolerances accurately', () => {
+    // Spec: Thickness 5.00mm, Min: 4.80, Max: 5.20
+    const spec = {
+      param_name: 'Thickness',
+      data_type: 'NUMERIC' as const,
+      min_tolerance: '4.80000000',
+      max_tolerance: '5.20000000',
+      is_mandatory: true,
+    };
+
+    const passMeas = { param_name: 'Thickness', measured_numeric_value: '5.05000000' };
+    expect(QualityEngine.validateParameter(spec, passMeas).is_pass).toBe(true);
+
+    const failMeasLow = { param_name: 'Thickness', measured_numeric_value: '4.75000000' };
+    expect(QualityEngine.validateParameter(spec, failMeasLow).is_pass).toBe(false);
+
+    const failMeasHigh = { param_name: 'Thickness', measured_numeric_value: '5.30000000' };
+    expect(QualityEngine.validateParameter(spec, failMeasHigh).is_pass).toBe(false);
+  });
+
+  it('evaluates entire inspection lot and generates balanced scrap write-off journal on rejection', () => {
+    const specs = [
+      { param_name: 'Purity', data_type: 'NUMERIC' as const, min_tolerance: '99.00', max_tolerance: '100.00', is_mandatory: true },
+      { param_name: 'Visual Inspection', data_type: 'BOOLEAN' as const, is_mandatory: true },
+    ];
+
+    // Case 1: Pass
+    const passLot = QualityEngine.evaluateLot(specs, [
+      { param_name: 'Purity', measured_numeric_value: '99.50' },
+      { param_name: 'Visual Inspection', measured_text_value: 'PASS' },
+    ]);
+    expect(passLot.overall_status).toBe('ACCEPTED');
+    expect(passLot.all_mandatory_passed).toBe(true);
+
+    // Case 2: Fail -> NCR / Scrap
+    const failLot = QualityEngine.evaluateLot(specs, [
+      { param_name: 'Purity', measured_numeric_value: '97.20' }, // Out of spec!
+      { param_name: 'Visual Inspection', measured_text_value: 'PASS' },
+    ]);
+    expect(failLot.overall_status).toBe('REJECTED');
+    expect(failLot.all_mandatory_passed).toBe(false);
+
+    // Generate balanced scrap write-off voucher: 50 units @ 1,200 PKR = 60,000 PKR
+    const scrapDraft = QualityEngine.generateScrapWriteOffJournal({
+      organization_id: 'org-1',
+      legal_entity_id: 'le-1',
+      period_id: 'per-1',
+      posting_date: '2026-03-31',
+      ncr_number: 'NCR-2026-001',
+      item_code: 'RM-STEEL-01',
+      item_name: 'High Tensile Steel Rods',
+      quantity: '50.00000000',
+      unit_cost: '1200.00000000',
+      scrap_expense_account_id: 'acc-scrap-511003',
+      inventory_account_id: 'acc-inv-113002',
+    });
+
+    let totalDr = Money.zero();
+    let totalCr = Money.zero();
+    for (const l of scrapDraft.lines) {
+      totalDr = totalDr.add(new Money(l.debit_amount));
+      totalCr = totalCr.add(new Money(l.credit_amount));
+    }
+    expect(totalDr.format()).toBe('60000.00');
+    expect(totalCr.format()).toBe('60000.00');
+  });
+});
+
+describe('Financial Engine: Plant Maintenance & Equipment Engineering (M9)', () => {
+  it('calculates work order parts and technician labor costing with exact precision', () => {
+    const parts = [
+      { quantity: '2.00000000', unit_cost: '4500.00000000' }, // 9,000
+      { quantity: '1.00000000', unit_cost: '6000.00000000' }, // 6,000 => Parts = 15,000
+    ];
+    const labor = [
+      { labor_hours: '8.00000000', hourly_rate: '2500.00000000' }, // 20,000
+      { labor_hours: '4.00000000', hourly_rate: '1500.00000000' }, // 6,000 => Labor = 26,000
+    ];
+
+    const costing = MaintenanceEngine.calculateWorkOrderCost(parts, labor);
+    expect(costing.total_parts_cost).toBe('15000.00000000');
+    expect(costing.total_labor_cost).toBe('26000.00000000');
+    expect(costing.total_cost).toBe('41000.00000000');
+  });
+
+  it('calculates PM next due date accurately', () => {
+    const nextDate = MaintenanceEngine.calculateNextDueDate('2026-03-01', 30);
+    expect(nextDate).toBe('2026-03-31');
+  });
+
+  it('generates balanced General Ledger maintenance settlement journal', () => {
+    // Parts: 15,000, Labor: 26,000 => Total Maintenance Expense = 41,000
+    const draft = MaintenanceEngine.generateSettlementJournal({
+      organization_id: 'org-1',
+      legal_entity_id: 'le-1',
+      period_id: 'per-1',
+      posting_date: '2026-03-31',
+      work_order_number: 'WO-PM-2026-001',
+      equipment_code: 'CNC-MILL-01',
+      equipment_name: '5-Axis CNC Milling Station',
+      total_parts_cost: '15000.00000000',
+      total_labor_cost: '26000.00000000',
+      maint_expense_account_id: 'acc-maint-521005',
+      spare_parts_inventory_account_id: 'acc-spares-113002',
+      labor_clearing_account_id: 'acc-salaries-211004',
+    });
+
+    let totalDr = Money.zero();
+    let totalCr = Money.zero();
+    for (const l of draft.lines) {
+      totalDr = totalDr.add(new Money(l.debit_amount));
+      totalCr = totalCr.add(new Money(l.credit_amount));
+    }
+    expect(totalDr.format()).toBe('41000.00');
+    expect(totalCr.format()).toBe('41000.00');
+    expect(draft.lines).toHaveLength(3);
   });
 });
 

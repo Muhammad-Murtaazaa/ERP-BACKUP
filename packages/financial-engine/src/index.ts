@@ -12,3 +12,5 @@ export * from './inventory.js';
 export * from './projects.js';
 export * from './assets.js';
 export * from './pos.js';
+export * from './quality.js';
+export * from './maintenance.js';

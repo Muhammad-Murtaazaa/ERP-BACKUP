@@ -71,6 +71,8 @@ export const AccountingPurpose = {
   FIXED_ASSET_DEPRECIATION: 'FIXED_ASSET_DEPRECIATION',
   FIXED_ASSET_DISPOSAL: 'FIXED_ASSET_DISPOSAL',
   POS_SESSION_CLOSE: 'POS_SESSION_CLOSE',
+  QUALITY_SCRAP_WRITEOFF: 'QUALITY_SCRAP_WRITEOFF',
+  MAINTENANCE_EXPENSE_SETTLEMENT: 'MAINTENANCE_EXPENSE_SETTLEMENT',
 } as const;
 export type AccountingPurpose = (typeof AccountingPurpose)[keyof typeof AccountingPurpose];
 
@@ -1044,6 +1046,215 @@ export interface POSOrder {
 }
 
 // ==========================================
+// M8: Quality Management (QM)
+// ==========================================
+export type InspectionType = 'RECEIVING' | 'IN_PROCESS' | 'FINAL';
+export type ParamDataType = 'NUMERIC' | 'BOOLEAN' | 'TEXT';
+export type InspectionLotStatus = 'PENDING' | 'IN_INSPECTION' | 'ACCEPTED' | 'REJECTED' | 'CONDITIONALLY_ACCEPTED';
+export type NCRSeverity = 'MINOR' | 'MAJOR' | 'CRITICAL';
+export type NCRDisposition = 'REWORK' | 'SCRAP' | 'RETURN_TO_VENDOR' | 'USE_AS_IS';
+export type NCRStatus = 'DRAFT' | 'OPEN' | 'RESOLVED' | 'CLOSED';
+export type CoAStatus = 'DRAFT' | 'ISSUED' | 'VOID';
+
+export interface QualityInspectionPlanParam {
+  id?: string;
+  plan_id?: string;
+  param_name: string;
+  data_type: ParamDataType;
+  target_value?: string | null;
+  min_tolerance?: string | null;
+  max_tolerance?: string | null;
+  uom?: string | null;
+  is_mandatory: boolean;
+}
+
+export interface QualityInspectionPlan {
+  id: string;
+  organization_id: string;
+  plan_code: string;
+  name: string;
+  item_id?: string | null;
+  item_name?: string | null;
+  inspection_type: InspectionType;
+  sample_size: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  params?: QualityInspectionPlanParam[];
+  created_at?: string;
+}
+
+export interface QualityInspectionResult {
+  id?: string;
+  lot_id?: string;
+  param_name: string;
+  measured_numeric_value?: string | null;
+  measured_text_value?: string | null;
+  is_pass: boolean;
+  inspector_notes?: string | null;
+}
+
+export interface QualityInspectionLot {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string;
+  lot_number: string;
+  source_type: 'GRN' | 'WORK_ORDER' | 'MANUAL';
+  source_id?: string | null;
+  item_id: string;
+  item_code?: string;
+  item_name?: string;
+  batch_number?: string | null;
+  quantity: string;
+  status: InspectionLotStatus;
+  usage_decision_notes?: string | null;
+  inspector_id?: string | null;
+  inspector_name?: string | null;
+  inspected_at?: string | null;
+  results?: QualityInspectionResult[];
+  created_at?: string;
+}
+
+export interface QualityNCR {
+  id: string;
+  organization_id: string;
+  ncr_number: string;
+  lot_id: string;
+  lot_number?: string;
+  item_id: string;
+  item_name?: string;
+  defect_severity: NCRSeverity;
+  root_cause?: string | null;
+  corrective_action?: string | null;
+  disposition: NCRDisposition;
+  status: NCRStatus;
+  scrap_journal_id?: string | null;
+  created_by?: string | null;
+  created_at?: string;
+}
+
+export interface QualityCoA {
+  id: string;
+  organization_id: string;
+  coa_number: string;
+  lot_id: string;
+  lot_number?: string;
+  item_id: string;
+  item_name?: string;
+  customer_id?: string | null;
+  customer_name?: string | null;
+  issue_date: string;
+  certified_by: string;
+  status: CoAStatus;
+  results?: QualityInspectionResult[];
+  created_at?: string;
+}
+
+// ==========================================
+// M9: Plant Maintenance & Equipment Engineering (PM)
+// ==========================================
+export type EquipmentCategory = 'MACHINERY' | 'VEHICLE' | 'ELECTRICAL' | 'HVAC';
+export type EquipmentCriticality = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type EquipmentStatus = 'OPERATIONAL' | 'UNDER_MAINTENANCE' | 'DECOMMISSIONED';
+export type PMFrequencyType = 'TIME_BASED_DAYS' | 'METER_USAGE_HOURS';
+export type MaintenanceOrderType = 'PREVENTIVE' | 'CORRECTIVE' | 'BREAKDOWN' | 'CALIBRATION';
+export type MaintenancePriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'EMERGENCY';
+export type MaintenanceOrderStatus = 'DRAFT' | 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+
+export interface MaintenanceEquipment {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string;
+  equipment_code: string;
+  name: string;
+  fixed_asset_id?: string | null;
+  fixed_asset_name?: string | null;
+  category: EquipmentCategory;
+  location?: string | null;
+  criticality: EquipmentCriticality;
+  status: EquipmentStatus;
+  operating_hours: string;
+  serial_number?: string | null;
+  created_at?: string;
+}
+
+export interface PMSchedule {
+  id: string;
+  organization_id: string;
+  equipment_id: string;
+  equipment_code?: string;
+  equipment_name?: string;
+  schedule_name: string;
+  frequency_type: PMFrequencyType;
+  frequency_interval: string;
+  last_performed_date?: string | null;
+  next_due_date: string;
+  checklist_json?: any;
+  status: 'ACTIVE' | 'PAUSED';
+  created_at?: string;
+}
+
+export interface MaintOrderPart {
+  id?: string;
+  work_order_id?: string;
+  item_id: string;
+  item_code?: string;
+  item_name?: string;
+  quantity: string;
+  unit_cost: string;
+  total_cost: string;
+}
+
+export interface MaintOrderLabor {
+  id?: string;
+  work_order_id?: string;
+  technician_name: string;
+  labor_hours: string;
+  hourly_rate: string;
+  total_cost: string;
+}
+
+export interface MaintenanceWorkOrder {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string;
+  work_order_number: string;
+  equipment_id: string;
+  equipment_code?: string;
+  equipment_name?: string;
+  pm_schedule_id?: string | null;
+  order_type: MaintenanceOrderType;
+  priority: MaintenancePriority;
+  status: MaintenanceOrderStatus;
+  description: string;
+  failure_code?: string | null;
+  start_date?: string | null;
+  completion_date?: string | null;
+  total_parts_cost: string;
+  total_labor_cost: string;
+  total_cost: string;
+  downtime_hours: string;
+  settlement_journal_id?: string | null;
+  created_by?: string | null;
+  parts?: MaintOrderPart[];
+  labor?: MaintOrderLabor[];
+  created_at?: string;
+}
+
+export interface EquipmentCalibration {
+  id: string;
+  organization_id: string;
+  equipment_id: string;
+  equipment_code?: string;
+  equipment_name?: string;
+  calibration_certificate_no: string;
+  calibration_date: string;
+  expiry_date: string;
+  calibration_agency: string;
+  result: 'PASS' | 'FAIL';
+  notes?: string | null;
+  created_at?: string;
+}
+
+// ==========================================
 // Organization, Legal Entity, User & Auth
 // ==========================================
 export const UserRole = {
@@ -1056,6 +1267,8 @@ export const UserRole = {
   PRODUCTION_MANAGER: 'PRODUCTION_MANAGER',
   WAREHOUSE_OPERATOR: 'WAREHOUSE_OPERATOR',
   PROJECT_MANAGER: 'PROJECT_MANAGER',
+  QUALITY_MANAGER: 'QUALITY_MANAGER',
+  MAINTENANCE_ENGINEER: 'MAINTENANCE_ENGINEER',
   CASHIER: 'CASHIER',
   AUDITOR: 'AUDITOR',
   VIEWER: 'VIEWER',
@@ -1118,6 +1331,16 @@ export const Permission = {
   POS_TERMINAL: 'pos.terminal',
   POS_REGISTER_MANAGE: 'pos.register.manage',
   POS_SESSION_CLOSE: 'pos.session.close',
+  // Quality Management (M8)
+  QUALITY_PLAN_MANAGE: 'quality.plan.manage',
+  QUALITY_INSPECT: 'quality.inspect',
+  QUALITY_NCR_MANAGE: 'quality.ncr.manage',
+  QUALITY_COA_MANAGE: 'quality.coa.manage',
+  // Plant Maintenance (M9)
+  EQUIPMENT_MANAGE: 'equipment.manage',
+  PM_SCHEDULE_MANAGE: 'pm.schedule.manage',
+  MAINT_WORK_ORDER_MANAGE: 'maint.workorder.manage',
+  CALIBRATION_MANAGE: 'calibration.manage',
   // Audit
   AUDIT_VIEW: 'audit.view',
 } as const;
@@ -1169,6 +1392,13 @@ export const ErrorCode = {
   POS_SESSION_ALREADY_OPEN: 'POS_SESSION_ALREADY_OPEN',
   POS_SESSION_CLOSED: 'POS_SESSION_CLOSED',
   INSUFFICIENT_PAYMENT_TENDER: 'INSUFFICIENT_PAYMENT_TENDER',
+  LOT_NOT_FOUND: 'LOT_NOT_FOUND',
+  LOT_ALREADY_INSPECTED: 'LOT_ALREADY_INSPECTED',
+  NCR_NOT_FOUND: 'NCR_NOT_FOUND',
+  NCR_ALREADY_CLOSED: 'NCR_ALREADY_CLOSED',
+  EQUIPMENT_NOT_FOUND: 'EQUIPMENT_NOT_FOUND',
+  WORK_ORDER_ALREADY_COMPLETED: 'WORK_ORDER_ALREADY_COMPLETED',
+  WORK_ORDER_ALREADY_CANCELLED: 'WORK_ORDER_ALREADY_CANCELLED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
