@@ -22,6 +22,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.PURCHASE_ORDER_MANAGE,
     Permission.AR_INVOICE_MANAGE,
     Permission.AP_INVOICE_MANAGE,
+    Permission.PAYMENT_MANAGE,
     Permission.TREASURY_BANK_RECONCILE,
     Permission.TREASURY_FX_MANAGE,
     Permission.ONBOARDING_MANAGE,
@@ -57,6 +58,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.PM_SCHEDULE_MANAGE,
     Permission.MAINT_WORK_ORDER_MANAGE,
     Permission.CALIBRATION_MANAGE,
+    Permission.AUTOMATION_VIEW,
+    Permission.AUTOMATION_MANAGE,
+    Permission.AUTOMATION_RUN,
     Permission.AUDIT_VIEW,
   ],
   [UserRole.CONTROLLER]: [
@@ -112,6 +116,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.PM_SCHEDULE_MANAGE,
     Permission.MAINT_WORK_ORDER_MANAGE,
     Permission.CALIBRATION_MANAGE,
+    Permission.AUTOMATION_VIEW,
+    Permission.AUTOMATION_MANAGE,
+    Permission.AUTOMATION_RUN,
     Permission.AUDIT_VIEW,
   ],
   [UserRole.HR_MANAGER]: [
@@ -217,6 +224,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   [UserRole.AUDITOR]: [
     Permission.FINANCE_COA_VIEW,
     Permission.FINANCE_REPORTS_VIEW,
+    Permission.AUTOMATION_VIEW,
     Permission.AUDIT_VIEW,
   ],
   [UserRole.VIEWER]: [
@@ -225,13 +233,40 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
 };
 
+/** Default session lifetime: 8 hours. */
+export const SESSION_TTL_SECONDS = 8 * 60 * 60;
+
+const DEV_ONLY_SECRET = 'omnysync-dev-only-session-secret-change-me-0001';
+
+/**
+ * Resolves the HMAC session secret. Production refuses to start without an explicit
+ * secret of at least 32 characters (SECURITY.md: no fixed shared secrets).
+ */
+export function resolveSessionSecret(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env.OMNYSYNC_SESSION_SECRET;
+  if (configured && configured.length >= 32) return configured;
+  if (env.NODE_ENV === 'production') {
+    throw new Error('OMNYSYNC_SESSION_SECRET (>= 32 chars) must be configured in production');
+  }
+  return DEV_ONLY_SECRET;
+}
+
 export class AuthService {
   private db: DbClient;
   private secret: string;
+  private ttlSeconds: number;
 
-  constructor(db: DbClient, secret: string = 'omnysync-dev-jwt-secret-key-32-chars-min') {
+  constructor(db: DbClient, secret: string = resolveSessionSecret(), ttlSeconds: number = SESSION_TTL_SECONDS) {
+    if (!secret || secret.length < 32) {
+      throw new Error('Session secret must be at least 32 characters');
+    }
     this.db = db;
     this.secret = secret;
+    this.ttlSeconds = ttlSeconds;
+  }
+
+  get database(): DbClient {
+    return this.db;
   }
 
   static hashPassword(password: string): string {
@@ -241,48 +276,65 @@ export class AuthService {
   }
 
   static verifyPassword(password: string, combinedHash: string): boolean {
-    const [salt, hash] = combinedHash.split(':');
-    if (!salt || !hash) return false;
+    const [salt, hash] = String(combinedHash || '').split(':');
+    if (!salt || !hash || !/^[0-9a-f]+$/i.test(hash) || hash.length !== 128) return false;
     const verifyHash = crypto.scryptSync(password, salt, 64).toString('hex');
     return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(verifyHash, 'hex'));
   }
 
   /**
-   * Generates a signed tamper-proof session token.
+   * Burns comparable CPU time when a login email is unknown so response timing does
+   * not reveal which accounts exist.
    */
-  generateSessionToken(session: AuthSession): string {
-    const payload = Buffer.from(JSON.stringify(session)).toString('base64url');
+  static dummyVerify(password: string): void {
+    crypto.scryptSync(password, '00000000000000000000000000000000', 64);
+  }
+
+  /**
+   * Generates a signed tamper-proof session token with issued-at and expiry claims.
+   */
+  generateSessionToken(session: AuthSession, nowSeconds: number = Math.floor(Date.now() / 1000)): string {
+    const claims: AuthSession = { ...session, iat: nowSeconds, exp: nowSeconds + this.ttlSeconds };
+    const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
     const signature = crypto.createHmac('sha256', this.secret).update(payload).digest('base64url');
     return `${payload}.${signature}`;
   }
 
   /**
-   * Verifies and extracts session payload from token.
+   * Verifies signature and expiry and extracts the session payload from a token.
    */
-  verifySessionToken(token: string): AuthSession | null {
+  verifySessionToken(token: string, nowSeconds: number = Math.floor(Date.now() / 1000)): AuthSession | null {
     try {
-      const [payload, signature] = token.split('.');
+      if (typeof token !== 'string' || token.length > 8192) return null;
+      const parts = token.split('.');
+      if (parts.length !== 2) return null;
+      const [payload, signature] = parts;
       if (!payload || !signature) return null;
 
       const expectedSig = crypto.createHmac('sha256', this.secret).update(payload).digest('base64url');
-      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) {
+      const a = Buffer.from(signature);
+      const b = Buffer.from(expectedSig);
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
         return null;
       }
 
-      const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf-8'));
-      return decoded as AuthSession;
+      const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf-8')) as AuthSession;
+      if (typeof decoded.exp !== 'number' || decoded.exp <= nowSeconds) return null;
+      if (!decoded.user_id || !decoded.organization_id) return null;
+      return decoded;
     } catch {
       return null;
     }
   }
 
   /**
-   * Resolves complete permissions for a user from their roles.
+   * Resolves complete permissions for a user from their roles. Unknown role names
+   * grant nothing (deny by default).
    */
   static resolvePermissions(roles: UserRole[]): string[] {
     const perms = new Set<string>();
-    for (const role of roles) {
-      const rolePerms = ROLE_PERMISSIONS[role] || [];
+    for (const role of roles || []) {
+      const rolePerms = Object.prototype.hasOwnProperty.call(ROLE_PERMISSIONS, role) ? ROLE_PERMISSIONS[role] : [];
       for (const p of rolePerms) {
         perms.add(p);
       }
@@ -294,6 +346,6 @@ export class AuthService {
    * Checks if session has required permission.
    */
   static hasPermission(session: AuthSession, permission: Permission): boolean {
-    return session.permissions.includes(permission);
+    return Array.isArray(session.permissions) && session.permissions.includes(permission);
   }
 }

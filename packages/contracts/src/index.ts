@@ -1341,6 +1341,10 @@ export const Permission = {
   PM_SCHEDULE_MANAGE: 'pm.schedule.manage',
   MAINT_WORK_ORDER_MANAGE: 'maint.workorder.manage',
   CALIBRATION_MANAGE: 'calibration.manage',
+  // Automation, approvals & scheduled jobs
+  AUTOMATION_VIEW: 'automation.view',
+  AUTOMATION_MANAGE: 'automation.manage',
+  AUTOMATION_RUN: 'automation.run',
   // Audit
   AUDIT_VIEW: 'audit.view',
 } as const;
@@ -1354,6 +1358,10 @@ export interface AuthSession {
   legal_entity_id: string;
   roles: UserRole[];
   permissions: string[];
+  /** Issued-at (epoch seconds). */
+  iat?: number;
+  /** Expiry (epoch seconds). Tokens without a valid future expiry are rejected. */
+  exp?: number;
 }
 
 // ==========================================
@@ -1399,6 +1407,14 @@ export const ErrorCode = {
   EQUIPMENT_NOT_FOUND: 'EQUIPMENT_NOT_FOUND',
   WORK_ORDER_ALREADY_COMPLETED: 'WORK_ORDER_ALREADY_COMPLETED',
   WORK_ORDER_ALREADY_CANCELLED: 'WORK_ORDER_ALREADY_CANCELLED',
+  INVALID_STATE: 'INVALID_STATE',
+  SEGREGATION_OF_DUTIES: 'SEGREGATION_OF_DUTIES',
+  IDEMPOTENCY_CONFLICT: 'IDEMPOTENCY_CONFLICT',
+  DUPLICATE_RESOURCE: 'DUPLICATE_RESOURCE',
+  MAPPING_MISSING: 'MAPPING_MISSING',
+  CREDIT_LIMIT_EXCEEDED: 'CREDIT_LIMIT_EXCEEDED',
+  RATE_LIMITED: 'RATE_LIMITED',
+  MODULE_NOT_READY: 'MODULE_NOT_READY',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
