@@ -19,6 +19,8 @@ import {
   BankReconciliationEngine,
   FxEngine,
   PayrollEngine,
+  ManufacturingEngine,
+  InventoryReconciliationEngine,
 } from '@omnysync/financial-engine';
 import {
   ErrorCode,
@@ -3537,7 +3539,936 @@ app.post('/api/hrm/payroll-runs/:id/disburse', authenticate, requirePermission(P
 });
 
 // ==========================================
-// 19. Admin & Seed Execution
+// 19. Advanced Inventory, Warehouses, Lots, Counts & Manufacturing
+// ==========================================
+
+// 19.1 Warehouses, Zones & Bins
+app.get('/api/inventory/warehouses', authenticate, async (req: Request, res: Response) => {
+  const warehousesResult = await db.query(
+    `SELECT * FROM warehouses WHERE organization_id = $1 ORDER BY is_default DESC, name ASC`,
+    [req.session!.organization_id],
+  );
+  const warehouses = warehousesResult.rows;
+
+  // Enrich with zones and bins
+  for (const wh of warehouses) {
+    const zonesRes = await db.query(
+      `SELECT * FROM warehouse_zones WHERE warehouse_id = $1 ORDER BY code ASC`,
+      [wh.id],
+    );
+    const binsRes = await db.query(
+      `SELECT b.*, z.name as zone_name FROM warehouse_bins b LEFT JOIN warehouse_zones z ON b.zone_id = z.id WHERE b.warehouse_id = $1 ORDER BY b.bin_code ASC`,
+      [wh.id],
+    );
+    wh.zones = zonesRes.rows;
+    wh.bins = binsRes.rows;
+  }
+
+  return res.json({
+    success: true,
+    data: warehouses,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/inventory/warehouses', authenticate, requirePermission(Permission.WAREHOUSE_MANAGE), async (req: Request, res: Response) => {
+  const { code, name, address, is_default } = req.body;
+  if (!code || !name) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'Code and Name are required', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const result = await db.query(
+    `INSERT INTO warehouses (code, name, address, is_default, organization_id)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [code, name, address || null, !!is_default, req.session!.organization_id],
+  );
+
+  return res.status(201).json({
+    success: true,
+    data: result.rows[0],
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/inventory/warehouses/:id/zones', authenticate, requirePermission(Permission.WAREHOUSE_MANAGE), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { code, name, zone_type } = req.body;
+
+  const result = await db.query(
+    `INSERT INTO warehouse_zones (warehouse_id, code, name, zone_type)
+     VALUES ($1, $2, $3, $4) RETURNING *`,
+    [id, code, name, zone_type || 'STORAGE'],
+  );
+
+  return res.status(201).json({
+    success: true,
+    data: result.rows[0],
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/inventory/warehouses/:id/bins', authenticate, requirePermission(Permission.WAREHOUSE_MANAGE), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { zone_id, bin_code, max_weight_capacity } = req.body;
+
+  const result = await db.query(
+    `INSERT INTO warehouse_bins (warehouse_id, zone_id, bin_code, max_weight_capacity)
+     VALUES ($1, $2, $3, $4) RETURNING *`,
+    [id, zone_id || null, bin_code, max_weight_capacity || null],
+  );
+
+  return res.status(201).json({
+    success: true,
+    data: result.rows[0],
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+// 19.2 Lots & Serials
+app.get('/api/inventory/lots', authenticate, async (req: Request, res: Response) => {
+  const result = await db.query(
+    `SELECT l.*, i.code as item_code, i.name as item_name 
+     FROM item_lots l 
+     JOIN items i ON l.item_id = i.id 
+     WHERE l.organization_id = $1 
+     ORDER BY l.created_at DESC`,
+    [req.session!.organization_id],
+  );
+
+  return res.json({
+    success: true,
+    data: result.rows,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/inventory/lots', authenticate, requirePermission(Permission.INVENTORY_MANAGE), async (req: Request, res: Response) => {
+  const { item_id, lot_number, manufacture_date, expiry_date, status } = req.body;
+  if (!item_id || !lot_number) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'Item and lot number are required', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const result = await db.query(
+    `INSERT INTO item_lots (item_id, lot_number, manufacture_date, expiry_date, status, organization_id)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [item_id, lot_number, manufacture_date || null, expiry_date || null, status || 'AVAILABLE', req.session!.organization_id],
+  );
+
+  return res.status(201).json({
+    success: true,
+    data: result.rows[0],
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.get('/api/inventory/serials', authenticate, async (req: Request, res: Response) => {
+  const result = await db.query(
+    `SELECT s.*, i.code as item_code, i.name as item_name, w.name as warehouse_name, b.bin_code 
+     FROM item_serials s 
+     JOIN items i ON s.item_id = i.id 
+     LEFT JOIN warehouses w ON s.warehouse_id = w.id 
+     LEFT JOIN warehouse_bins b ON s.bin_id = b.id 
+     WHERE s.organization_id = $1 
+     ORDER BY s.created_at DESC`,
+    [req.session!.organization_id],
+  );
+
+  return res.json({
+    success: true,
+    data: result.rows,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/inventory/serials', authenticate, requirePermission(Permission.INVENTORY_MANAGE), async (req: Request, res: Response) => {
+  const { item_id, serial_number, warehouse_id, bin_id, status } = req.body;
+  if (!item_id || !serial_number) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'Item and serial number are required', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const result = await db.query(
+    `INSERT INTO item_serials (item_id, serial_number, warehouse_id, bin_id, status, organization_id)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [item_id, serial_number, warehouse_id || null, bin_id || null, status || 'IN_STOCK', req.session!.organization_id],
+  );
+
+  return res.status(201).json({
+    success: true,
+    data: result.rows[0],
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+// 19.3 Inter-Warehouse Stock Transfers
+app.get('/api/inventory/transfers', authenticate, async (req: Request, res: Response) => {
+  const transfersRes = await db.query(
+    `SELECT t.*, sw.name as source_warehouse_name, dw.name as destination_warehouse_name 
+     FROM stock_transfers t 
+     JOIN warehouses sw ON t.source_warehouse_id = sw.id 
+     JOIN warehouses dw ON t.destination_warehouse_id = dw.id 
+     WHERE t.organization_id = $1 
+     ORDER BY t.created_at DESC`,
+    [req.session!.organization_id],
+  );
+  const transfers = transfersRes.rows;
+
+  for (const t of transfers) {
+    const itemsRes = await db.query(
+      `SELECT ti.*, i.code as item_code, i.name as item_name 
+       FROM stock_transfer_items ti 
+       JOIN items i ON ti.item_id = i.id 
+       WHERE ti.transfer_id = $1`,
+      [t.id],
+    );
+    t.items = itemsRes.rows;
+  }
+
+  return res.json({
+    success: true,
+    data: transfers,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/inventory/transfers', authenticate, requirePermission(Permission.INVENTORY_TRANSFER), async (req: Request, res: Response) => {
+  const { transfer_number, source_warehouse_id, destination_warehouse_id, transfer_date, notes, items } = req.body;
+  if (!source_warehouse_id || !destination_warehouse_id || !items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'Source, destination, and items are required', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const num = transfer_number || `TRF-${Date.now().toString().slice(-6)}`;
+  const date = transfer_date || new Date().toISOString().slice(0, 10);
+
+  const transferRes = await db.query(
+    `INSERT INTO stock_transfers (transfer_number, source_warehouse_id, destination_warehouse_id, transfer_date, notes, status, organization_id)
+     VALUES ($1, $2, $3, $4, $5, 'DRAFT', $6) RETURNING *`,
+    [num, source_warehouse_id, destination_warehouse_id, date, notes || null, req.session!.organization_id],
+  );
+  const transfer = transferRes.rows[0];
+
+  const insertedItems: any[] = [];
+  for (const it of items) {
+    const itemRes = await db.query(
+      `INSERT INTO stock_transfer_items (transfer_id, item_id, requested_qty, shipped_qty, received_qty, lot_id)
+       VALUES ($1, $2, $3, 0.00000000, 0.00000000, $4) RETURNING *`,
+      [transfer.id, it.item_id, it.requested_qty, it.lot_id || null],
+    );
+    insertedItems.push(itemRes.rows[0]);
+  }
+  transfer.items = insertedItems;
+
+  return res.status(201).json({
+    success: true,
+    data: transfer,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/inventory/transfers/:id/ship', authenticate, requirePermission(Permission.INVENTORY_TRANSFER), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const transferRes = await db.query(
+    `SELECT * FROM stock_transfers WHERE id = $1 AND organization_id = $2`,
+    [id, req.session!.organization_id],
+  );
+  if (transferRes.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: ErrorCode.RESOURCE_NOT_FOUND, message: 'Transfer not found', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const transfer = transferRes.rows[0];
+  if (transfer.status !== 'DRAFT') {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: `Cannot ship transfer in status ${transfer.status}`, correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  // Update shipped_qty = requested_qty and status = IN_TRANSIT
+  await db.query(
+    `UPDATE stock_transfer_items SET shipped_qty = requested_qty WHERE transfer_id = $1`,
+    [id],
+  );
+  await db.query(
+    `UPDATE stock_transfers SET status = 'IN_TRANSIT', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+    [id],
+  );
+
+  return res.json({
+    success: true,
+    data: { id, status: 'IN_TRANSIT' },
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/inventory/transfers/:id/receive', authenticate, requirePermission(Permission.INVENTORY_TRANSFER), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const transferRes = await db.query(
+    `SELECT * FROM stock_transfers WHERE id = $1 AND organization_id = $2`,
+    [id, req.session!.organization_id],
+  );
+  if (transferRes.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: ErrorCode.RESOURCE_NOT_FOUND, message: 'Transfer not found', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const transfer = transferRes.rows[0];
+  if (transfer.status !== 'IN_TRANSIT') {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: `Cannot receive transfer in status ${transfer.status}`, correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  // Update received_qty = shipped_qty and status = COMPLETED
+  await db.query(
+    `UPDATE stock_transfer_items SET received_qty = shipped_qty WHERE transfer_id = $1`,
+    [id],
+  );
+  await db.query(
+    `UPDATE stock_transfers SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+    [id],
+  );
+
+  return res.json({
+    success: true,
+    data: { id, status: 'COMPLETED' },
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+// 19.4 Physical Inventory Cycle Counts & Adjustments
+app.get('/api/inventory/counts', authenticate, async (req: Request, res: Response) => {
+  const countsRes = await db.query(
+    `SELECT c.*, w.name as warehouse_name 
+     FROM inventory_counts c 
+     JOIN warehouses w ON c.warehouse_id = w.id 
+     WHERE c.organization_id = $1 
+     ORDER BY c.created_at DESC`,
+    [req.session!.organization_id],
+  );
+  const counts = countsRes.rows;
+
+  for (const c of counts) {
+    const itemsRes = await db.query(
+      `SELECT ci.*, i.code as item_code, i.name as item_name 
+       FROM inventory_count_items ci 
+       JOIN items i ON ci.item_id = i.id 
+       WHERE ci.count_id = $1`,
+      [c.id],
+    );
+    c.items = itemsRes.rows;
+  }
+
+  return res.json({
+    success: true,
+    data: counts,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/inventory/counts', authenticate, requirePermission(Permission.INVENTORY_COUNT), async (req: Request, res: Response) => {
+  const { warehouse_id, period_id, count_date, count_number } = req.body;
+  if (!warehouse_id || !period_id) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'Warehouse and period are required', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const num = count_number || `CNT-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
+  const date = count_date || new Date().toISOString().slice(0, 10);
+
+  // Snapshot current items
+  const itemsRes = await db.query(
+    `SELECT id, unit_cost FROM items WHERE organization_id = $1 AND item_type = 'INVENTORY'`,
+    [req.session!.organization_id],
+  );
+
+  const countRes = await db.query(
+    `INSERT INTO inventory_counts (count_number, warehouse_id, period_id, count_date, status, organization_id)
+     VALUES ($1, $2, $3, $4, 'PLANNED', $5) RETURNING *`,
+    [num, warehouse_id, period_id, date, req.session!.organization_id],
+  );
+  const count = countRes.rows[0];
+
+  const insertedItems: any[] = [];
+  for (const it of itemsRes.rows) {
+    // Get aggregated stock on hand
+    const stockRes = await db.query(
+      `SELECT COALESCE(SUM(quantity), 0) as on_hand FROM stock_movements WHERE item_id = $1`,
+      [it.id],
+    );
+    const systemQty = stockRes.rows[0].on_hand.toString();
+
+    const cItemRes = await db.query(
+      `INSERT INTO inventory_count_items (count_id, item_id, system_qty, counted_qty, variance_qty, unit_cost, variance_value)
+       VALUES ($1, $2, $3, $3, 0.00000000, $4, 0.00000000) RETURNING *`,
+      [count.id, it.id, systemQty, it.unit_cost],
+    );
+    insertedItems.push(cItemRes.rows[0]);
+  }
+  count.items = insertedItems;
+
+  return res.status(201).json({
+    success: true,
+    data: count,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/inventory/counts/:id/record', authenticate, requirePermission(Permission.INVENTORY_COUNT), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { counts } = req.body; // Array of { item_id, counted_qty }
+
+  const countRes = await db.query(
+    `SELECT * FROM inventory_counts WHERE id = $1 AND organization_id = $2`,
+    [id, req.session!.organization_id],
+  );
+  if (countRes.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: ErrorCode.RESOURCE_NOT_FOUND, message: 'Count sheet not found', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const count = countRes.rows[0];
+  if (count.status === 'POSTED') {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.POSTED_FACT_IMMUTABLE, message: 'Count is already posted', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  // Update counted quantities and compute variances
+  const existingItemsRes = await db.query(`SELECT * FROM inventory_count_items WHERE count_id = $1`, [id]);
+  const countMap = new Map<string, string>();
+  for (const c of counts || []) {
+    countMap.set(c.item_id, c.counted_qty);
+  }
+
+  const itemsToCalc = existingItemsRes.rows.map((row) => ({
+    item_id: row.item_id,
+    system_qty: row.system_qty,
+    counted_qty: countMap.has(row.item_id) ? countMap.get(row.item_id)! : row.counted_qty,
+    unit_cost: row.unit_cost,
+  }));
+
+  const varianceResult = InventoryReconciliationEngine.calculateVariances(itemsToCalc);
+
+  for (const item of varianceResult.items) {
+    await db.query(
+      `UPDATE inventory_count_items 
+       SET counted_qty = $1, variance_qty = $2, variance_value = $3 
+       WHERE count_id = $4 AND item_id = $5`,
+      [item.counted_qty, item.variance_qty, item.variance_value, id, item.item_id],
+    );
+  }
+
+  await db.query(
+    `UPDATE inventory_counts 
+     SET status = 'RECONCILED', total_variance_value = $1, updated_at = CURRENT_TIMESTAMP 
+     WHERE id = $2`,
+    [varianceResult.total_variance_value, id],
+  );
+
+  return res.json({
+    success: true,
+    data: { id, status: 'RECONCILED', total_variance_value: varianceResult.total_variance_value },
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/inventory/counts/:id/reconcile-and-post', authenticate, requirePermission(Permission.INVENTORY_ADJUST), async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  const countRes = await db.query(
+    `SELECT * FROM inventory_counts WHERE id = $1 AND organization_id = $2`,
+    [id, req.session!.organization_id],
+  );
+  if (countRes.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: ErrorCode.RESOURCE_NOT_FOUND, message: 'Count sheet not found', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const count = countRes.rows[0];
+  if (count.status === 'POSTED') {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.ALREADY_POSTED, message: 'Count already posted to GL', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const varianceVal = new Money(count.total_variance_value);
+  if (varianceVal.isZero()) {
+    // Zero variance: simply mark POSTED without creating a zero GL voucher
+    await db.query(`UPDATE inventory_counts SET status = 'POSTED', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [id]);
+    return res.json({
+      success: true,
+      data: { id, status: 'POSTED', journal_id: null },
+      meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+    } satisfies StandardSuccessResponse<any>);
+  }
+
+  // Lookup Accounts: 113001 (Inventory Asset) and 511002 (Inventory Adjustments)
+  const invAccRes = await db.query(
+    `SELECT id FROM accounts WHERE code = '113001' AND organization_id = $1`,
+    [req.session!.organization_id],
+  );
+  const adjAccRes = await db.query(
+    `SELECT id FROM accounts WHERE code = '511002' AND organization_id = $1`,
+    [req.session!.organization_id],
+  );
+
+  if (invAccRes.rows.length === 0 || adjAccRes.rows.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'Required GL accounts (113001 or 511002) not found in COA', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const draft = InventoryReconciliationEngine.generateAdjustmentJournal({
+    inventoryCount: count,
+    organizationId: req.session!.organization_id,
+    legalEntityId: req.session!.legal_entity_id,
+    inventoryAccountId: invAccRes.rows[0].id,
+    adjustmentExpenseAccountId: adjAccRes.rows[0].id,
+    postingDate: today,
+    documentDate: today,
+  });
+
+  // Calculate totals
+  let totalBaseDebit = Money.zero();
+  let totalBaseCredit = Money.zero();
+  for (const l of draft.lines) {
+    totalBaseDebit = totalBaseDebit.add(new Money(l.base_debit));
+    totalBaseCredit = totalBaseCredit.add(new Money(l.base_credit));
+  }
+
+  const journalId = crypto.randomUUID();
+  const journalNumber = `JV-ADJ-${count.count_number}`;
+  await db.query(
+    `INSERT INTO journals (
+      id, organization_id, legal_entity_id, journal_number, posting_date, document_date,
+      accounting_purpose, status, base_currency, total_base_debit, total_base_credit,
+      description, source_type, source_id, created_by, posted_by, posted_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'POSTED', $8, $9, $10, $11, 'INVENTORY_COUNT', $12, $13, $13, CURRENT_TIMESTAMP)`,
+    [
+      journalId,
+      req.session!.organization_id,
+      req.session!.legal_entity_id,
+      journalNumber,
+      today,
+      today,
+      AccountingPurpose.INVENTORY_ADJUSTMENT,
+      'PKR',
+      totalBaseDebit.format(),
+      totalBaseCredit.format(),
+      draft.description,
+      id,
+      req.session!.user_id,
+    ],
+  );
+
+  for (const line of draft.lines) {
+    await db.query(
+      `INSERT INTO journal_lines (
+        id, journal_id, line_number, account_id, debit_amount, credit_amount, currency, fx_rate, base_debit, base_credit, description
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        crypto.randomUUID(),
+        journalId,
+        line.line_number,
+        line.account_id,
+        line.debit_amount,
+        line.credit_amount,
+        line.currency || 'PKR',
+        line.fx_rate || '1.000000000000',
+        line.base_debit,
+        line.base_credit,
+        line.description,
+      ],
+    );
+  }
+
+  // Update Inventory Count status
+  await db.query(
+    `UPDATE inventory_counts SET status = 'POSTED', journal_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+    [journalId, id],
+  );
+
+  return res.json({
+    success: true,
+    data: { id, status: 'POSTED', journal_id: journalId, total_variance_value: count.total_variance_value },
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+// 19.5 Bills of Materials (BOM)
+app.get('/api/manufacturing/boms', authenticate, async (req: Request, res: Response) => {
+  const bomsRes = await db.query(
+    `SELECT b.*, i.code as finished_item_code, i.name as finished_item_name 
+     FROM bill_of_materials b 
+     JOIN items i ON b.finished_item_id = i.id 
+     WHERE b.organization_id = $1 
+     ORDER BY b.created_at DESC`,
+    [req.session!.organization_id],
+  );
+  const boms = bomsRes.rows;
+
+  for (const b of boms) {
+    const itemsRes = await db.query(
+      `SELECT bi.*, i.code as component_code, i.name as component_name, i.uom as component_uom 
+       FROM bom_items bi 
+       JOIN items i ON bi.component_item_id = i.id 
+       WHERE bi.bom_id = $1`,
+      [b.id],
+    );
+    b.items = itemsRes.rows;
+  }
+
+  return res.json({
+    success: true,
+    data: boms,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/manufacturing/boms', authenticate, requirePermission(Permission.BOM_MANAGE), async (req: Request, res: Response) => {
+  const { bom_number, finished_item_id, name, version, yield_quantity, items } = req.body;
+  if (!finished_item_id || !name || !items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'Finished item, name, and components are required', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const num = bom_number || `BOM-${Date.now().toString().slice(-6)}`;
+  const yieldQty = yield_quantity || '1.00000000';
+
+  const bomRes = await db.query(
+    `INSERT INTO bill_of_materials (bom_number, finished_item_id, name, version, yield_quantity, status, organization_id)
+     VALUES ($1, $2, $3, $4, $5, 'ACTIVE', $6) RETURNING *`,
+    [num, finished_item_id, name, version || '1.0', yieldQty, req.session!.organization_id],
+  );
+  const bom = bomRes.rows[0];
+
+  const insertedItems: any[] = [];
+  for (const it of items) {
+    const biRes = await db.query(
+      `INSERT INTO bom_items (bom_id, component_item_id, quantity, scrap_percentage, notes)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [bom.id, it.component_item_id, it.quantity, it.scrap_percentage || '0.00', it.notes || null],
+    );
+    insertedItems.push(biRes.rows[0]);
+  }
+  bom.items = insertedItems;
+
+  return res.status(201).json({
+    success: true,
+    data: bom,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+// 19.6 Work Orders & Manufacturing Assembly
+app.get('/api/manufacturing/work-orders', authenticate, async (req: Request, res: Response) => {
+  const wosRes = await db.query(
+    `SELECT wo.*, b.name as bom_name, i.code as finished_item_code, i.name as finished_item_name, w.name as warehouse_name 
+     FROM work_orders wo 
+     JOIN bill_of_materials b ON wo.bom_id = b.id 
+     JOIN items i ON wo.finished_item_id = i.id 
+     JOIN warehouses w ON wo.warehouse_id = w.id 
+     WHERE wo.organization_id = $1 
+     ORDER BY wo.created_at DESC`,
+    [req.session!.organization_id],
+  );
+  const workOrders = wosRes.rows;
+
+  for (const wo of workOrders) {
+    const consRes = await db.query(
+      `SELECT c.*, i.code as component_code, i.name as component_name 
+       FROM work_order_consumptions c 
+       JOIN items i ON c.component_item_id = i.id 
+       WHERE c.work_order_id = $1`,
+      [wo.id],
+    );
+    wo.consumptions = consRes.rows;
+  }
+
+  return res.json({
+    success: true,
+    data: workOrders,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/manufacturing/work-orders', authenticate, requirePermission(Permission.WORK_ORDER_MANAGE), async (req: Request, res: Response) => {
+  const { work_order_number, bom_id, warehouse_id, target_qty, start_date, due_date } = req.body;
+  if (!bom_id || !warehouse_id || !target_qty) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'BOM, warehouse, and target quantity are required', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const bomRes = await db.query(`SELECT * FROM bill_of_materials WHERE id = $1`, [bom_id]);
+  if (bomRes.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: ErrorCode.RESOURCE_NOT_FOUND, message: 'BOM not found', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+  const bom = bomRes.rows[0];
+
+  const num = work_order_number || `WO-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
+  const sDate = start_date || new Date().toISOString().slice(0, 10);
+  const dDate = due_date || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+
+  const woRes = await db.query(
+    `INSERT INTO work_orders (
+      work_order_number, bom_id, finished_item_id, warehouse_id, target_qty,
+      status, start_date, due_date, organization_id
+    ) VALUES ($1, $2, $3, $4, $5, 'PLANNED', $6, $7, $8) RETURNING *`,
+    [num, bom_id, bom.finished_item_id, warehouse_id, target_qty, sDate, dDate, req.session!.organization_id],
+  );
+
+  return res.status(201).json({
+    success: true,
+    data: woRes.rows[0],
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/manufacturing/work-orders/:id/release', authenticate, requirePermission(Permission.WORK_ORDER_RELEASE), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const woRes = await db.query(
+    `SELECT * FROM work_orders WHERE id = $1 AND organization_id = $2`,
+    [id, req.session!.organization_id],
+  );
+  if (woRes.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: ErrorCode.RESOURCE_NOT_FOUND, message: 'Work order not found', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const wo = woRes.rows[0];
+  if (wo.status !== 'PLANNED') {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: `Cannot release work order in status ${wo.status}`, correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  await db.query(`UPDATE work_orders SET status = 'RELEASED', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [id]);
+
+  return res.json({
+    success: true,
+    data: { id, status: 'RELEASED' },
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/manufacturing/work-orders/:id/consume', authenticate, requirePermission(Permission.WORK_ORDER_CONSUME), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { component_item_id, consumed_qty, lot_id } = req.body;
+  if (!component_item_id || !consumed_qty) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'Component item and consumed quantity are required', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const woRes = await db.query(
+    `SELECT * FROM work_orders WHERE id = $1 AND organization_id = $2`,
+    [id, req.session!.organization_id],
+  );
+  if (woRes.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: ErrorCode.RESOURCE_NOT_FOUND, message: 'Work order not found', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const itemRes = await db.query(`SELECT unit_cost FROM items WHERE id = $1`, [component_item_id]);
+  const unitCost = itemRes.rows[0]?.unit_cost || '0.00000000';
+  const totalCost = new Money(consumed_qty).multiply(new Money(unitCost)).format();
+
+  const consRes = await db.query(
+    `INSERT INTO work_order_consumptions (work_order_id, component_item_id, consumed_qty, unit_cost, total_cost, lot_id)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [id, component_item_id, consumed_qty, unitCost, totalCost, lot_id || null],
+  );
+
+  // Update total material cost and status = IN_PROGRESS on work order
+  await db.query(
+    `UPDATE work_orders 
+     SET status = 'IN_PROGRESS', 
+         total_material_cost = (SELECT COALESCE(SUM(total_cost), 0) FROM work_order_consumptions WHERE work_order_id = $1),
+         updated_at = CURRENT_TIMESTAMP 
+     WHERE id = $1`,
+    [id],
+  );
+
+  return res.status(201).json({
+    success: true,
+    data: consRes.rows[0],
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/manufacturing/work-orders/:id/complete', authenticate, requirePermission(Permission.WORK_ORDER_COMPLETE), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { completed_qty, scrapped_qty } = req.body;
+
+  const woRes = await db.query(
+    `SELECT * FROM work_orders WHERE id = $1 AND organization_id = $2`,
+    [id, req.session!.organization_id],
+  );
+  if (woRes.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: ErrorCode.RESOURCE_NOT_FOUND, message: 'Work order not found', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const wo = woRes.rows[0];
+  if (wo.status === 'COMPLETED' || wo.status === 'CLOSED') {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.ALREADY_POSTED, message: 'Work order already completed', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const consRes = await db.query(`SELECT * FROM work_order_consumptions WHERE work_order_id = $1`, [id]);
+  if (consRes.rows.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.INSUFFICIENT_RAW_MATERIALS, message: 'No materials recorded as consumed for this work order', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const finalCompletedQty = completed_qty || wo.target_qty;
+  const finalScrappedQty = scrapped_qty || '0.00000000';
+
+  wo.completed_qty = finalCompletedQty;
+  wo.scrapped_qty = finalScrappedQty;
+
+  // Lookup Accounts: 113004 (Finished Goods), 113003 (WIP), 511003 (Scrap)
+  const fgAccRes = await db.query(`SELECT id FROM accounts WHERE code = '113004' AND organization_id = $1`, [req.session!.organization_id]);
+  const wipAccRes = await db.query(`SELECT id FROM accounts WHERE code = '113003' AND organization_id = $1`, [req.session!.organization_id]);
+  const scrapAccRes = await db.query(`SELECT id FROM accounts WHERE code = '511003' AND organization_id = $1`, [req.session!.organization_id]);
+
+  if (fgAccRes.rows.length === 0 || wipAccRes.rows.length === 0 || scrapAccRes.rows.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'Required GL accounts (113004, 113003, or 511003) not found in COA', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const draft = ManufacturingEngine.generateCompletionJournal({
+    workOrder: wo,
+    organizationId: req.session!.organization_id,
+    legalEntityId: req.session!.legal_entity_id,
+    finishedGoodsAccountId: fgAccRes.rows[0].id,
+    wipAccountId: wipAccRes.rows[0].id,
+    scrapExpenseAccountId: scrapAccRes.rows[0].id,
+    postingDate: today,
+    documentDate: today,
+    consumptions: consRes.rows,
+  });
+
+  // Calculate totals
+  let totalBaseDebit = Money.zero();
+  let totalBaseCredit = Money.zero();
+  for (const l of draft.lines) {
+    totalBaseDebit = totalBaseDebit.add(new Money(l.base_debit));
+    totalBaseCredit = totalBaseCredit.add(new Money(l.base_credit));
+  }
+
+  const journalId = crypto.randomUUID();
+  const journalNumber = `JV-MFG-${wo.work_order_number}`;
+  await db.query(
+    `INSERT INTO journals (
+      id, organization_id, legal_entity_id, journal_number, posting_date, document_date,
+      accounting_purpose, status, base_currency, total_base_debit, total_base_credit,
+      description, source_type, source_id, created_by, posted_by, posted_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'POSTED', $8, $9, $10, $11, 'WORK_ORDER', $12, $13, $13, CURRENT_TIMESTAMP)`,
+    [
+      journalId,
+      req.session!.organization_id,
+      req.session!.legal_entity_id,
+      journalNumber,
+      today,
+      today,
+      AccountingPurpose.MANUFACTURING_ASSEMBLY_RECEIPT,
+      'PKR',
+      totalBaseDebit.format(),
+      totalBaseCredit.format(),
+      draft.description,
+      id,
+      req.session!.user_id,
+    ],
+  );
+
+  for (const line of draft.lines) {
+    await db.query(
+      `INSERT INTO journal_lines (
+        id, journal_id, line_number, account_id, debit_amount, credit_amount, currency, fx_rate, base_debit, base_credit, description
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        crypto.randomUUID(),
+        journalId,
+        line.line_number,
+        line.account_id,
+        line.debit_amount,
+        line.credit_amount,
+        line.currency || 'PKR',
+        line.fx_rate || '1.000000000000',
+        line.base_debit,
+        line.base_credit,
+        line.description,
+      ],
+    );
+  }
+
+  // Update Work Order
+  await db.query(
+    `UPDATE work_orders 
+     SET status = 'COMPLETED', completed_qty = $1, scrapped_qty = $2, completion_journal_id = $3, updated_at = CURRENT_TIMESTAMP 
+     WHERE id = $4`,
+    [finalCompletedQty, finalScrappedQty, journalId, id],
+  );
+
+  return res.json({
+    success: true,
+    data: { id, status: 'COMPLETED', completion_journal_id: journalId, completed_qty: finalCompletedQty },
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+// ==========================================
+// 20. Admin & Seed Execution
 // ==========================================
 app.post('/api/admin/seed', async (req: Request, res: Response) => {
   const seeder = new SyntheticSeedRunner(db);

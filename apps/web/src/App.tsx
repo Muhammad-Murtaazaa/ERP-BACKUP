@@ -18,6 +18,8 @@ import { FxRatesView } from './views/FxRatesView.js';
 import { OnboardingWizardView } from './views/OnboardingWizardView.js';
 import { EmployeesView } from './views/EmployeesView.js';
 import { PayrollView } from './views/PayrollView.js';
+import { WarehouseView } from './views/WarehouseView.js';
+import { ManufacturingView } from './views/ManufacturingView.js';
 import { Badge } from '@omnysync/ui';
 import {
   LayoutDashboard,
@@ -39,6 +41,8 @@ import {
   ArrowRightLeft,
   Sparkles,
   Wallet,
+  Warehouse as WarehouseIcon,
+  Factory,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -100,6 +104,13 @@ export const App: React.FC = () => {
       items: [
         { id: 'procurement', label: 'Purchase Orders', icon: Truck },
         { id: 'ap-invoices', label: 'AP Supplier Bills', icon: FileCheck },
+      ],
+    },
+    {
+      title: 'Supply Chain & Manufacturing',
+      items: [
+        { id: 'warehouses', label: 'Warehouses & Logistics', icon: WarehouseIcon },
+        { id: 'manufacturing', label: 'Manufacturing & Assembly', icon: Factory },
       ],
     },
     {
@@ -250,6 +261,8 @@ export const App: React.FC = () => {
               {currentTab === 'ar-invoices' && <ArInvoicesView />}
               {currentTab === 'procurement' && <ProcurementOrdersView />}
               {currentTab === 'ap-invoices' && <ApInvoicesView />}
+              {currentTab === 'warehouses' && <WarehouseView />}
+              {currentTab === 'manufacturing' && <ManufacturingView />}
               {currentTab === 'employees' && <EmployeesView />}
               {currentTab === 'payroll' && <PayrollView />}
               {currentTab === 'payments' && <PaymentsView />}

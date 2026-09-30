@@ -63,6 +63,9 @@ export const AccountingPurpose = {
   FX_REVALUATION: 'FX_REVALUATION',
   PAYROLL_RUN: 'PAYROLL_RUN',
   PAYROLL_DISBURSEMENT: 'PAYROLL_DISBURSEMENT',
+  INVENTORY_ADJUSTMENT: 'INVENTORY_ADJUSTMENT',
+  MANUFACTURING_WIP_ISSUE: 'MANUFACTURING_WIP_ISSUE',
+  MANUFACTURING_ASSEMBLY_RECEIPT: 'MANUFACTURING_ASSEMBLY_RECEIPT',
 } as const;
 export type AccountingPurpose = (typeof AccountingPurpose)[keyof typeof AccountingPurpose];
 
@@ -589,6 +592,202 @@ export interface PayrollRun {
 }
 
 // ==========================================
+// M5: Advanced Inventory, Warehouses, Lots, Counts & Manufacturing BOM/Work Orders
+// ==========================================
+export interface Warehouse {
+  id: string;
+  organization_id: string;
+  code: string;
+  name: string;
+  address?: string | null;
+  is_default: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ZoneType = 'STORAGE' | 'PICKING' | 'RECEIVING' | 'SHIPPING' | 'QUARANTINE';
+
+export interface WarehouseZone {
+  id: string;
+  warehouse_id: string;
+  code: string;
+  name: string;
+  zone_type: ZoneType;
+  created_at: string;
+}
+
+export interface WarehouseBin {
+  id: string;
+  warehouse_id: string;
+  zone_id?: string | null;
+  bin_code: string;
+  max_weight_capacity?: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export type ItemLotStatus = 'AVAILABLE' | 'QUARANTINE' | 'EXPIRED' | 'DEPLETED';
+
+export interface ItemLot {
+  id: string;
+  organization_id: string;
+  item_id: string;
+  item_code?: string;
+  item_name?: string;
+  lot_number: string;
+  manufacture_date?: string | null;
+  expiry_date?: string | null;
+  status: ItemLotStatus;
+  created_at: string;
+}
+
+export type ItemSerialStatus = 'IN_STOCK' | 'RESERVED' | 'SHIPPED' | 'RETIRED';
+
+export interface ItemSerial {
+  id: string;
+  organization_id: string;
+  item_id: string;
+  item_code?: string;
+  item_name?: string;
+  serial_number: string;
+  status: ItemSerialStatus;
+  warehouse_id?: string | null;
+  bin_id?: string | null;
+  created_at: string;
+}
+
+export type StockTransferStatus = 'DRAFT' | 'IN_TRANSIT' | 'COMPLETED' | 'CANCELLED';
+
+export interface StockTransferItem {
+  id?: string;
+  transfer_id?: string;
+  item_id: string;
+  item_code?: string;
+  item_name?: string;
+  requested_qty: string;
+  shipped_qty: string;
+  received_qty: string;
+  lot_id?: string | null;
+}
+
+export interface StockTransfer {
+  id: string;
+  organization_id: string;
+  transfer_number: string;
+  source_warehouse_id: string;
+  source_warehouse_name?: string;
+  destination_warehouse_id: string;
+  destination_warehouse_name?: string;
+  status: StockTransferStatus;
+  transfer_date: string;
+  notes?: string | null;
+  items?: StockTransferItem[];
+  created_at: string;
+  updated_at: string;
+}
+
+export type InventoryCountStatus = 'PLANNED' | 'IN_PROGRESS' | 'RECONCILED' | 'POSTED' | 'CANCELLED';
+
+export interface InventoryCountItem {
+  id?: string;
+  count_id?: string;
+  item_id: string;
+  item_code?: string;
+  item_name?: string;
+  system_qty: string;
+  counted_qty: string;
+  variance_qty: string;
+  unit_cost: string;
+  variance_value: string;
+  lot_id?: string | null;
+}
+
+export interface InventoryCount {
+  id: string;
+  organization_id: string;
+  count_number: string;
+  warehouse_id: string;
+  warehouse_name?: string;
+  period_id: string;
+  count_date: string;
+  status: InventoryCountStatus;
+  total_variance_value: string;
+  journal_id?: string | null;
+  items?: InventoryCountItem[];
+  created_at: string;
+  updated_at: string;
+}
+
+export type BOMStatus = 'DRAFT' | 'ACTIVE' | 'OBSOLETE';
+
+export interface BOMItem {
+  id?: string;
+  bom_id?: string;
+  component_item_id: string;
+  component_code?: string;
+  component_name?: string;
+  component_uom?: string;
+  quantity: string;
+  scrap_percentage: string;
+  notes?: string | null;
+}
+
+export interface BillOfMaterials {
+  id: string;
+  organization_id: string;
+  bom_number: string;
+  finished_item_id: string;
+  finished_item_code?: string;
+  finished_item_name?: string;
+  name: string;
+  version: string;
+  yield_quantity: string;
+  status: BOMStatus;
+  items?: BOMItem[];
+  created_at: string;
+  updated_at: string;
+}
+
+export type WorkOrderStatus = 'PLANNED' | 'RELEASED' | 'IN_PROGRESS' | 'COMPLETED' | 'CLOSED' | 'CANCELLED';
+
+export interface WorkOrderConsumption {
+  id?: string;
+  work_order_id?: string;
+  component_item_id: string;
+  component_code?: string;
+  component_name?: string;
+  consumed_qty: string;
+  unit_cost: string;
+  total_cost: string;
+  lot_id?: string | null;
+}
+
+export interface WorkOrder {
+  id: string;
+  organization_id: string;
+  work_order_number: string;
+  bom_id: string;
+  bom_name?: string;
+  finished_item_id: string;
+  finished_item_code?: string;
+  finished_item_name?: string;
+  warehouse_id: string;
+  warehouse_name?: string;
+  target_qty: string;
+  completed_qty: string;
+  scrapped_qty: string;
+  status: WorkOrderStatus;
+  start_date: string;
+  due_date: string;
+  total_material_cost: string;
+  completion_journal_id?: string | null;
+  consumptions?: WorkOrderConsumption[];
+  created_at: string;
+  updated_at: string;
+}
+
+// ==========================================
 // Organization, Legal Entity, User & Auth
 // ==========================================
 export const UserRole = {
@@ -598,6 +797,8 @@ export const UserRole = {
   SALES_OPERATOR: 'SALES_OPERATOR',
   INVENTORY_MANAGER: 'INVENTORY_MANAGER',
   HR_MANAGER: 'HR_MANAGER',
+  PRODUCTION_MANAGER: 'PRODUCTION_MANAGER',
+  WAREHOUSE_OPERATOR: 'WAREHOUSE_OPERATOR',
   AUDITOR: 'AUDITOR',
   VIEWER: 'VIEWER',
 } as const;
@@ -636,6 +837,16 @@ export const Permission = {
   PAYROLL_APPROVE: 'payroll.approve',
   PAYROLL_POST: 'payroll.post',
   PAYROLL_DISBURSE: 'payroll.disburse',
+  // Advanced Inventory & Manufacturing (M5)
+  WAREHOUSE_MANAGE: 'warehouse.manage',
+  INVENTORY_TRANSFER: 'inventory.transfer',
+  INVENTORY_COUNT: 'inventory.count',
+  INVENTORY_ADJUST: 'inventory.adjust',
+  BOM_MANAGE: 'bom.manage',
+  WORK_ORDER_MANAGE: 'workorder.manage',
+  WORK_ORDER_RELEASE: 'workorder.release',
+  WORK_ORDER_CONSUME: 'workorder.consume',
+  WORK_ORDER_COMPLETE: 'workorder.complete',
   // Audit
   AUDIT_VIEW: 'audit.view',
 } as const;
@@ -675,6 +886,10 @@ export const ErrorCode = {
   STATEMENT_ALREADY_RECONCILED: 'STATEMENT_ALREADY_RECONCILED',
   RECONCILIATION_MISMATCH: 'RECONCILIATION_MISMATCH',
   FX_RATE_NOT_FOUND: 'FX_RATE_NOT_FOUND',
+  LOT_EXPIRED_OR_DEPLETED: 'LOT_EXPIRED_OR_DEPLETED',
+  INSUFFICIENT_RAW_MATERIALS: 'INSUFFICIENT_RAW_MATERIALS',
+  WORK_ORDER_NOT_RELEASED: 'WORK_ORDER_NOT_RELEASED',
+  COUNT_NOT_RECONCILED: 'COUNT_NOT_RECONCILED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

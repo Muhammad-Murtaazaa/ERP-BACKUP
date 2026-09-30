@@ -7,4 +7,5 @@ export * from './reversals.js';
 export * from './reconciliation.js';
 export * from './fx.js';
 export * from './payroll.js';
-
+export * from './manufacturing.js';
+export * from './inventory.js';

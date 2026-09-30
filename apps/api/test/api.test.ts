@@ -657,6 +657,189 @@ describe('API Modular Monolith: Financial & Trading Workflows E2E Integration', 
     expect(tbRes.body.data.is_balanced).toBe(true);
     expect(tbRes.body.data.net_difference).toBe('0.00');
   });
+
+  it('12. Milestone 5 E2E: Warehouses, Transfers, Cycle Counts, BOM & Work Order Assembly Production', async () => {
+    // 1. Fetch Warehouses and Items
+    const whsRes = await makeRequest('GET', '/api/inventory/warehouses', undefined, adminToken);
+    expect(whsRes.status).toBe(200);
+    expect(whsRes.body.data.length).toBeGreaterThanOrEqual(2);
+    const mainWh = whsRes.body.data.find((w: any) => w.code === 'WH-MAIN');
+    const prodWh = whsRes.body.data.find((w: any) => w.code === 'WH-PROD');
+
+    const itemsRes = await makeRequest('GET', '/api/items', undefined, adminToken);
+    const rawMaterialItem = itemsRes.body.data.find((i: any) => i.item_type === 'INVENTORY');
+    expect(rawMaterialItem).toBeDefined();
+
+    // 2. Create Finished Product Item
+    const fgItemRes = await makeRequest(
+      'POST',
+      '/api/items',
+      {
+        code: 'FG-PC-001',
+        name: 'Omnysync Custom Workstation PC',
+        item_type: 'INVENTORY',
+        uom: 'UNIT',
+        unit_price: '120000.00',
+        unit_cost: '75000.00',
+      },
+      adminToken,
+    );
+    expect(fgItemRes.status).toBe(201);
+    const finishedItem = fgItemRes.body.data;
+
+    // 3. Inter-Warehouse Stock Transfer
+    const transferRes = await makeRequest(
+      'POST',
+      '/api/inventory/transfers',
+      {
+        source_warehouse_id: mainWh.id,
+        destination_warehouse_id: prodWh.id,
+        transfer_date: '2026-03-10',
+        notes: 'Replenishing raw materials for assembly line',
+        items: [
+          {
+            item_id: rawMaterialItem.id,
+            requested_qty: '20.00000000',
+          },
+        ],
+      },
+      adminToken,
+    );
+    expect(transferRes.status).toBe(201);
+    expect(transferRes.body.data.status).toBe('DRAFT');
+    const transferId = transferRes.body.data.id;
+
+    // Ship Transfer
+    const shipRes = await makeRequest('POST', `/api/inventory/transfers/${transferId}/ship`, {}, adminToken);
+    expect(shipRes.status).toBe(200);
+    expect(shipRes.body.data.status).toBe('IN_TRANSIT');
+
+    // Receive Transfer
+    const receiveRes = await makeRequest('POST', `/api/inventory/transfers/${transferId}/receive`, {}, adminToken);
+    expect(receiveRes.status).toBe(200);
+    expect(receiveRes.body.data.status).toBe('COMPLETED');
+
+    // 4. Physical Inventory Cycle Count & Variance Posting
+    const periodsRes = await makeRequest('GET', '/api/periods', undefined, controllerToken);
+    const openPeriod = periodsRes.body.data.find((p: any) => p.status === 'OPEN');
+
+    const countRes = await makeRequest(
+      'POST',
+      '/api/inventory/counts',
+      {
+        warehouse_id: mainWh.id,
+        period_id: openPeriod.id,
+        count_date: '2026-03-15',
+        count_number: 'CNT-2026-001',
+      },
+      controllerToken,
+    );
+    expect(countRes.status).toBe(201);
+    const countId = countRes.body.data.id;
+
+    // Record count with small shortage variance (-2 units)
+    const recordRes = await makeRequest(
+      'POST',
+      `/api/inventory/counts/${countId}/record`,
+      {
+        counts: [
+          {
+            item_id: rawMaterialItem.id,
+            counted_qty: '8.00000000', // e.g. system has 10, counted 8 => variance -2
+          },
+        ],
+      },
+      controllerToken,
+    );
+    expect(recordRes.status).toBe(200);
+    expect(recordRes.body.data.status).toBe('RECONCILED');
+
+    // Post Count Adjustment to GL
+    const postCountRes = await makeRequest(
+      'POST',
+      `/api/inventory/counts/${countId}/reconcile-and-post`,
+      {},
+      controllerToken,
+    );
+    expect(postCountRes.status).toBe(200);
+    expect(postCountRes.body.data.status).toBe('POSTED');
+
+    // 5. Create Bill of Materials (BOM)
+    const bomRes = await makeRequest(
+      'POST',
+      '/api/manufacturing/boms',
+      {
+        bom_number: 'BOM-PC-PRO',
+        name: 'Workstation PC Specification',
+        finished_item_id: finishedItem.id,
+        yield_quantity: '1.00000000',
+        items: [
+          {
+            component_item_id: rawMaterialItem.id,
+            quantity: '2.00000000',
+            scrap_percentage: '0.00',
+          },
+        ],
+      },
+      adminToken,
+    );
+    expect(bomRes.status).toBe(201);
+    const bomId = bomRes.body.data.id;
+
+    // 6. Create Work Order
+    const woRes = await makeRequest(
+      'POST',
+      '/api/manufacturing/work-orders',
+      {
+        work_order_number: 'WO-2026-BATCH-01',
+        bom_id: bomId,
+        warehouse_id: prodWh.id,
+        target_qty: '5.00000000',
+      },
+      adminToken,
+    );
+    expect(woRes.status).toBe(201);
+    expect(woRes.body.data.status).toBe('PLANNED');
+    const woId = woRes.body.data.id;
+
+    // 7. Release Work Order
+    const releaseRes = await makeRequest('POST', `/api/manufacturing/work-orders/${woId}/release`, {}, adminToken);
+    expect(releaseRes.status).toBe(200);
+    expect(releaseRes.body.data.status).toBe('RELEASED');
+
+    // 8. Record Material Consumption into WIP (5 units target * 2 qty = 10 components)
+    const consumeRes = await makeRequest(
+      'POST',
+      `/api/manufacturing/work-orders/${woId}/consume`,
+      {
+        component_item_id: rawMaterialItem.id,
+        consumed_qty: '10.00000000',
+      },
+      adminToken,
+    );
+    expect(consumeRes.status).toBe(201);
+
+    // 9. Complete Work Order & Post Assembly GL Voucher (Dr FG 113004 / Cr WIP 113003)
+    const completeRes = await makeRequest(
+      'POST',
+      `/api/manufacturing/work-orders/${woId}/complete`,
+      {
+        completed_qty: '5.00000000',
+        scrapped_qty: '0.00000000',
+      },
+      adminToken,
+    );
+    expect(completeRes.status).toBe(200);
+    expect(completeRes.body.data.status).toBe('COMPLETED');
+    expect(completeRes.body.data.completion_journal_id).toBeDefined();
+
+    // 10. Verify Trial Balance is strictly balanced
+    const finalTbRes = await makeRequest('GET', '/api/ledger/trial-balance?as_of_date=2026-03-31', undefined, controllerToken);
+    expect(finalTbRes.status).toBe(200);
+    expect(finalTbRes.body.data.is_balanced).toBe(true);
+    expect(finalTbRes.body.data.net_difference).toBe('0.00');
+  });
 });
+
 
 

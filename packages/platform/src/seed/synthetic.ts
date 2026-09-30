@@ -380,6 +380,46 @@ export class SyntheticSeedRunner {
       }
     }
 
+    // 10. Seed Warehouses & Bins
+    const mainWhId = '00000000-0000-0000-0000-000000000010';
+    const prodWhId = '00000000-0000-0000-0000-000000000011';
+    await this.db.query(
+      `
+      INSERT INTO warehouses (id, code, name, address, is_default, is_active, organization_id)
+      VALUES ($1, 'WH-MAIN', 'Central Distribution Warehouse', 'Plot 45, Sector 15, Korangi Industrial Area, Karachi', true, true, $2)
+      ON CONFLICT (organization_id, code) DO UPDATE SET name = EXCLUDED.name
+    `,
+      [mainWhId, orgId],
+    );
+
+    await this.db.query(
+      `
+      INSERT INTO warehouses (id, code, name, address, is_default, is_active, organization_id)
+      VALUES ($1, 'WH-PROD', 'Manufacturing & Assembly Plant', 'Plot 12, Industrial Estate, SITE, Karachi', false, true, $2)
+      ON CONFLICT (organization_id, code) DO UPDATE SET name = EXCLUDED.name
+    `,
+      [prodWhId, orgId],
+    );
+
+    const zoneId = '00000000-0000-0000-0000-000000000020';
+    await this.db.query(
+      `
+      INSERT INTO warehouse_zones (id, warehouse_id, code, name, zone_type)
+      VALUES ($1, $2, 'ZONE-A', 'Primary Pallet Racking Zone', 'STORAGE')
+      ON CONFLICT (warehouse_id, code) DO UPDATE SET name = EXCLUDED.name
+    `,
+      [zoneId, mainWhId],
+    );
+
+    await this.db.query(
+      `
+      INSERT INTO warehouse_bins (id, warehouse_id, zone_id, bin_code, max_weight_capacity, is_active)
+      VALUES ($1, $2, $3, 'BIN-A-01-01', 1000.00, true)
+      ON CONFLICT (warehouse_id, bin_code) DO UPDATE SET is_active = true
+    `,
+      ['00000000-0000-0000-0000-000000000030', mainWhId, zoneId],
+    );
+
     return {
       organizationId: orgId,
       legalEntityId: legalEntityId,

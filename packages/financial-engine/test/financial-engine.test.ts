@@ -12,6 +12,8 @@ import {
   BankReconciliationEngine,
   FxEngine,
   PayrollEngine,
+  ManufacturingEngine,
+  InventoryReconciliationEngine,
 } from '../src/index.js';
 import {
   Account,
@@ -648,5 +650,160 @@ describe('Financial Engine: Workforce & Payroll Calculations', () => {
     expect(disbLines[1].credit_amount).toBe(totals.total_net);
   });
 });
+
+describe('Financial Engine: Manufacturing & BOM Explode / Work Order Costing', () => {
+  it('explodes BOM accurately factoring in yield and scrap percentage', () => {
+    const bom: any = {
+      id: 'bom-1',
+      bom_number: 'BOM-100',
+      finished_item_id: 'item-finish',
+      name: 'Standard Desktop Computer Assembly',
+      version: '1.0',
+      yield_quantity: '1.00000000',
+      items: [
+        {
+          component_item_id: 'comp-cpu',
+          quantity: '1.00000000',
+          scrap_percentage: '0.00',
+        },
+        {
+          component_item_id: 'comp-ram',
+          quantity: '2.00000000',
+          scrap_percentage: '5.00', // 5% scrap
+        },
+      ],
+    };
+
+    // Target = 10 units
+    const reqs = ManufacturingEngine.explodeBOM(bom, '10.00000000', {
+      'comp-cpu': '25000.00000000',
+      'comp-ram': '8000.00000000',
+    });
+
+    expect(reqs).toHaveLength(2);
+    // CPU: 1 * 10 = 10 units @ 25,000 = 250,000
+    expect(reqs[0].required_qty).toBe('10.00000000');
+    expect(reqs[0].estimated_total_cost).toBe('250000.00000000');
+    // RAM: 2 * 10 * 1.05 = 21 units @ 8,000 = 168,000
+    expect(reqs[1].required_qty).toBe('21.00000000');
+    expect(reqs[1].estimated_total_cost).toBe('168000.00000000');
+  });
+
+  it('calculates work order material cost and generates balanced completion journal', () => {
+    const consumptions: any[] = [
+      {
+        component_item_id: 'comp-cpu',
+        consumed_qty: '10.00000000',
+        unit_cost: '25000.00000000',
+        total_cost: '250000.00000000',
+      },
+      {
+        component_item_id: 'comp-ram',
+        consumed_qty: '20.00000000',
+        unit_cost: '8000.00000000',
+        total_cost: '160000.00000000',
+      },
+    ];
+
+    // Total material cost = 250,000 + 160,000 = 410,000
+    // 9 completed, 1 scrapped
+    const costs = ManufacturingEngine.calculateWorkOrderCost(consumptions, '9', '1');
+    expect(costs.total_material_cost).toBe('410000.00000000');
+    expect(costs.finished_goods_cost).toBe('369000.00000000');
+    expect(costs.scrap_cost).toBe('41000.00000000');
+    expect(costs.finished_unit_cost).toBe('41000.00000000');
+
+    // Generate completion journal draft
+    const draft = ManufacturingEngine.generateCompletionJournal({
+      workOrder: {
+        id: 'wo-1',
+        organization_id: 'org-1',
+        work_order_number: 'WO-2026-001',
+        bom_id: 'bom-1',
+        finished_item_id: 'item-finish',
+        warehouse_id: 'wh-prod',
+        target_qty: '10',
+        completed_qty: '9',
+        scrapped_qty: '1',
+        status: 'COMPLETED',
+        start_date: '2026-03-01',
+        due_date: '2026-03-05',
+        total_material_cost: '410000.00000000',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      organizationId: 'org-1',
+      legalEntityId: 'le-1',
+      finishedGoodsAccountId: 'acc-fg-113004',
+      wipAccountId: 'acc-wip-113003',
+      scrapExpenseAccountId: 'acc-scrap-511003',
+      postingDate: '2026-03-05',
+      documentDate: '2026-03-05',
+      consumptions,
+    });
+
+    let totalDr = Money.zero();
+    let totalCr = Money.zero();
+    for (const l of draft.lines) {
+      totalDr = totalDr.add(new Money(l.debit_amount));
+      totalCr = totalCr.add(new Money(l.credit_amount));
+    }
+    expect(totalDr.format()).toBe('410000.00');
+    expect(totalCr.format()).toBe('410000.00');
+  });
+});
+
+describe('Financial Engine: Physical Inventory Count & Adjustments', () => {
+  it('calculates inventory count variances and generates balanced shrinkage adjustment journal', () => {
+    const calc = InventoryReconciliationEngine.calculateVariances([
+      {
+        item_id: 'item-1',
+        system_qty: '100.00000000',
+        counted_qty: '95.00000000', // -5 shortage
+        unit_cost: '1000.00000000',
+      },
+      {
+        item_id: 'item-2',
+        system_qty: '50.00000000',
+        counted_qty: '52.00000000', // +2 surplus
+        unit_cost: '500.00000000',
+      },
+    ]);
+
+    // Item 1 variance: -5 * 1000 = -5000
+    // Item 2 variance: +2 * 500 = +1000
+    // Total variance = -4000 (net shortage)
+    expect(calc.total_variance_value).toBe('-4000.00000000');
+
+    const draft = InventoryReconciliationEngine.generateAdjustmentJournal({
+      inventoryCount: {
+        id: 'count-1',
+        organization_id: 'org-1',
+        count_number: 'CNT-2026-Q1',
+        warehouse_id: 'wh-main',
+        period_id: 'period-1',
+        count_date: '2026-03-31',
+        status: 'RECONCILED',
+        total_variance_value: calc.total_variance_value,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      organizationId: 'org-1',
+      legalEntityId: 'le-1',
+      inventoryAccountId: 'acc-inv-113001',
+      adjustmentExpenseAccountId: 'acc-adj-511002',
+      postingDate: '2026-03-31',
+      documentDate: '2026-03-31',
+    });
+
+    expect(draft.lines).toHaveLength(2);
+    // Dr Expense 4,000, Cr Asset 4,000
+    expect(draft.lines[0].debit_amount).toBe('4000.00000000');
+    expect(draft.lines[0].account_id).toBe('acc-adj-511002');
+    expect(draft.lines[1].credit_amount).toBe('4000.00000000');
+    expect(draft.lines[1].account_id).toBe('acc-inv-113001');
+  });
+});
+
 
 

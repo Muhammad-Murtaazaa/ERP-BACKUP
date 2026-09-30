@@ -39,3 +39,13 @@
   3. Batch payroll execution generates balanced dual-stage vouchers: first accrual (`Dr Salaries Expense / Cr Tax Withholding / Cr EOBI / Cr Net Salaries Payable`), followed by bank disbursement (`Dr Net Salaries Payable / Cr Operating Bank`).
 - **Consequences**:
   - Zero rounding discrepancies in employee payslips and GL balance sheets.
+
+## ADR-005: Multi-Warehouse Logistics, Inventory Reconciliations & Work Order Assembly Costing
+- **Context**: Manufacturing operations and multi-location logistics require strict stock movement traceability, explicit scrap allocation, two-leg transfer tracking, and variance-driven cycle count adjustments without bypassing GL controls.
+- **Decision**:
+  1. Inter-warehouse transfers track two explicit legs (`shipped_qty` / `IN_TRANSIT` -> `received_qty` / `COMPLETED`) to prevent stock double-counting or disappearing goods.
+  2. Physical inventory count reconciliations compute exact decimal variances, posting balanced adjustments (`Dr Inventory Adjustments 511002 / Cr Inventory 113001` or surplus).
+  3. Bills of Materials (BOM) explosion factors in batch yield and scrap percentages.
+  4. Work order completion settles WIP to finished goods and scrap (`Dr Finished Goods 113004 / Dr Scrap 511003 / Cr WIP 113003`).
+- **Consequences**:
+  - Full traceability across warehouse bins, lot batches, and manufacturing WIP accounts with verified double-entry balance sheet reconciliation.

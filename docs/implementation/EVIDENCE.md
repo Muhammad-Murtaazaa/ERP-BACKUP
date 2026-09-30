@@ -41,22 +41,24 @@
 
 ## Milestone 4: Workforce & Payroll Core (Verified)
 - **Database Migration**: `packages/platform/src/db/migrations/004_workforce_and_payroll.sql` applied cleanly.
-- **HRM Master Data**:
-  - Departments with cost centers, designations, and employee records.
-  - Salary structures with modular earnings components (Basic, HRA, Utility, Medical).
-- **Gross-to-Net Computation Engine**:
-  - Exact progressive statutory income tax calculation.
-  - Statutory EOBI pension deduction handling.
+- **HRM Master Data**: Departments with cost centers, designations, and employee records.
+- **Gross-to-Net Computation Engine**: Exact progressive statutory income tax calculation and statutory EOBI pension deductions.
 - **Voucher Generation & Disbursement**:
   - Automated monthly payroll accrual journal (`Dr Salaries Expense 512001 / Cr Tax Withholding 212002 / Cr EOBI Payable 212003 / Cr Net Salaries Payable 211004`).
   - Automated bank disbursement voucher (`Dr Net Salaries Payable 211004 / Cr Operating Bank 111002`).
-  - Full employee payslip breakdown and interactive web views.
+
+## Milestone 5: Advanced Inventory, Multi-Warehouse & Manufacturing BOM (Verified)
+- **Database Migration**: `packages/platform/src/db/migrations/005_advanced_inventory_and_manufacturing.sql` applied cleanly.
+- **Multi-Warehouse & Facility Management**: Warehouses, storage zones, bin coordinates, lot batches, and serial numbers.
+- **Inter-Warehouse Stock Transfers**: Two-leg transfer orders with shipment dispatch (`IN_TRANSIT`) and destination receiving (`COMPLETED`).
+- **Physical Inventory Cycle Counting & Stock Adjustments**: Variance analysis and automated balanced GL adjustment vouchers (`Dr Inventory Adjustments & Shrinkage 511002 / Cr Inventory 113001` or surplus).
+- **Bills of Materials (BOM) & Work Orders**: Multi-level BOM yield explosion with scrap percentages, raw material issuance to WIP, and finished goods assembly completion with balanced GL voucher (`Dr Finished Goods 113004 / Dr Scrap 511003 / Cr WIP 113003`).
 
 ## Automated Test Summary
 - **Test Command**: `npx vitest run`
-- **Result**: 3 test files, 38 tests passed, 0 failures.
-  - `packages/financial-engine/test/financial-engine.test.ts`: 24/24 passed.
+- **Result**: 3 test files, 42 tests passed, 0 failures.
+  - `packages/financial-engine/test/financial-engine.test.ts`: 27/27 passed.
   - `packages/platform/test/platform.test.ts`: 3/3 passed.
-  - `apps/api/test/api.test.ts`: 11/11 passed.
+  - `apps/api/test/api.test.ts`: 12/12 passed.
 - **Build Command**: `npm run build`
-- **Result**: All monorepo packages and React UI bundle compiled cleanly with 0 type errors.
+- **Result**: All monorepo packages and React UI bundle compiled cleanly with 0 type errors in 6.63s.

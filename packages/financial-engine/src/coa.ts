@@ -185,6 +185,8 @@ export const STANDARD_COA_TEMPLATE: CoaTemplateItem[] = [
   { code: '5100', name: 'Cost of Sales', level: 2, parentCode: '5000', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: false, controlType: AccountControlType.GENERAL },
   { code: '5110', name: 'Direct Goods Cost', level: 3, parentCode: '5100', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: false, controlType: AccountControlType.GENERAL },
   { code: '511001', name: 'Product COGS', level: 4, parentCode: '5110', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '511002', name: 'Inventory Adjustments & Shrinkage', level: 4, parentCode: '5110', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '511003', name: 'Manufacturing Scrap & Variance', level: 4, parentCode: '5110', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
 
   { code: '5200', name: 'Operating Expenses', level: 2, parentCode: '5000', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: false, controlType: AccountControlType.GENERAL },
   { code: '5210', name: 'General & Administrative', level: 3, parentCode: '5200', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: false, controlType: AccountControlType.GENERAL },
