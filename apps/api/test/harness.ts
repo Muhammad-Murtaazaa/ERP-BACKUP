@@ -3,6 +3,7 @@
  * Mirrors the helper in api.test.ts, plus optional extra headers (Idempotency-Key).
  */
 import { app, db } from '../src/index.js';
+import { seedModules } from '../src/lib/module-seed.js';
 import { DbMigrator, SyntheticSeedRunner } from '@omnysync/platform';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,6 +84,7 @@ export async function bootstrap(): Promise<void> {
   const migrator = new DbMigrator(db, path.join(__dirname, '../../../packages/platform/src/db/migrations'));
   await migrator.runMigrations();
   await new SyntheticSeedRunner(db).runSeed();
+  await seedModules(db);
 }
 
 export async function login(email: string): Promise<string> {

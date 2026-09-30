@@ -4,6 +4,7 @@ import { DbMigrator, SyntheticSeedRunner } from '@omnysync/platform';
 import { createApp } from './app.js';
 import { db } from './context.js';
 import { startScheduler } from './automation/scheduler.js';
+import { seedModules } from './lib/module-seed.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -21,6 +22,7 @@ export async function startServer() {
   if (process.env.OMNYSYNC_DEMO_SEED !== 'false') {
     const seeder = new SyntheticSeedRunner(db);
     await seeder.runSeed();
+    await seedModules(db);
   }
   if (process.env.OMNYSYNC_SCHEDULER !== 'false') {
     startScheduler(db);

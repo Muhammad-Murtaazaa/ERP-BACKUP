@@ -27,8 +27,8 @@ describe('Platform & Database Integration: Migrations, Seeds & Tenancy', () => {
 
     expect(result.organizationId).toBeDefined();
     // 7 personas: the original five plus the CASHIER and STORE_MANAGER used for POS SoD.
-    expect(result.users.length).toBe(7);
-    expect(result.users.map((u) => u.role)).toEqual(expect.arrayContaining(['ADMIN', 'CONTROLLER', 'ACCOUNTANT', 'AUDITOR', 'VIEWER', 'CASHIER', 'STORE_MANAGER']));
+    expect(result.users.length).toBe(10);
+    expect(result.users.map((u) => u.role)).toEqual(expect.arrayContaining(['ADMIN', 'CONTROLLER', 'ACCOUNTANT', 'AUDITOR', 'VIEWER', 'CASHIER', 'STORE_MANAGER', 'SERVICE_MANAGER', 'TECHNICIAN', 'HR_MANAGER']));
     expect(result.accountsCreated).toBeGreaterThan(20);
     expect(result.periodsCreated).toBe(12);
 

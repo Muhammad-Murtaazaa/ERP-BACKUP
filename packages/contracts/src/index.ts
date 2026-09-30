@@ -78,6 +78,15 @@ export const AccountingPurpose = {
   RECURRING_JOURNAL: 'RECURRING_JOURNAL',
   QUALITY_SCRAP_WRITEOFF: 'QUALITY_SCRAP_WRITEOFF',
   MAINTENANCE_EXPENSE_SETTLEMENT: 'MAINTENANCE_EXPENSE_SETTLEMENT',
+  SERVICE_INVOICE: 'SERVICE_INVOICE',
+  SERVICE_PARTS_ISSUE: 'SERVICE_PARTS_ISSUE',
+  TIMESHEET_COST: 'TIMESHEET_COST',
+  FREIGHT_CHARGE: 'FREIGHT_CHARGE',
+  FLEET_EXPENSE: 'FLEET_EXPENSE',
+  LOAN_DISBURSEMENT: 'LOAN_DISBURSEMENT',
+  LOAN_REPAYMENT: 'LOAN_REPAYMENT',
+  SUBSCRIPTION_INVOICE: 'SUBSCRIPTION_INVOICE',
+  TAX_SETTLEMENT: 'TAX_SETTLEMENT',
 } as const;
 export type AccountingPurpose = (typeof AccountingPurpose)[keyof typeof AccountingPurpose];
 
@@ -1276,6 +1285,8 @@ export const UserRole = {
   MAINTENANCE_ENGINEER: 'MAINTENANCE_ENGINEER',
   CASHIER: 'CASHIER',
   STORE_MANAGER: 'STORE_MANAGER',
+  SERVICE_MANAGER: 'SERVICE_MANAGER',
+  TECHNICIAN: 'TECHNICIAN',
   AUDITOR: 'AUDITOR',
   VIEWER: 'VIEWER',
 } as const;
@@ -1351,6 +1362,66 @@ export const Permission = {
   AUTOMATION_VIEW: 'automation.view',
   AUTOMATION_MANAGE: 'automation.manage',
   AUTOMATION_RUN: 'automation.run',
+  // Configuration, tax & warehouse execution (partial modules completed)
+  CONFIG_VIEW: 'config.view',
+  CONFIG_MANAGE: 'config.manage',
+  TAX_VIEW: 'tax.view',
+  TAX_MANAGE: 'tax.manage',
+  TAX_FILE: 'tax.return.file',
+  WMS_MANAGE: 'wms.manage',
+  WMS_PICK: 'wms.pick.execute',
+  // Service management (SRV)
+  SERVICE_VIEW: 'service.view',
+  SERVICE_MANAGE: 'service.case.manage',
+  SERVICE_DISPATCH: 'service.dispatch',
+  SERVICE_EXECUTE: 'service.workorder.execute',
+  SERVICE_BILL: 'service.billing.post',
+  // CRM
+  CRM_VIEW: 'crm.view',
+  CRM_MANAGE: 'crm.manage',
+  // Time & workforce (TIM)
+  TIME_VIEW: 'time.view',
+  TIME_SUBMIT: 'time.entry.submit',
+  TIME_APPROVE: 'time.entry.approve',
+  TIME_POST: 'time.cost.post',
+  // Supplier management (SUP)
+  SUPPLIER_VIEW: 'supplier.view',
+  SUPPLIER_MANAGE: 'supplier.manage',
+  SUPPLIER_APPROVE: 'supplier.approve',
+  // Logistics (LOG)
+  LOGISTICS_VIEW: 'logistics.view',
+  LOGISTICS_MANAGE: 'logistics.shipment.manage',
+  LOGISTICS_POST: 'logistics.freight.post',
+  // Reporting & analytics (BI)
+  BI_VIEW: 'bi.view',
+  BI_MANAGE: 'bi.manage',
+  // Documents (DOC)
+  DOC_VIEW: 'doc.view',
+  DOC_MANAGE: 'doc.manage',
+  DOC_HOLD: 'doc.legalhold.manage',
+  // Fleet (FLT)
+  FLEET_VIEW: 'fleet.view',
+  FLEET_MANAGE: 'fleet.manage',
+  FLEET_POST: 'fleet.expense.post',
+  // Governance, risk & compliance (GRC)
+  GRC_VIEW: 'grc.view',
+  GRC_MANAGE: 'grc.manage',
+  // Lending (LND)
+  LOAN_VIEW: 'loan.view',
+  LOAN_MANAGE: 'loan.manage',
+  LOAN_APPROVE: 'loan.approve',
+  LOAN_POST: 'loan.post',
+  // Planning & budgeting (EPM)
+  BUDGET_VIEW: 'budget.view',
+  BUDGET_MANAGE: 'budget.manage',
+  BUDGET_APPROVE: 'budget.approve',
+  // Recruitment & talent (TAL)
+  TALENT_VIEW: 'talent.view',
+  TALENT_MANAGE: 'talent.manage',
+  // Subscription commerce (COM)
+  SUBSCRIPTION_VIEW: 'subscription.view',
+  SUBSCRIPTION_MANAGE: 'subscription.manage',
+  SUBSCRIPTION_BILL: 'subscription.billing.run',
   // Audit
   AUDIT_VIEW: 'audit.view',
 } as const;
@@ -1426,6 +1497,14 @@ export const ErrorCode = {
   CREDIT_LIMIT_EXCEEDED: 'CREDIT_LIMIT_EXCEEDED',
   RATE_LIMITED: 'RATE_LIMITED',
   MODULE_NOT_READY: 'MODULE_NOT_READY',
+  MODULE_DISABLED: 'MODULE_DISABLED',
+  CAPACITY_CONFLICT: 'CAPACITY_CONFLICT',
+  OVERLAP_DETECTED: 'OVERLAP_DETECTED',
+  ENTITLEMENT_INVALID: 'ENTITLEMENT_INVALID',
+  CHECKLIST_INCOMPLETE: 'CHECKLIST_INCOMPLETE',
+  ALREADY_BILLED: 'ALREADY_BILLED',
+  LEGAL_HOLD: 'LEGAL_HOLD',
+  BUDGET_LOCKED: 'BUDGET_LOCKED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

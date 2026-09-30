@@ -101,6 +101,24 @@ export class SyntheticSeedRunner {
         name: 'Store Manager',
         role: UserRole.STORE_MANAGER,
       },
+      {
+        id: '40000000-0000-0000-0000-000000000008',
+        email: 'service@omnysync.internal',
+        name: 'Service Manager',
+        role: UserRole.SERVICE_MANAGER,
+      },
+      {
+        id: '40000000-0000-0000-0000-000000000009',
+        email: 'tech@omnysync.internal',
+        name: 'Field Technician',
+        role: UserRole.TECHNICIAN,
+      },
+      {
+        id: '40000000-0000-0000-0000-000000000010',
+        email: 'hr@omnysync.internal',
+        name: 'HR Manager',
+        role: UserRole.HR_MANAGER,
+      },
     ];
 
     const defaultPasswordHash = AuthService.hashPassword('Password123!');

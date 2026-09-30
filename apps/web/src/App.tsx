@@ -1,32 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
+import { MODULE_VIEWS, MODULE_NAV } from './views/modules/registry.js';
 import { ApiClient } from './api/client.js';
-import { DashboardView } from './views/DashboardView.js';
-import { CoaView } from './views/CoaView.js';
-import { JournalsView } from './views/JournalsView.js';
-import { TrialBalanceView } from './views/TrialBalanceView.js';
-import { FiscalPeriodsView } from './views/FiscalPeriodsView.js';
-import { AuditView } from './views/AuditView.js';
-import { PartiesView } from './views/PartiesView.js';
-import { ItemsView } from './views/ItemsView.js';
-import { SalesOrdersView } from './views/SalesOrdersView.js';
-import { ArInvoicesView } from './views/ArInvoicesView.js';
-import { ProcurementOrdersView } from './views/ProcurementOrdersView.js';
-import { ApInvoicesView } from './views/ApInvoicesView.js';
-import { PaymentsView } from './views/PaymentsView.js';
-import { BankReconciliationView } from './views/BankReconciliationView.js';
-import { FxRatesView } from './views/FxRatesView.js';
-import { OnboardingWizardView } from './views/OnboardingWizardView.js';
-import { EmployeesView } from './views/EmployeesView.js';
-import { PayrollView } from './views/PayrollView.js';
-import { WarehouseView } from './views/WarehouseView.js';
-import { ManufacturingView } from './views/ManufacturingView.js';
-import { ProjectsView } from './views/ProjectsView.js';
-import { FixedAssetsView } from './views/FixedAssetsView.js';
-import { PosTerminalView } from './views/PosTerminalView.js';
-import { QualityManagementView } from './views/QualityManagementView.js';
-import { PlantMaintenanceView } from './views/PlantMaintenanceView.js';
-import { AutomationView } from './views/AutomationView.js';
 import { Badge } from '@omnysync/ui';
+
+// Route-level code splitting: each workspace loads on first visit (clears the 500 kB chunk warning).
+const DashboardView = lazy(() => import('./views/DashboardView.js').then((m) => ({ default: m.DashboardView })));
+const CoaView = lazy(() => import('./views/CoaView.js').then((m) => ({ default: m.CoaView })));
+const JournalsView = lazy(() => import('./views/JournalsView.js').then((m) => ({ default: m.JournalsView })));
+const TrialBalanceView = lazy(() => import('./views/TrialBalanceView.js').then((m) => ({ default: m.TrialBalanceView })));
+const FiscalPeriodsView = lazy(() => import('./views/FiscalPeriodsView.js').then((m) => ({ default: m.FiscalPeriodsView })));
+const AuditView = lazy(() => import('./views/AuditView.js').then((m) => ({ default: m.AuditView })));
+const PartiesView = lazy(() => import('./views/PartiesView.js').then((m) => ({ default: m.PartiesView })));
+const ItemsView = lazy(() => import('./views/ItemsView.js').then((m) => ({ default: m.ItemsView })));
+const SalesOrdersView = lazy(() => import('./views/SalesOrdersView.js').then((m) => ({ default: m.SalesOrdersView })));
+const ArInvoicesView = lazy(() => import('./views/ArInvoicesView.js').then((m) => ({ default: m.ArInvoicesView })));
+const ProcurementOrdersView = lazy(() => import('./views/ProcurementOrdersView.js').then((m) => ({ default: m.ProcurementOrdersView })));
+const ApInvoicesView = lazy(() => import('./views/ApInvoicesView.js').then((m) => ({ default: m.ApInvoicesView })));
+const PaymentsView = lazy(() => import('./views/PaymentsView.js').then((m) => ({ default: m.PaymentsView })));
+const BankReconciliationView = lazy(() => import('./views/BankReconciliationView.js').then((m) => ({ default: m.BankReconciliationView })));
+const FxRatesView = lazy(() => import('./views/FxRatesView.js').then((m) => ({ default: m.FxRatesView })));
+const OnboardingWizardView = lazy(() => import('./views/OnboardingWizardView.js').then((m) => ({ default: m.OnboardingWizardView })));
+const EmployeesView = lazy(() => import('./views/EmployeesView.js').then((m) => ({ default: m.EmployeesView })));
+const PayrollView = lazy(() => import('./views/PayrollView.js').then((m) => ({ default: m.PayrollView })));
+const WarehouseView = lazy(() => import('./views/WarehouseView.js').then((m) => ({ default: m.WarehouseView })));
+const ManufacturingView = lazy(() => import('./views/ManufacturingView.js').then((m) => ({ default: m.ManufacturingView })));
+const ProjectsView = lazy(() => import('./views/ProjectsView.js').then((m) => ({ default: m.ProjectsView })));
+const FixedAssetsView = lazy(() => import('./views/FixedAssetsView.js').then((m) => ({ default: m.FixedAssetsView })));
+const PosTerminalView = lazy(() => import('./views/PosTerminalView.js').then((m) => ({ default: m.PosTerminalView })));
+const QualityManagementView = lazy(() => import('./views/QualityManagementView.js').then((m) => ({ default: m.QualityManagementView })));
+const PlantMaintenanceView = lazy(() => import('./views/PlantMaintenanceView.js').then((m) => ({ default: m.PlantMaintenanceView })));
+const AutomationView = lazy(() => import('./views/AutomationView.js').then((m) => ({ default: m.AutomationView })));
+
 import {
   LayoutDashboard,
   Layers,
@@ -89,6 +93,9 @@ export const App: React.FC = () => {
     { email: 'accountant@omnysync.internal', name: 'Accountant', role: 'ACCOUNTANT' },
     { email: 'cashier@omnysync.internal', name: 'Cashier', role: 'CASHIER' },
     { email: 'storemanager@omnysync.internal', name: 'Store Mgr', role: 'STORE_MANAGER' },
+    { email: 'service@omnysync.internal', name: 'Service Mgr', role: 'SERVICE_MANAGER' },
+    { email: 'tech@omnysync.internal', name: 'Technician', role: 'TECHNICIAN' },
+    { email: 'hr@omnysync.internal', name: 'HR', role: 'HR_MANAGER' },
     { email: 'auditor@omnysync.internal', name: 'Auditor', role: 'AUDITOR' },
     { email: 'viewer@omnysync.internal', name: 'Viewer', role: 'VIEWER' },
   ];
@@ -181,6 +188,7 @@ export const App: React.FC = () => {
         { id: 'periods', label: 'Fiscal Periods', icon: Calendar },
       ],
     },
+    ...MODULE_NAV,
     {
       title: 'Setup & Governance',
       items: [
@@ -345,7 +353,14 @@ export const App: React.FC = () => {
               Loading ERP platform...
             </div>
           ) : (
-            <>
+            <Suspense
+              fallback={
+                <div role="status" className="flex items-center justify-center h-64 text-sm text-[#5E6A7D]">
+                  <span className="inline-block animate-spin h-5 w-5 border-2 border-[#5940B8] border-t-transparent rounded-full mr-2" />
+                  Loading workspace…
+                </div>
+              }
+            >
               {currentTab === 'dashboard' && <DashboardView onNavigate={setCurrentTab} />}
               {currentTab === 'pos' && <PosTerminalView />}
               {currentTab === 'parties' && <PartiesView />}
@@ -372,7 +387,8 @@ export const App: React.FC = () => {
               {currentTab === 'coa' && <CoaView />}
               {currentTab === 'periods' && <FiscalPeriodsView />}
               {currentTab === 'audit' && <AuditView />}
-            </>
+              {MODULE_VIEWS[currentTab] && React.createElement(MODULE_VIEWS[currentTab])}
+            </Suspense>
           )}
         </main>
       </div>

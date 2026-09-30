@@ -4,6 +4,7 @@ import { Permission, ErrorCode } from '@omnysync/contracts';
 import { db, authenticate, requirePermission, auditLogger } from '../context.js';
 import { ok } from '../lib/http.js';
 import { ApiError } from '../lib/errors.js';
+import { seedModules } from '../lib/module-seed.js';
 
 export function registerAdminRoutes(app: Express): void {
   // ==========================================
@@ -17,6 +18,7 @@ export function registerAdminRoutes(app: Express): void {
     }
     const seeder = new SyntheticSeedRunner(db);
     const result = await seeder.runSeed();
+    await seedModules(db);
     await auditLogger.record({
       organization_id: req.session!.organization_id,
       user_id: req.session!.user_id,
