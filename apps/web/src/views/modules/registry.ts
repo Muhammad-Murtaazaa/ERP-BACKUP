@@ -1,6 +1,6 @@
 /** Registry of module workspaces added after the core pack; lazily loaded (route-level code splitting). */
 import React, { lazy } from 'react';
-import { Cog, Receipt, Boxes, Workflow, Wrench, Handshake, Clock, BadgeCheck, Truck, BarChart3, FileText, Car } from 'lucide-react';
+import { Cog, Receipt, Boxes, Workflow, Wrench, Handshake, Clock, BadgeCheck, Truck, BarChart3, FileText, Car, Repeat } from 'lucide-react';
 
 type Nav = { title: string; items: { id: string; label: string; icon: React.ComponentType<any> }[] };
 
@@ -16,6 +16,7 @@ export const MODULE_VIEWS: Record<string, React.LazyExoticComponent<React.Compon
   bi: lazy(() => import('./BiView.js').then((m) => ({ default: m.BiView }))),
   doc: lazy(() => import('./DocumentsView.js').then((m) => ({ default: m.DocumentsView }))),
   flt: lazy(() => import('./FleetView.js').then((m) => ({ default: m.FleetView }))),
+  com: lazy(() => import('./SubscriptionsView.js').then((m) => ({ default: m.SubscriptionsView }))),
   'workflow-studio': lazy(() => import('./WorkflowStudioView.js').then((m) => ({ default: m.WorkflowStudioView }))),
 };
 
@@ -27,6 +28,7 @@ export const MODULE_NAV: Nav[] = [
       { id: 'crm', label: 'CRM & Pipeline', icon: Handshake },
       { id: 'time', label: 'Time & Attendance', icon: Clock },
       { id: 'flt', label: 'Fleet', icon: Car },
+      { id: 'com', label: 'Subscriptions & AMC', icon: Repeat },
     ],
   },
   {

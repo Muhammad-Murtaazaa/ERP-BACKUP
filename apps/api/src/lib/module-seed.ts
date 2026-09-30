@@ -218,3 +218,23 @@ registerSeeder('FLT', async (q, c) => {
     );
   }
 });
+
+registerSeeder('COM', async (q, c) => {
+  const acc = (await q.query(`SELECT id FROM accounts WHERE organization_id = $1 AND code = '411007'`, [c.org])).rows[0];
+  await q.query(
+    `INSERT INTO items (id, organization_id, legal_entity_id, code, name, item_type, uom, unit_price, unit_cost, sales_account_id) VALUES (gen_random_uuid(), $1, $2, 'AMC-SUB', 'AMC subscription fee', 'SERVICE', 'PERIOD', 0, 0, $3) ON CONFLICT (organization_id, code) DO NOTHING`,
+    [c.org, c.le, acc?.id ?? null],
+  );
+  const item = (await q.query(`SELECT id FROM items WHERE organization_id = $1 AND code = 'AMC-SUB'`, [c.org])).rows[0];
+  const plans = [
+    ['AMC-HOME', 'Home AMC — up to 3 split units', 'MONTHLY', '2500', 2, 'Two preventive visits a year, priority response, labour included.'],
+    ['AMC-PLUS', 'Home AMC Plus — up to 6 units', 'QUARTERLY', '12000', 4, 'Quarterly visits, gas top-up labour, 4-hour response.'],
+    ['AMC-COMM', 'Commercial AMC — VRF / ducted', 'ANNUAL', '180000', 12, 'Monthly visits for commercial plant, 2-hour critical response.'],
+  ];
+  for (const [code, name, interval, price, visits, desc] of plans) {
+    await q.query(
+      `INSERT INTO com_plans (organization_id, legal_entity_id, code, name, description, billing_interval, price, item_id, visits_per_year, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (organization_id, code) DO NOTHING`,
+      [c.org, c.le, code, name, desc, interval, price, item.id, visits, c.admin],
+    );
+  }
+});
