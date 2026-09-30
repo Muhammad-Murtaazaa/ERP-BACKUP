@@ -125,6 +125,7 @@ export const STANDARD_COA_TEMPLATE: CoaTemplateItem[] = [
   { code: '111002', name: 'Operating Bank PKR', level: 4, parentCode: '1110', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.BANK, currencyRestriction: 'PKR' },
   { code: '111003', name: 'Operating Bank USD', level: 4, parentCode: '1110', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.BANK, currencyRestriction: 'USD' },
   { code: '111004', name: 'Cash Clearing Account', level: 4, parentCode: '1110', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '111005', name: 'Card & Wallet Settlement Clearing', level: 4, parentCode: '1110', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.BANK },
 
   { code: '1120', name: 'Receivables', level: 3, parentCode: '1100', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: false, controlType: AccountControlType.GENERAL },
   { code: '112001', name: 'Trade AR Control', level: 4, parentCode: '1120', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.AR_CONTROL },
@@ -158,6 +159,10 @@ export const STANDARD_COA_TEMPLATE: CoaTemplateItem[] = [
   { code: '211003', name: 'Accrued Expenses', level: 4, parentCode: '2110', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '211004', name: 'Salaries Payable', level: 4, parentCode: '2110', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '211005', name: 'Subcontractor Retention Payable', level: 4, parentCode: '2110', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.AP_CONTROL },
+  { code: '211006', name: 'Customer Advances & Unapplied Receipts', level: 4, parentCode: '2110', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '211007', name: 'Gift Card & Store Credit Liability', level: 4, parentCode: '2110', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '211008', name: 'Loyalty Points Liability', level: 4, parentCode: '2110', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '211009', name: 'Other Payroll Deductions Payable', level: 4, parentCode: '2110', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
 
   { code: '2120', name: 'Tax Payable', level: 3, parentCode: '2100', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: false, controlType: AccountControlType.GENERAL },
   { code: '212001', name: 'Output Sales Tax Payable', level: 4, parentCode: '2120', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.TAX_PAYABLE },
@@ -182,6 +187,8 @@ export const STANDARD_COA_TEMPLATE: CoaTemplateItem[] = [
   { code: '411001', name: 'Product Sales', level: 4, parentCode: '4110', statementClass: StatementClass.REVENUE, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '411002', name: 'Service Income', level: 4, parentCode: '4110', statementClass: StatementClass.REVENUE, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '411003', name: 'Project Milestone & Contract Revenue', level: 4, parentCode: '4110', statementClass: StatementClass.REVENUE, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '411004', name: 'Sales Returns & Discounts (Contra Revenue)', level: 4, parentCode: '4110', statementClass: StatementClass.REVENUE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '411005', name: 'Other Income & Realized Gains', level: 4, parentCode: '4110', statementClass: StatementClass.REVENUE, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
 
   // --- 5. EXPENSES ---
   { code: '5000', name: 'Expenses', level: 1, statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: false, controlType: AccountControlType.GENERAL },
@@ -199,6 +206,10 @@ export const STANDARD_COA_TEMPLATE: CoaTemplateItem[] = [
   { code: '521003', name: 'Utilities Expense', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '521004', name: 'Depreciation Expense', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '521005', name: 'Equipment Maintenance & Repairs Expense', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '521006', name: 'Bank Charges', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '521007', name: 'FX Losses & Asset Disposal Losses', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '521008', name: 'Cash Short & Over', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '521009', name: 'Bad Debt Expense', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
 
   // --- 9. TECHNICAL ACCOUNTS ---
   { code: '9000', name: 'Technical Accounts', level: 1, statementClass: StatementClass.EQUITY, normalBalance: NormalBalance.CREDIT, postingAllowed: false, controlType: AccountControlType.GENERAL },

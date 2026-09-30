@@ -55,7 +55,9 @@ export class PayrollEngine {
 
   /**
    * Computes progressive statutory withholding income tax based on annual taxable estimation.
-   * Pakistan Income Tax Slabs:
+   * ILLUSTRATIVE slab table (not a qualified statutory rule — AGENTS.md rule 13 and
+   * LOCALIZATION.md require source, effective date and reviewer sign-off before any
+   * live use). Slabs:
    * 0 - 600,000: 0%
    * 600,001 - 1,200,000: 5% of amount exceeding 600,000
    * 1,200,001 - 2,400,000: 30,000 + 15% of amount exceeding 1,200,000
@@ -71,13 +73,13 @@ export class PayrollEngine {
     if (annualDec.lte(600000)) {
       annualTaxDec = new Decimal(0);
     } else if (annualDec.lte(1200000)) {
-      annualTaxDec = annualDec.minus(600000).times(0.05);
+      annualTaxDec = annualDec.minus(600000).times('0.05');
     } else if (annualDec.lte(2400000)) {
-      annualTaxDec = new Decimal(30000).plus(annualDec.minus(1200000).times(0.15));
+      annualTaxDec = new Decimal(30000).plus(annualDec.minus(1200000).times('0.15'));
     } else if (annualDec.lte(3600000)) {
-      annualTaxDec = new Decimal(210000).plus(annualDec.minus(2400000).times(0.25));
+      annualTaxDec = new Decimal(210000).plus(annualDec.minus(2400000).times('0.25'));
     } else {
-      annualTaxDec = new Decimal(510000).plus(annualDec.minus(3600000).times(0.35));
+      annualTaxDec = new Decimal(510000).plus(annualDec.minus(3600000).times('0.35'));
     }
 
     const monthlyTaxDec = annualTaxDec.dividedBy(12).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
@@ -109,8 +111,18 @@ export class PayrollEngine {
     const pf = new Money(customDeductions?.provident_fund || '0');
     const other = new Money(customDeductions?.other || '0');
 
+    if (gross.isNegative() || pf.isNegative() || other.isNegative()) {
+      throw new Error(`Payroll inputs cannot be negative for employee ${employeeId}`);
+    }
     const totalDeductions = tax.add(eobi).add(pf).add(other);
     const net = gross.subtract(totalDeductions);
+    if (net.isNegative()) {
+      // Deductions exceeding gross would create a negative payable; it must be
+      // resolved as an explicit recovery, not a negative net salary line.
+      throw new Error(
+        `Deductions (${totalDeductions.format()}) exceed gross pay (${gross.format()}) for employee ${employeeId}`,
+      );
+    }
 
     return {
       employee_id: employeeId,
@@ -179,6 +191,7 @@ export class PayrollEngine {
     taxPayableAccountId: string;
     eobiPayableAccountId: string;
     providentFundPayableAccountId?: string;
+    otherDeductionsPayableAccountId?: string;
     salariesPayableAccountId: string;
     currency?: string;
   }): {
@@ -231,8 +244,13 @@ export class PayrollEngine {
       });
     }
 
-    // Line 4: Credit Provident Fund (if > 0 && account provided)
-    if (params.providentFundPayableAccountId && new Money(params.totals.total_provident_fund).toDecimal().gt(0)) {
+    // Line 4: Credit Provident Fund (if > 0). A missing PF account previously
+    // dropped the credit silently and produced an unbalanced voucher.
+    const pfTotal = new Money(params.totals.total_provident_fund || '0');
+    if (pfTotal.isPositive() && !params.providentFundPayableAccountId) {
+      throw new Error('Provident fund deductions exist but no provident fund payable account is mapped');
+    }
+    if (params.providentFundPayableAccountId && pfTotal.isPositive()) {
       lines.push({
         line_number: lineNo++,
         account_id: params.providentFundPayableAccountId,
@@ -244,7 +262,24 @@ export class PayrollEngine {
       });
     }
 
-    // Line 5: Credit Net Salaries Payable
+    // Line 5: Credit Other Deductions Payable (previously never credited -> unbalanced)
+    const otherTotal = new Money(params.totals.total_other_deductions || '0');
+    if (otherTotal.isPositive()) {
+      if (!params.otherDeductionsPayableAccountId) {
+        throw new Error('Other payroll deductions exist but no deductions payable account is mapped');
+      }
+      lines.push({
+        line_number: lineNo++,
+        account_id: params.otherDeductionsPayableAccountId,
+        debit_amount: '0.00',
+        credit_amount: params.totals.total_other_deductions,
+        base_debit: '0.00',
+        base_credit: params.totals.total_other_deductions,
+        description: 'Other employee deductions payable',
+      });
+    }
+
+    // Line 6: Credit Net Salaries Payable
     lines.push({
       line_number: lineNo++,
       account_id: params.salariesPayableAccountId,
