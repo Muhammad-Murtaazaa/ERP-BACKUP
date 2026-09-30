@@ -107,3 +107,34 @@ registerSeeder('SRV', async (q, c) => {
     );
   }
 });
+
+registerSeeder('CRM', async (q, c) => {
+  const has = await q.query(`SELECT 1 FROM crm_leads WHERE organization_id = $1 LIMIT 1`, [c.org]);
+  if (has.rows.length) return;
+  const leads = [
+    ['LEAD-DEMO-001', 'Ayesha Malik', 'Malik Residence', 'ayesha.malik@example.pk', '0300-1234567', 'REFERRAL', '3 × 1.5-ton inverter split install', 'Lahore', '420000', 'QUALIFIED'],
+    ['LEAD-DEMO-002', 'Faisal Qureshi', 'Qureshi Textiles', 'faisal@qureshitex.example.pk', '0321-7654321', 'WEBSITE', 'Factory floor ducted cooling, ~60TR', 'Faisalabad', '5800000', 'CONTACTED'],
+    ['LEAD-DEMO-003', 'Sana Javed', null, 'sana.j@example.pk', '0333-5550001', 'SOCIAL', 'AMC for 2 units', 'Lahore', '36000', 'NEW'],
+  ];
+  const { normPhone } = await import('../routes/crm.js');
+  for (const [num, name, company, email, phone, source, interest, city, val, status] of leads) {
+    await q.query(
+      `INSERT INTO crm_leads (organization_id, legal_entity_id, number, name, company, email, email_norm, phone, phone_norm, source, interest, city, estimated_value, status, owner_user_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$15,$7,$8,$9,$10,$11,$12,$13,$14,$14)`,
+      [c.org, c.le, num, name, company, email, phone, normPhone(phone), source, interest, city, val, status, c.admin, String(email).toLowerCase()],
+    );
+  }
+  const party = (await q.query(`SELECT id FROM parties WHERE organization_id = $1 AND party_type IN ('CUSTOMER','BOTH') ORDER BY code LIMIT 1`, [c.org])).rows[0];
+  if (!party) return;
+  const opps = [
+    ['OPP-DEMO-001', 'Office tower VRF retrofit', '12500000', 'PROPOSAL', 60, '2026-11-15'],
+    ['OPP-DEMO-002', 'Clinic chiller AMC renewal', '850000', 'NEGOTIATION', 80, '2026-10-20'],
+    ['OPP-DEMO-003', 'Showroom split units (8)', '1640000', 'SITE_SURVEY', 40, '2026-12-05'],
+  ];
+  for (const [num, name, amt, stage, prob, close] of opps) {
+    await q.query(
+      `INSERT INTO crm_opportunities (organization_id, legal_entity_id, number, name, party_id, amount, stage, probability, expected_close_date, owner_user_id, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)`,
+      [c.org, c.le, num, name, party.id, amt, stage, prob, close, c.admin],
+    );
+  }
+});
