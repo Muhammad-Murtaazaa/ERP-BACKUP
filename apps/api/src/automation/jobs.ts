@@ -349,6 +349,31 @@ async function posShiftMonitor({ q, orgId, now, config }: JobContext): Promise<J
   return { summary: { long_open_shifts: open.rows.length, variances_7d: variance.rows.length }, alerts, resolveScope: 'POS_OPEN:' };
 }
 
+// ---------------------------------------------------------------- service (SRV)
+async function serviceSlaPm({ q, orgId, today, now, config }: JobContext): Promise<JobResult> {
+  const { generatePreventive } = await import('../routes/service.js');
+  const le = (await q.query(`SELECT id FROM legal_entities WHERE organization_id = $1 ORDER BY created_at LIMIT 1`, [orgId])).rows[0]?.id;
+  const pm = le ? await generatePreventive(q, orgId, le, null, today) : { created: [], skipped_duplicates: 0 };
+  const riskMin = Number(config.at_risk_minutes ?? 60);
+  const open = await q.query(
+    `SELECT c.id, c.number, c.title, c.priority, c.resolution_due_at + (c.paused_minutes || ' minutes')::interval AS due, p.name AS party
+     FROM srv_cases c JOIN parties p ON p.id = c.party_id
+     WHERE c.organization_id = $1 AND c.status NOT IN ('RESOLVED','CLOSED','CANCELLED','ON_HOLD') AND c.resolution_due_at IS NOT NULL
+       AND c.resolution_due_at + (c.paused_minutes || ' minutes')::interval < $2`,
+    [orgId, new Date(now.getTime() + riskMin * 60000).toISOString()],
+  );
+  const alerts: DetectedAlert[] = open.rows.map((c: any) => {
+    const breached = new Date(c.due) <= now;
+    return {
+      dedupe_key: `SRV_SLA:${c.id}:${breached ? 'BREACH' : 'RISK'}`, category: 'SERVICE', severity: breached ? 'CRITICAL' : 'WARNING',
+      title: `${c.number} ${breached ? 'breached' : 'at risk of breaching'} its resolution SLA (${c.priority})`,
+      body: `${c.party}: ${c.title}. Due ${new Date(c.due).toISOString()}.`, entity_type: 'SERVICE_CASE', entity_id: c.id,
+    };
+  });
+  for (const n of pm.created) alerts.push({ dedupe_key: `SRV_PM:${n}`, category: 'SERVICE', severity: 'INFO', title: `Preventive case ${n} created`, entity_type: 'SERVICE_CASE' });
+  return { summary: { pm_cases_created: pm.created, pm_duplicates_skipped: pm.skipped_duplicates, sla_alerts: open.rows.length }, alerts, resolveScope: 'SRV_SLA:' };
+}
+
 export const JOB_HANDLERS: Record<string, (ctx: JobContext) => Promise<JobResult>> = {
   REORDER_ALERTS: reorderAlerts,
   STOCK_GL_RECON: stockGlRecon,
@@ -361,6 +386,7 @@ export const JOB_HANDLERS: Record<string, (ctx: JobContext) => Promise<JobResult
   APPROVAL_AGING: approvalAging,
   PM_WORK_ORDERS: pmWorkOrders,
   POS_SHIFT_MONITOR: posShiftMonitor,
+  SERVICE_SLA_PM: serviceSlaPm,
 };
 
 /** Default rule catalogue, created idempotently for every organisation. */
@@ -376,4 +402,5 @@ export const DEFAULT_RULES: { code: string; name: string; job_type: string; tier
   { code: 'WF-APPROVAL-AGING', name: 'Approval queue aging', job_type: 'APPROVAL_AGING', tier: 'A0', schedule_kind: 'DAILY', run_at_local: '09:30', owner_role: 'CONTROLLER', description: 'Escalates journals and purchase orders waiting too long.', config: { max_age_days: 2 } },
   { code: 'PM-WORKORDERS', name: 'Preventive maintenance work orders', job_type: 'PM_WORK_ORDERS', tier: 'A2', schedule_kind: 'DAILY', run_at_local: '06:00', owner_role: 'ADMIN', description: 'Creates scheduled work orders for PM plans falling due.', config: { lead_days: 3 } },
   { code: 'POS-MONITOR', name: 'POS shift monitor', job_type: 'POS_SHIFT_MONITOR', tier: 'A0', schedule_kind: 'INTERVAL', interval_minutes: 30, owner_role: 'STORE_MANAGER', description: 'Flags shifts left open too long and recent cash variances.', config: { max_shift_hours: 14, material_variance: '500' } },
+  { code: 'SRV-SLA-PM', name: 'Service SLA escalation & preventive visits', job_type: 'SERVICE_SLA_PM', tier: 'A2', schedule_kind: 'INTERVAL', interval_minutes: 15, owner_role: 'SERVICE_MANAGER', description: 'Escalates service cases at risk of / past their SLA and opens preventive-maintenance cases for contracts falling due (one per occurrence).', config: { at_risk_minutes: 60 } },
 ];

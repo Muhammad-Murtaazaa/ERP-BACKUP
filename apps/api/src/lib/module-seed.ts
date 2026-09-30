@@ -76,3 +76,34 @@ registerSeeder('AUT', async (q, c) => {
     );
   }
 });
+
+registerSeeder('SRV', async (q, c) => {
+  const acc = (await q.query(`SELECT id FROM accounts WHERE organization_id = $1 AND code = '411002'`, [c.org])).rows[0];
+  await q.query(
+    `INSERT INTO items (id, organization_id, legal_entity_id, code, name, item_type, uom, unit_price, unit_cost, sales_account_id)
+     VALUES (gen_random_uuid(), $1, $2, 'SRV-LABOUR', 'Service labour (per hour)', 'SERVICE', 'HOUR', 2500, 0, $3) ON CONFLICT (organization_id, code) DO NOTHING`,
+    [c.org, c.le, acc?.id ?? null],
+  );
+  const techs = [
+    ['T-001', 'Bilal Ahmed', '40000000-0000-0000-0000-000000000009', 'Split AC, VRF, refrigerant', 'Lahore – Gulberg', '900'],
+    ['T-002', 'Usman Tariq', null, 'Chillers, ducting, electrical', 'Lahore – DHA', '1100'],
+    ['T-003', 'Hamza Riaz', null, 'Installation, inverter AC', 'Lahore – Johar Town', '800'],
+  ];
+  for (const [code, name, user, skills, zone, cost] of techs) {
+    const userOk = user ? (await q.query(`SELECT 1 FROM users WHERE id = $1`, [user])).rows.length > 0 : false;
+    await q.query(
+      `INSERT INTO srv_technicians (organization_id, legal_entity_id, code, name, user_id, skills, zone, hourly_cost, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (organization_id, code) DO NOTHING`,
+      [c.org, c.le, code, name, userOk ? user : null, skills, zone, cost, c.admin],
+    );
+  }
+  const party = (await q.query(`SELECT id, name FROM parties WHERE organization_id = $1 AND party_type IN ('CUSTOMER','BOTH') ORDER BY code LIMIT 1`, [c.org])).rows[0];
+  if (!party) return;
+  const has = await q.query(`SELECT 1 FROM srv_contracts WHERE organization_id = $1 AND number = 'SVC-DEMO-001'`, [c.org]);
+  if (!has.rows.length) {
+    await q.query(
+      `INSERT INTO srv_contracts (organization_id, legal_entity_id, number, party_id, contract_type, title, site_address, equipment, start_date, end_date, response_hours, resolution_hours, covers_labour, covers_parts, visits_included, pm_interval_months, next_pm_date, contract_value, status, created_by)
+       VALUES ($1,$2,'SVC-DEMO-001',$3,'AMC','Annual maintenance — HQ HVAC plant','Plot 12, Main Boulevard, Gulberg III, Lahore','2 × 10TR ducted split, 1 × VRF outdoor unit','2026-01-01','2026-12-31',4,24,true,false,4,3,'2026-10-01',480000,'ACTIVE',$4)`,
+      [c.org, c.le, party.id, c.admin],
+    );
+  }
+});

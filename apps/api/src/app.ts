@@ -23,6 +23,7 @@ import { registerConfigRoutes } from './routes/config.js';
 import { registerTaxRoutes } from './routes/tax.js';
 import { registerWmsRoutes } from './routes/wms.js';
 import { registerAutomationEventRoutes } from './routes/automation-events.js';
+import { registerServiceRoutes } from './routes/service.js';
 
 export function createApp() {
   const app = express();
@@ -89,6 +90,7 @@ export function createApp() {
   registerTaxRoutes(app);
   registerWmsRoutes(app);
   registerAutomationEventRoutes(app);
+  registerServiceRoutes(app);
 
   app.use('/api', (req: Request, res: Response) => {
     res.status(404).json({

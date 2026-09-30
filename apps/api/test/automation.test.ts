@@ -47,8 +47,8 @@ describe('Automation engine (internal rules, no external APIs)', () => {
     expect(empty.body.data).toHaveLength(0);
     const a = await makeRequest('POST', '/api/automation/rules/install-defaults', {}, admin);
     const b = await makeRequest('POST', '/api/automation/rules/install-defaults', {}, admin);
-    expect(a.body.data.rules).toBe(11);
-    expect(b.body.data.rules).toBe(11);
+    expect(a.body.data.rules).toBe(12);
+    expect(b.body.data.rules).toBe(12);
     const list = await makeRequest('GET', '/api/automation/rules', undefined, accountant);
     expect(list.status).toBe(200);
     for (const r of list.body.data) {
