@@ -52,7 +52,16 @@ async function makeRequest(
         return this;
       },
       setHeader(k: string, v: string) {
-        this.headers[k] = v;
+        this.headers[k.toLowerCase()] = v;
+      },
+      getHeader(k: string) {
+        return this.headers[k.toLowerCase()];
+      },
+      removeHeader(k: string) {
+        delete this.headers[k.toLowerCase()];
+      },
+      end() {
+        resolve({ status: this.statusCode, body: null });
       },
       json(data: any) {
         resolve({ status: this.statusCode, body: data });
@@ -755,12 +764,17 @@ describe('API Modular Monolith: Financial & Trading Workflows E2E Integration', 
     expect(recordRes.status).toBe(200);
     expect(recordRes.body.data.status).toBe('RECONCILED');
 
-    // Post Count Adjustment to GL
+    // SoD (FINANCIAL-CONTROLS.md): the count recorder cannot approve the adjustment.
+    const sodCountRes = await makeRequest('POST', `/api/inventory/counts/${countId}/reconcile-and-post`, {}, controllerToken);
+    expect(sodCountRes.status).toBe(403);
+    expect(sodCountRes.body.error.code).toBe('SEGREGATION_OF_DUTIES');
+
+    // Post Count Adjustment to GL (approved by a different user than the recorder)
     const postCountRes = await makeRequest(
       'POST',
       `/api/inventory/counts/${countId}/reconcile-and-post`,
       {},
-      controllerToken,
+      adminToken,
     );
     expect(postCountRes.status).toBe(200);
     expect(postCountRes.body.data.status).toBe('POSTED');
