@@ -154,3 +154,19 @@ registerSeeder('TIM', async (q, c) => {
     );
   }
 });
+
+registerSeeder('SUP', async (q, c) => {
+  const vendors = (await q.query(`SELECT id, name FROM parties WHERE organization_id = $1 AND party_type IN ('VENDOR','BOTH') ORDER BY code LIMIT 2`, [c.org])).rows;
+  const cats = ['EQUIPMENT', 'SPARE_PARTS'];
+  for (const [i, v] of vendors.entries()) {
+    const r = await q.query(
+      `INSERT INTO sup_profiles (organization_id, legal_entity_id, party_id, category, risk_level, contact_name, status, submitted_by, approved_by, approved_at, created_by)
+       VALUES ($1,$2,$3,$4,'MEDIUM',$5,'APPROVED',$6,$6,NOW(),$6) ON CONFLICT (organization_id, party_id) DO NOTHING RETURNING id`,
+      [c.org, c.le, v.id, cats[i], i === 0 ? 'Procurement desk' : 'Parts counter', c.admin],
+    );
+    if (!r.rows[0]) continue;
+    for (const [type, ref, exp] of [['NTN', `NTN-${4410000 + i}`, null], ['STRN', `STRN-32770${i}`, null], ['OEM_AUTHORISATION', `OEM-${i}-2026`, i === 0 ? '2026-10-20' : '2027-06-30']]) {
+      await q.query(`INSERT INTO sup_certificates (organization_id, legal_entity_id, profile_id, cert_type, reference, issued_on, expires_on, created_by) VALUES ($1,$2,$3,$4,$5,'2025-01-01',$6,$7)`, [c.org, c.le, r.rows[0].id, type, ref, exp, c.admin]);
+    }
+  }
+});

@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from 'express';
+import { assertSupplierUsable } from './supplier.js';
 import crypto from 'node:crypto';
 import { Money } from '@omnysync/financial-engine';
 import { AccountingPurpose, ErrorCode, Permission } from '@omnysync/contracts';
@@ -51,6 +52,7 @@ export function registerProcurementRoutes(app: Express): void {
     const warehouse_id = optionalUuid(req.body?.warehouse_id, 'warehouse_id');
     await assertOrgRef(db, 'warehouses', warehouse_id, org, 'warehouse_id');
     await requireParty(db, org, party_id, 'VENDOR');
+    await assertSupplierUsable(db, org, party_id);
     const priced = await priceLines(db, org, parseLines(req.body?.lines));
     const poId = crypto.randomUUID();
     const out = await db.transaction(async (tx) => {
