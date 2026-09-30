@@ -1,5 +1,6 @@
 import type { DbClient } from '@omnysync/platform';
 import { ensureDefaultRules, tick } from './engine.js';
+import { processEvents } from './events.js';
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
@@ -19,6 +20,7 @@ export function startScheduler(db: DbClient): void {
       const orgs = await db.query(`SELECT id FROM organizations`);
       for (const o of orgs.rows) await ensureDefaultRules(db, o.id);
       const results = await tick(db);
+      await processEvents(db);
       for (const r of results) if (r.outcome.status !== 'SUCCEEDED') console.warn(`[automation] ${r.rule}: ${r.outcome.status} ${r.outcome.error || ''}`);
     } catch (e) {
       console.error('[automation] tick failed', e);

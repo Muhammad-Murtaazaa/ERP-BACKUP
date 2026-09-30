@@ -19,6 +19,10 @@ import { registerAutomationRoutes } from './routes/automation.js';
 import { registerQualityRoutes } from './routes/quality.js';
 import { registerMaintenanceRoutes } from './routes/maintenance.js';
 import { registerAdminRoutes } from './routes/admin.js';
+import { registerConfigRoutes } from './routes/config.js';
+import { registerTaxRoutes } from './routes/tax.js';
+import { registerWmsRoutes } from './routes/wms.js';
+import { registerAutomationEventRoutes } from './routes/automation-events.js';
 
 export function createApp() {
   const app = express();
@@ -81,6 +85,10 @@ export function createApp() {
   registerQualityRoutes(app);
   registerMaintenanceRoutes(app);
   registerAdminRoutes(app);
+  registerConfigRoutes(app);
+  registerTaxRoutes(app);
+  registerWmsRoutes(app);
+  registerAutomationEventRoutes(app);
 
   app.use('/api', (req: Request, res: Response) => {
     res.status(404).json({
