@@ -1,0 +1,26 @@
+{
+  "name": "omnysync-erp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Omnysync Enterprise Resource Planning Modular Monolith Platform",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "migrate": "npm run migrate --workspace=@omnysync/platform",
+    "seed": "npm run seed --workspace=@omnysync/platform",
+    "start:api": "npm run dev --workspace=@omnysync/api",
+    "start:web": "npm run dev --workspace=@omnysync/web",
+    "dev": "npm run dev --workspaces --parallel"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.5",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1"
+  }
+}

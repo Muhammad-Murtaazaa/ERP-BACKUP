@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "0.1",
+  "status": "draft_specification_example",
+  "profileId": "client-owned-vps",
+  "ownership": {
+    "infrastructure": "client",
+    "data": "client",
+    "credentials": "client",
+    "operationalIndependence": true,
+    "coreIpTerms": "to_be_contractually_decided",
+    "sourceAndBuildHandoverRequired": true
+  },
+  "runtime": {
+    "topology": "independent_installation",
+    "centralConsoleRequiredForTransactions": false,
+    "database": "postgresql",
+    "backend": "typescript-modular-monolith",
+    "web": "react",
+    "desktop": "connected-native-wrapper",
+    "mobile": "role-focused-native"
+  },
+  "moduleSelection": [
+    "platform",
+    "finance-gl",
+    "tax-compliance",
+    "ar-billing",
+    "ap-expenses",
+    "sales-orders",
+    "procurement",
+    "inventory",
+    "treasury-financing",
+    "reporting-analytics",
+    "automation-ai",
+    "customization-platform",
+    "documents-collaboration",
+    "governance-risk"
+  ],
+  "mode": {
+    "inventory": "financially_valued",
+    "automationDefault": "A1",
+    "liveConnectors": false,
+    "offlineFinancialPosting": false
+  },
+  "localizationTracks": [
+    {
+      "country": "PK",
+      "regionalScope": "to_be_validated",
+      "productionEnabled": false
+    },
+    {
+      "country": "US",
+      "regionalScope": "to_be_validated",
+      "productionEnabled": false
+    }
+  ],
+  "domains": {
+    "production": "client-controlled-domain-to-be-supplied",
+    "demoBase": "omnysync-owned-demo-domain-to-be-supplied"
+  },
+  "recovery": {
+    "tier": "starter",
+    "proposedRpoHours": 24,
+    "proposedRtoHours": 8,
+    "measured": false
+  },
+  "acceptance": [
+    "scope_isolation",
+    "source_to_pay",
+    "order_to_cash",
+    "control_reconciliation",
+    "accessible_core_tasks",
+    "clean_host_restore",
+    "central_disconnect",
+    "client_handover"
+  ]
+}
+

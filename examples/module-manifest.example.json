@@ -1,0 +1,102 @@
+{
+  "schemaVersion": "0.1",
+  "moduleId": "ar-billing",
+  "moduleVersion": "0.1.0",
+  "kind": "domain",
+  "status": "specification_example",
+  "requires": [
+    {
+      "moduleId": "platform",
+      "compatibleVersion": ">=0.1.0 <0.2.0"
+    },
+    {
+      "moduleId": "finance-gl",
+      "compatibleVersion": ">=0.1.0 <0.2.0"
+    },
+    {
+      "moduleId": "tax-compliance",
+      "compatibleVersion": ">=0.1.0 <0.2.0"
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "invoice.basic",
+      "requirementIds": [
+        "AR-001",
+        "AR-002",
+        "AR-003"
+      ],
+      "readiness": "planned"
+    },
+    {
+      "id": "invoice.post",
+      "requirementIds": [
+        "AR-001",
+        "GL-003",
+        "GL-007",
+        "GL-009",
+        "AR-022"
+      ],
+      "readiness": "planned",
+      "requiresConfiguration": [
+        "coa.arControl",
+        "tax.coverage",
+        "fx.policy",
+        "period.calendar"
+      ]
+    }
+  ],
+  "ownedEntities": [
+    "invoice",
+    "invoice_line",
+    "ar_open_item",
+    "customer_allocation"
+  ],
+  "permissions": [
+    "ar.invoice.read",
+    "ar.invoice.create",
+    "ar.invoice.approve",
+    "ar.invoice.post",
+    "ar.credit_note.issue",
+    "ar.receipt.allocate",
+    "ar.invoice.export"
+  ],
+  "commands": [
+    "CreateInvoice",
+    "SubmitInvoice",
+    "PostInvoice",
+    "CreateCreditNote",
+    "AllocateReceipt"
+  ],
+  "events": [
+    "invoice.posted.v1",
+    "credit_note.posted.v1",
+    "receipt.allocated.v1"
+  ],
+  "accountingPurposes": [
+    "invoice_earned",
+    "invoice_deferred",
+    "credit_note",
+    "receipt_allocation",
+    "settlement_fx"
+  ],
+  "lifecycle": {
+    "enableChecks": [
+      "compatible_dependencies",
+      "completed_migrations",
+      "approved_configuration",
+      "qualified_localization",
+      "passed_contract_tests"
+    ],
+    "disablePolicy": "drain_then_retain_history_and_authorized_settlement",
+    "uninstallPolicy": "prohibited_without_retention_review"
+  },
+  "seeds": {
+    "syntheticOnly": true,
+    "scenario": "trading-order-to-cash"
+  },
+  "notes": [
+    "Illustrative schema, not an implemented registry.",
+    "Planned capabilities cannot be activated as production-ready."
+  ]
+}

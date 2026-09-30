@@ -1,0 +1,269 @@
+import crypto from 'node:crypto';
+import { DbClient } from '../db/driver.js';
+import { AuthService } from '../auth/service.js';
+import { STANDARD_COA_TEMPLATE } from '@omnysync/financial-engine';
+import { UserRole, JournalStatus, AccountingPurpose } from '@omnysync/contracts';
+
+export interface SeedResult {
+  organizationId: string;
+  legalEntityId: string;
+  branchId: string;
+  users: { id: string; email: string; role: string }[];
+  accountsCreated: number;
+  periodsCreated: number;
+  openingJournalId: string;
+}
+
+export class SyntheticSeedRunner {
+  private db: DbClient;
+
+  constructor(db: DbClient) {
+    this.db = db;
+  }
+
+  async runSeed(): Promise<SeedResult> {
+    const orgId = '10000000-0000-0000-0000-000000000001';
+    const legalEntityId = '20000000-0000-0000-0000-000000000001';
+    const branchId = '30000000-0000-0000-0000-000000000001';
+
+    // 1. Organization
+    await this.db.query(
+      `
+      INSERT INTO organizations (id, name, code, is_active)
+      VALUES ($1, $2, $3, true)
+      ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name
+    `,
+      [orgId, 'Omnysync Global Trading LLC', 'OGT-GLOBAL'],
+    );
+
+    // 2. Legal Entity
+    await this.db.query(
+      `
+      INSERT INTO legal_entities (id, organization_id, name, code, functional_currency, tax_identifier, is_active)
+      VALUES ($1, $2, $3, $4, $5, $6, true)
+      ON CONFLICT (organization_id, code) DO UPDATE SET name = EXCLUDED.name
+    `,
+      [legalEntityId, orgId, 'Omnysync Pakistan Pvt Ltd', 'OGT-PK', 'PKR', 'NTN-7890123-4'],
+    );
+
+    // 3. Branch
+    await this.db.query(
+      `
+      INSERT INTO branches (id, organization_id, legal_entity_id, name, code, is_active)
+      VALUES ($1, $2, $3, $4, $5, true)
+      ON CONFLICT (legal_entity_id, code) DO UPDATE SET name = EXCLUDED.name
+    `,
+      [branchId, orgId, legalEntityId, 'Karachi Main Operations', 'KHI-HQ'],
+    );
+
+    // 4. Persona Users
+    const personas = [
+      {
+        id: '40000000-0000-0000-0000-000000000001',
+        email: 'admin@omnysync.internal',
+        name: 'System Administrator',
+        role: UserRole.ADMIN,
+      },
+      {
+        id: '40000000-0000-0000-0000-000000000002',
+        email: 'controller@omnysync.internal',
+        name: 'Financial Controller',
+        role: UserRole.CONTROLLER,
+      },
+      {
+        id: '40000000-0000-0000-0000-000000000003',
+        email: 'accountant@omnysync.internal',
+        name: 'Senior Accountant',
+        role: UserRole.ACCOUNTANT,
+      },
+      {
+        id: '40000000-0000-0000-0000-000000000004',
+        email: 'auditor@omnysync.internal',
+        name: 'Internal Auditor',
+        role: UserRole.AUDITOR,
+      },
+      {
+        id: '40000000-0000-0000-0000-000000000005',
+        email: 'viewer@omnysync.internal',
+        name: 'Executive Viewer',
+        role: UserRole.VIEWER,
+      },
+    ];
+
+    const defaultPasswordHash = AuthService.hashPassword('Password123!');
+    const usersCreated: { id: string; email: string; role: string }[] = [];
+
+    for (const p of personas) {
+      await this.db.query(
+        `
+        INSERT INTO users (id, email, name, password_hash, is_active)
+        VALUES ($1, $2, $3, $4, true)
+        ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, password_hash = EXCLUDED.password_hash
+      `,
+        [p.id, p.email, p.name, defaultPasswordHash],
+      );
+
+      const membershipId = crypto.randomUUID();
+      await this.db.query(
+        `
+        INSERT INTO memberships (id, organization_id, legal_entity_id, user_id, roles, is_active)
+        VALUES ($1, $2, $3, $4, $5, true)
+        ON CONFLICT (user_id, organization_id) DO UPDATE SET roles = EXCLUDED.roles
+      `,
+        [membershipId, orgId, legalEntityId, p.id, JSON.stringify([p.role])],
+      );
+
+      usersCreated.push({ id: p.id, email: p.email, role: p.role });
+    }
+
+    // 5. Chart of Accounts (COA)
+    const codeToIdMap = new Map<string, string>();
+    let accountsCount = 0;
+
+    for (const item of STANDARD_COA_TEMPLATE) {
+      const accountId = crypto.randomUUID();
+      const parentId = item.parentCode ? codeToIdMap.get(item.parentCode) || null : null;
+
+      await this.db.query(
+        `
+        INSERT INTO accounts (
+          id, organization_id, legal_entity_id, code, name, parent_id, level,
+          statement_class, normal_balance, posting_allowed, control_type, currency_restriction, is_active
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true)
+        ON CONFLICT (organization_id, code) DO UPDATE SET
+          name = EXCLUDED.name,
+          posting_allowed = EXCLUDED.posting_allowed,
+          control_type = EXCLUDED.control_type
+      `,
+        [
+          accountId,
+          orgId,
+          legalEntityId,
+          item.code,
+          item.name,
+          parentId,
+          item.level,
+          item.statementClass,
+          item.normalBalance,
+          item.postingAllowed,
+          item.controlType,
+          item.currencyRestriction || null,
+        ],
+      );
+
+      // Query actual ID in case of update
+      const row = await this.db.query<{ id: string }>(
+        `SELECT id FROM accounts WHERE organization_id = $1 AND code = $2`,
+        [orgId, item.code],
+      );
+      if (row.rows[0]) {
+        codeToIdMap.set(item.code, row.rows[0].id);
+      }
+      accountsCount++;
+    }
+
+    // 6. Fiscal Periods for 2026
+    const months = [
+      { num: 1, name: 'Jan 2026', start: '2026-01-01', end: '2026-01-31', status: 'HARD_CLOSED' },
+      { num: 2, name: 'Feb 2026', start: '2026-02-01', end: '2026-02-28', status: 'SOFT_CLOSED' },
+      { num: 3, name: 'Mar 2026', start: '2026-03-01', end: '2026-03-31', status: 'OPEN' },
+      { num: 4, name: 'Apr 2026', start: '2026-04-01', end: '2026-04-30', status: 'OPEN' },
+      { num: 5, name: 'May 2026', start: '2026-05-01', end: '2026-05-31', status: 'OPEN' },
+      { num: 6, name: 'Jun 2026', start: '2026-06-01', end: '2026-06-30', status: 'OPEN' },
+      { num: 7, name: 'Jul 2026', start: '2026-07-01', end: '2026-07-31', status: 'OPEN' },
+      { num: 8, name: 'Aug 2026', start: '2026-08-01', end: '2026-08-31', status: 'OPEN' },
+      { num: 9, name: 'Sep 2026', start: '2026-09-01', end: '2026-09-30', status: 'OPEN' },
+      { num: 10, name: 'Oct 2026', start: '2026-10-01', end: '2026-10-31', status: 'OPEN' },
+      { num: 11, name: 'Nov 2026', start: '2026-11-01', end: '2026-11-30', status: 'OPEN' },
+      { num: 12, name: 'Dec 2026', start: '2026-12-01', end: '2026-12-31', status: 'OPEN' },
+    ];
+
+    let periodsCount = 0;
+    for (const m of months) {
+      const pId = crypto.randomUUID();
+      await this.db.query(
+        `
+        INSERT INTO fiscal_periods (
+          id, organization_id, legal_entity_id, fiscal_year, period_number, period_name, start_date, end_date, status
+        )
+        VALUES ($1, $2, $3, 2026, $4, $5, $6, $7, $8)
+        ON CONFLICT (legal_entity_id, fiscal_year, period_number) DO UPDATE SET status = EXCLUDED.status
+      `,
+        [pId, orgId, legalEntityId, m.num, m.name, m.start, m.end, m.status],
+      );
+      periodsCount++;
+    }
+
+    // 7. Seed Opening Balance Journal Entry (Posted & Reconciled)
+    const openingJournalId = '50000000-0000-0000-0000-000000000001';
+    const bankId = codeToIdMap.get('111002')!;
+    const inventoryId = codeToIdMap.get('113001')!;
+    const equipmentId = codeToIdMap.get('121001')!;
+    const shareCapitalId = codeToIdMap.get('311001')!;
+    const retainedEarningsId = codeToIdMap.get('321001')!;
+
+    await this.db.query(
+      `
+      INSERT INTO journals (
+        id, organization_id, legal_entity_id, journal_number, posting_date, document_date,
+        accounting_purpose, status, base_currency, total_base_debit, total_base_credit,
+        description, created_by, approved_by, posted_by, posted_at, revision
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP, 1)
+      ON CONFLICT (legal_entity_id, journal_number) DO NOTHING
+    `,
+      [
+        openingJournalId,
+        orgId,
+        legalEntityId,
+        'JV-2026-0001-OPENING',
+        '2026-03-01',
+        '2026-03-01',
+        AccountingPurpose.OPENING_BALANCE,
+        JournalStatus.POSTED,
+        'PKR',
+        '25000000.00000000',
+        '25000000.00000000',
+        'Deterministic synthetic opening balance for demonstration and testing',
+        personas[0].id,
+        personas[1].id,
+        personas[1].id,
+      ],
+    );
+
+    // Insert Opening Journal Lines
+    const lines = [
+      { num: 1, acc: bankId, dr: '10000000.00000000', cr: '0.00000000', desc: 'Opening Operating Bank Balance' },
+      { num: 2, acc: inventoryId, dr: '8000000.00000000', cr: '0.00000000', desc: 'Opening Trading Inventory' },
+      { num: 3, acc: equipmentId, dr: '7000000.00000000', cr: '0.00000000', desc: 'Opening Equipment & Assets' },
+      { num: 4, acc: shareCapitalId, dr: '0.00000000', cr: '20000000.00000000', desc: 'Owner Contributed Capital' },
+      { num: 5, acc: retainedEarningsId, dr: '0.00000000', cr: '5000000.00000000', desc: 'Cumulative Retained Earnings' },
+    ];
+
+    for (const l of lines) {
+      const lineId = crypto.randomUUID();
+      await this.db.query(
+        `
+        INSERT INTO journal_lines (
+          id, journal_id, line_number, account_id, debit_amount, credit_amount,
+          currency, fx_rate, base_debit, base_credit, description
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, 'PKR', 1.0, $7, $8, $9)
+        ON CONFLICT (journal_id, line_number) DO NOTHING
+      `,
+        [lineId, openingJournalId, l.num, l.acc, l.dr, l.cr, l.dr, l.cr, l.desc],
+      );
+    }
+
+    return {
+      organizationId: orgId,
+      legalEntityId: legalEntityId,
+      branchId: branchId,
+      users: usersCreated,
+      accountsCreated: accountsCount,
+      periodsCreated: periodsCount,
+      openingJournalId,
+    };
+  }
+}

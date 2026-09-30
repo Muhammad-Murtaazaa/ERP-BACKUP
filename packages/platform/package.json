@@ -1,0 +1,22 @@
+{
+  "name": "@omnysync/platform",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.2.14",
+    "@omnysync/contracts": "^0.1.0",
+    "@omnysync/financial-engine": "^0.1.0",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.1"
+  }
+}
