@@ -87,3 +87,21 @@ Guide first useful task through role-aware checklist and inline examples. Explai
 ## UI quality gate
 Inspect real screens with 200% zoom, keyboard-only, long party names, Urdu/RTL candidates, empty data, 10,000+ rows, negative values, mixed currencies, pending approvals, slow network, stale revisions and validation errors. Screenshot baselines for shared components and major workflows; manual task test catches problems screenshots miss. A token list alone does not establish pixel-perfect implementation. UX-SCREEN-SPECS.md defines reference screens and observable behavior.
 
+
+## Implementation notes (web client, 2026-10-01)
+How the rules above are implemented in `@omnysync/ui` and `apps/web`. Before and after screenshots are in `/workspace/erp-screens/{before,after,pos}`.
+
+| Rule | Implementation |
+| --- | --- |
+| Navigation 240/64, top bar 56 | `App.tsx`: the sidebar collapses to 64 px through a top-bar toggle. The state is persisted in `localStorage` (`omnysync.nav.collapsed`) and collapses automatically below 1024 px. Collapsed items keep an accessible name through `aria-label`/`title`. The active item uses `aria-current="page"` plus a 3 px inset brand bar, so it is not shown by colour alone. Includes a skip link to `#main-content`. |
+| Focus | Every interactive primitive uses `focus-visible` with a 2 px `#5B3CC4` ring or outline and a 1–2 px offset. Table rows that open detail are focusable and activate with Enter/Space. |
+| Drawer instead of modal | `Drawer` (right side panel; sizes sm to 4xl) has a named title, a focus trap, Esc to close, focus restoration and a `dirty` discard confirmation. `Modal` is a deprecated alias (ADR-009). 45 modals were migrated across 19 views. |
+| Combobox instead of select | `Combobox` supports typeahead search, grouping, keyboard navigation, and no-result, loading and denied states. Native `required` validation works through a hidden input. 60 selects were migrated. |
+| Tables | `Table` has a sticky header inside a bounded scroll area (`max-h-[70vh]`), `scope="col"`, an optional caption, skeleton loading (`aria-busy`), an empty state (title, message, optional action) and an error state (`role="alert"` with retry). Right-aligned columns use tabular numerals. The load error is wired into 24 views; before this, a failed load looked like an empty table. |
+| Forms | `Input` uses a `useId`-based id, a visible label, a required marker hidden from assistive tech, a hint or error linked through `aria-describedby`, and `aria-invalid`. Inline validation is used on the Automation drawers (rule schedule, JSON parameters, balanced recurring lines). |
+| Feedback | `Alert` (info/success/warning/danger) is for persistent in-page messages. Danger and warning use `role="alert"`. |
+| Radius, borders | Controls 6 px (`rounded-md`), surfaces and tables 10 px, drawers 12 px. Secondary buttons and inputs use `#7D8799` borders; `#D9DFEA` is used only for decorative dividers. |
+| Type scale | Page titles 28/36, sections 20/28, body 14/20, table and supporting text 13/18. Nothing critical is below 11 px (sidebar group labels are 11 px uppercase, bold). |
+| Money display | `apps/web/src/lib/format.ts` (`fmtMoney`, `fmtDec`, `fmtQty`, `sumDec`, `mulDec`) uses decimal.js HALF_UP. All 107 `parseFloat` display and arithmetic sites were replaced. `-0.00` is never shown. |
+| Dates | The DB driver returns SQL `DATE` values as `YYYY-MM-DD` strings. Timestamps in the Automation console are shown in Asia/Karachi and labelled "PKT". |
+| POS | This is a separate touch and keyboard layout (`apps/web/src/pos`). Targets are at least 44 px, there is a function-key tile bar, an F1 cheat sheet and a full-screen focus mode. All panels are Drawers. The shortcut map is in `pos/shortcuts.ts`. |

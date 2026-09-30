@@ -139,6 +139,7 @@ export const AutomationView: React.FC = () => {
     {
       key: 'name',
       header: 'Rule',
+      className: 'min-w-[300px]',
       render: (r: any) => (
         <div>
           <div className="font-semibold">{r.name}</div>

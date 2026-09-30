@@ -24,7 +24,7 @@ import {
 } from '../pos/cart.js';
 import { commandFor, type PosCommand } from '../pos/shortcuts.js';
 import {
-  ApprovalCancelled, CashPanel, CheatSheetPanel, CloseShiftPanel, CustomerPanel, DiscountPanel, errMsg, GiftCardPanel, HoldsPanel,
+  CashPanel, CheatSheetPanel, CloseShiftPanel, CustomerPanel, DiscountPanel, errMsg, GiftCardPanel, HoldsPanel,
   OrdersPanel, PinPanel, PromptPanel, ReceiptPanel, ReportPanel, ReturnsPanel, SearchPanel, TenderPanel,
   type PosCustomer, type PromptSpec, type ReceiptView,
 } from '../pos/PosPanels.js';

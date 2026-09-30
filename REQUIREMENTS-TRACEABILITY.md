@@ -2,6 +2,8 @@
 
 This register covers 699 module feature IDs. Planned means specified only; implementation/build, test run, country scope and reviewer evidence must be added when work occurs. None is marked passed.
 
+**Update 2026-10-01 (overnight build, branch `feat/overnight-enhancements`):** statuses below marked *Built + tested* or *Partial* cite the automated tests that exercise them (`npx vitest run`: 165 tests passing). They have **not** had a reviewer sign-off, so none is marked passed. All other IDs remain Planned.
+
 ## Engineering trace fields
 
 For each ID record owning role/person, release slice, entity/command/event changes, UI reference, implementation/build, unit/integration/E2E/security/accessibility evidence, country/industry scope, reviewer and readiness. Domain behavior/minimum acceptance live in linked module files; universal checks live in MODULE-CONTRACT.md.
@@ -111,29 +113,29 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | AST-019 | [AST — Reliability](modules/assets-maintenance.md) | Planned | Not yet implemented/tested |
 | AST-020 | [AST — Asset reconciliation](modules/assets-maintenance.md) | Planned | Not yet implemented/tested |
 | AUT-001 | [AUT — Builder](modules/automation-ai.md) | Planned | Not yet implemented/tested |
-| AUT-002 | [AUT — Versioning](modules/automation-ai.md) | Planned | Not yet implemented/tested |
+| AUT-002 | [AUT — Versioning](modules/automation-ai.md) | Partial | rule version incremented on every change and stored on each run; apps/api/test/automation.test.ts |
 | AUT-003 | [AUT — Event triggers](modules/automation-ai.md) | Planned | Not yet implemented/tested |
-| AUT-004 | [AUT — Schedules](modules/automation-ai.md) | Planned | Not yet implemented/tested |
-| AUT-005 | [AUT — Approval steps](modules/automation-ai.md) | Planned | Not yet implemented/tested |
+| AUT-004 | [AUT — Schedules](modules/automation-ai.md) | Built + tested | INTERVAL/DAILY/MONTHLY schedules, DST-safe, occurrence-keyed; apps/api/test/automation-schedule.test.ts, apps/api/test/automation.test.ts |
+| AUT-005 | [AUT — Approval steps](modules/automation-ai.md) | Partial | recurring journals require maker-checker approval before posting; apps/api/test/automation.test.ts |
 | AUT-006 | [AUT — Simulation](modules/automation-ai.md) | Planned | Not yet implemented/tested |
-| AUT-007 | [AUT — Durability](modules/automation-ai.md) | Planned | Not yet implemented/tested |
-| AUT-008 | [AUT — Action authority](modules/automation-ai.md) | Planned | Not yet implemented/tested |
-| AUT-009 | [AUT — Retries](modules/automation-ai.md) | Planned | Not yet implemented/tested |
+| AUT-007 | [AUT — Durability](modules/automation-ai.md) | Built + tested | unique (rule, occurrence) runs, leases, dedupe incl. concurrent triggers; apps/api/test/automation.test.ts |
+| AUT-008 | [AUT — Action authority](modules/automation-ai.md) | Built + tested | AUTOMATION_VIEW/MANAGE/RUN permissions; payments never automated (A4); apps/api/test/automation.test.ts |
+| AUT-009 | [AUT — Retries](modules/automation-ai.md) | Built + tested | bounded exponential backoff retries the same occurrence, dead-letter to CRITICAL owner alert; apps/api/test/automation.test.ts |
 | AUT-010 | [AUT — Unknown outcome](modules/automation-ai.md) | Planned | Not yet implemented/tested |
 | AUT-011 | [AUT — Compensation](modules/automation-ai.md) | Planned | Not yet implemented/tested |
 | AUT-012 | [AUT — OCR](modules/automation-ai.md) | Planned | Not yet implemented/tested |
 | AUT-013 | [AUT — Assistant](modules/automation-ai.md) | Planned | Not yet implemented/tested |
 | AUT-014 | [AUT — Tool allowlists](modules/automation-ai.md) | Planned | Not yet implemented/tested |
 | AUT-015 | [AUT — Prompt defense](modules/automation-ai.md) | Planned | Not yet implemented/tested |
-| AUT-016 | [AUT — Autonomy tiers](modules/automation-ai.md) | Planned | Not yet implemented/tested |
+| AUT-016 | [AUT — Autonomy tiers](modules/automation-ai.md) | Built + tested | tiers A0-A3 on every rule; A4 never automated (ADR-011); apps/api/test/automation.test.ts |
 | AUT-017 | [AUT — Predictions](modules/automation-ai.md) | Planned | Not yet implemented/tested |
-| AUT-018 | [AUT — Anomalies](modules/automation-ai.md) | Planned | Not yet implemented/tested |
+| AUT-018 | [AUT — Anomalies](modules/automation-ai.md) | Partial | deterministic exception detection: stock-vs-GL drift, POS variance, overdue AR, approval aging; apps/api/test/automation.test.ts |
 | AUT-019 | [AUT — Model governance](modules/automation-ai.md) | Planned | Not yet implemented/tested |
 | AUT-020 | [AUT — Connector health](modules/automation-ai.md) | Planned | Not yet implemented/tested |
 | AUT-021 | [AUT — Budgets](modules/automation-ai.md) | Planned | Not yet implemented/tested |
 | AUT-022 | [AUT — Savings](modules/automation-ai.md) | Planned | Not yet implemented/tested |
 | AUT-023 | [AUT — Retention](modules/automation-ai.md) | Planned | Not yet implemented/tested |
-| AUT-024 | [AUT — Pause switch](modules/automation-ai.md) | Planned | Not yet implemented/tested |
+| AUT-024 | [AUT — Pause switch](modules/automation-ai.md) | Built + tested | pause/resume kill switch per rule; paused rules never picked up; apps/api/test/automation.test.ts |
 | CRM-001 | [CRM — Lead capture](modules/crm.md) | Planned | Not yet implemented/tested |
 | CRM-002 | [CRM — Deduplication](modules/crm.md) | Planned | Not yet implemented/tested |
 | CRM-003 | [CRM — Accounts/contacts](modules/crm.md) | Planned | Not yet implemented/tested |
@@ -190,16 +192,16 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | DOC-016 | [DOC — Notifications](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
 | DOC-017 | [DOC — Print queues](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
 | DOC-018 | [DOC — Export package](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
-| GL-001 | [GL — Four-level COA](modules/finance-gl.md) | Planned | Not yet implemented/tested |
+| GL-001 | [GL — Four-level COA](modules/finance-gl.md) | Built + tested | 4-level COA, leaf-only posting; apps/api/test/api.test.ts |
 | GL-002 | [GL — Account lifecycle](modules/finance-gl.md) | Planned | Not yet implemented/tested |
 | GL-003 | [GL — Mapping studio](modules/finance-gl.md) | Planned | Not yet implemented/tested |
-| GL-004 | [GL — Manual journals](modules/finance-gl.md) | Planned | Not yet implemented/tested |
-| GL-005 | [GL — Recurring journals](modules/finance-gl.md) | Planned | Not yet implemented/tested |
+| GL-004 | [GL — Manual journals](modules/finance-gl.md) | Built + tested | draft/submit/approve/post; malformed money rejected, PKR 2-dp scale; apps/api/test/api.test.ts, apps/api/test/controls.test.ts |
+| GL-005 | [GL — Recurring journals](modules/finance-gl.md) | Built + tested | recurring journal templates: validation, SoD, idempotent catch-up, period guard; apps/api/test/automation.test.ts |
 | GL-006 | [GL — Accrual reversals](modules/finance-gl.md) | Planned | Not yet implemented/tested |
-| GL-007 | [GL — Journal approval](modules/finance-gl.md) | Planned | Not yet implemented/tested |
+| GL-007 | [GL — Journal approval](modules/finance-gl.md) | Built + tested | maker cannot approve own journal; apps/api/test/controls.test.ts |
 | GL-008 | [GL — Parallel books](modules/finance-gl.md) | Planned | Not yet implemented/tested |
-| GL-009 | [GL — Period control](modules/finance-gl.md) | Planned | Not yet implemented/tested |
-| GL-010 | [GL — Period guard](modules/finance-gl.md) | Planned | Not yet implemented/tested |
+| GL-009 | [GL — Period control](modules/finance-gl.md) | Built + tested | OPEN/SOFT_CLOSED/HARD_CLOSED with period row lock; apps/api/test/api.test.ts, apps/api/test/controls.test.ts |
+| GL-010 | [GL — Period guard](modules/finance-gl.md) | Built + tested | no posting into hard-closed periods (manual, recurring and engine postings); apps/api/test/controls.test.ts, apps/api/test/automation.test.ts |
 | GL-011 | [GL — Dimensions](modules/finance-gl.md) | Planned | Not yet implemented/tested |
 | GL-012 | [GL — Allocations](modules/finance-gl.md) | Planned | Not yet implemented/tested |
 | GL-013 | [GL — Intercompany](modules/finance-gl.md) | Planned | Not yet implemented/tested |
@@ -208,12 +210,12 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | GL-016 | [GL — Prepayments](modules/finance-gl.md) | Planned | Not yet implemented/tested |
 | GL-017 | [GL — Suspense](modules/finance-gl.md) | Planned | Not yet implemented/tested |
 | GL-018 | [GL — Opening balances](modules/finance-gl.md) | Planned | Not yet implemented/tested |
-| GL-019 | [GL — Trial balance](modules/finance-gl.md) | Planned | Not yet implemented/tested |
+| GL-019 | [GL — Trial balance](modules/finance-gl.md) | Built + tested | trial balance stays balanced after concurrent posts; apps/api/test/api.test.ts, apps/api/test/controls.test.ts |
 | GL-020 | [GL — Statements](modules/finance-gl.md) | Planned | Not yet implemented/tested |
 | GL-021 | [GL — Account ledger](modules/finance-gl.md) | Planned | Not yet implemented/tested |
-| GL-022 | [GL — Close workspace](modules/finance-gl.md) | Planned | Not yet implemented/tested |
+| GL-022 | [GL — Close workspace](modules/finance-gl.md) | Partial | GL-CLOSE automation lists ended open periods with a close checklist; apps/api/test/automation.test.ts |
 | GL-023 | [GL — Reopen](modules/finance-gl.md) | Planned | Not yet implemented/tested |
-| GL-024 | [GL — Correction](modules/finance-gl.md) | Planned | Not yet implemented/tested |
+| GL-024 | [GL — Correction](modules/finance-gl.md) | Built + tested | corrections by linked reversal only; double/concurrent post rejected; apps/api/test/api.test.ts, apps/api/test/controls.test.ts |
 | GL-025 | [GL — Budget checks](modules/finance-gl.md) | Planned | Not yet implemented/tested |
 | GL-026 | [GL — Audit export](modules/finance-gl.md) | Planned | Not yet implemented/tested |
 | GL-027 | [GL — Rebuild balances](modules/finance-gl.md) | Planned | Not yet implemented/tested |
@@ -418,7 +420,7 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | EPM-018 | [EPM — Minority interest](modules/planning-consolidation.md) | Planned | Not yet implemented/tested |
 | EPM-019 | [EPM — Group reporting](modules/planning-consolidation.md) | Planned | Not yet implemented/tested |
 | EPM-020 | [EPM — Scenario comparisons](modules/planning-consolidation.md) | Planned | Not yet implemented/tested |
-| PLT-001 | [PLT — Organizations](modules/platform.md) | Planned | Not yet implemented/tested |
+| PLT-001 | [PLT — Organizations](modules/platform.md) | Built + tested | tenant isolation: foreign-org records invisible and unaddressable; apps/api/test/controls.test.ts |
 | PLT-002 | [PLT — Entity settings](modules/platform.md) | Planned | Not yet implemented/tested |
 | PLT-003 | [PLT — Shared parties](modules/platform.md) | Planned | Not yet implemented/tested |
 | PLT-004 | [PLT — Invitations](modules/platform.md) | Planned | Not yet implemented/tested |
@@ -426,40 +428,40 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | PLT-006 | [PLT — MFA/recovery](modules/platform.md) | Planned | Not yet implemented/tested |
 | PLT-007 | [PLT — Scoped roles](modules/platform.md) | Planned | Not yet implemented/tested |
 | PLT-008 | [PLT — Field security](modules/platform.md) | Planned | Not yet implemented/tested |
-| PLT-009 | [PLT — Segregation](modules/platform.md) | Planned | Not yet implemented/tested |
+| PLT-009 | [PLT — Segregation](modules/platform.md) | Built + tested | SoD on journals, POs, recurring templates, POS approvals; apps/api/test/api.test.ts, apps/api/test/controls.test.ts, apps/api/test/automation.test.ts |
 | PLT-010 | [PLT — Delegation](modules/platform.md) | Planned | Not yet implemented/tested |
 | PLT-011 | [PLT — Service identities](modules/platform.md) | Planned | Not yet implemented/tested |
-| PLT-012 | [PLT — Sessions](modules/platform.md) | Planned | Not yet implemented/tested |
+| PLT-012 | [PLT — Sessions](modules/platform.md) | Built + tested | HMAC session tokens, timing-safe login, throttling (commit cfcd1a7); apps/api/test/api.test.ts |
 | PLT-013 | [PLT — Calendars](modules/platform.md) | Planned | Not yet implemented/tested |
-| PLT-014 | [PLT — Numbering](modules/platform.md) | Planned | Not yet implemented/tested |
+| PLT-014 | [PLT — Numbering](modules/platform.md) | Built + tested | document_sequences numbering (QM/PM no longer use Date.now()); apps/api/test/api.test.ts |
 | PLT-015 | [PLT — Reference data](modules/platform.md) | Planned | Not yet implemented/tested |
-| PLT-016 | [PLT — Notifications](modules/platform.md) | Planned | Not yet implemented/tested |
+| PLT-016 | [PLT — Notifications](modules/platform.md) | Partial | in-app alert inbox with dedupe/ack/resolve; no email/SMS (no external APIs); apps/api/test/automation.test.ts |
 | PLT-017 | [PLT — Search](modules/platform.md) | Planned | Not yet implemented/tested |
 | PLT-018 | [PLT — Task inbox](modules/platform.md) | Planned | Not yet implemented/tested |
-| PLT-019 | [PLT — Audit explorer](modules/platform.md) | Planned | Not yet implemented/tested |
+| PLT-019 | [PLT — Audit explorer](modules/platform.md) | Partial | audit log for all commands incl. automation and POS; Audit Trail view |
 | PLT-020 | [PLT — Files](modules/platform.md) | Planned | Not yet implemented/tested |
 | PLT-021 | [PLT — Localization](modules/platform.md) | Planned | Not yet implemented/tested |
 | PLT-022 | [PLT — Quotas](modules/platform.md) | Planned | Not yet implemented/tested |
-| POS-001 | [POS — Registers](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-002 | [POS — Shift open](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-003 | [POS — Scan/cart](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-004 | [POS — Promotions](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-005 | [POS — Split tender](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-006 | [POS — Payment devices](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-007 | [POS — Parked carts](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-008 | [POS — Refunds](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-009 | [POS — Drawer movements](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-010 | [POS — Shift close](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-011 | [POS — Offline capture](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-012 | [POS — Replay](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-013 | [POS — Receipts](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-014 | [POS — Loyalty](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-015 | [POS — Gift credit](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-016 | [POS — Weighted/serial goods](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-017 | [POS — Supervisor limits](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-018 | [POS — Fiscal readiness](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-019 | [POS — Replenishment](modules/pos-retail.md) | Planned | Not yet implemented/tested |
-| POS-020 | [POS — Retail reports](modules/pos-retail.md) | Planned | Not yet implemented/tested |
+| POS-001 | [POS — Registers](modules/pos-retail.md) | Built + tested | routes/pos.ts registers (migration 013); apps/api/test/pos.test.ts |
+| POS-002 | [POS — Shift open](modules/pos-retail.md) | Built + tested | denomination-count open, one open shift per register incl. concurrent open; apps/api/test/pos.test.ts; screenshot pos-01 |
+| POS-003 | [POS — Scan/cart](modules/pos-retail.md) | Built + tested | barcode/SKU/PLU scan, auto-increment, 3*code multiplier, ranked search; apps/web/test/pos-cart.test.ts, apps/api/test/pos.test.ts; pos-03, pos-06 |
+| POS-004 | [POS — Promotions](modules/pos-retail.md) | Built + tested | rules engine (BOGO, mix-and-match, bundle, tiered, coupon, % / amount) in retail.ts priceCart shared by client and server; packages/financial-engine/test/retail.test.ts, apps/api/test/pos.test.ts |
+| POS-005 | [POS — Split tender](modules/pos-retail.md) | Built + tested | multi-tender cash/card/wallet/store credit/gift/loyalty with change + cash rounding, over/under-tender rejects; packages/financial-engine/test/retail.test.ts, apps/api/test/pos.test.ts; pos-08 |
+| POS-006 | [POS — Payment devices](modules/pos-retail.md) | Partial | card/wallet captured as references only; no device/terminal integration (no external APIs by instruction) |
+| POS-007 | [POS — Parked carts](modules/pos-retail.md) | Built + tested | hold/recall/discard with audit; apps/api/test/pos.test.ts; pos-10 |
+| POS-008 | [POS — Refunds](modules/pos-retail.md) | Built + tested | returns/exchanges with or without receipt, pro-rata discounted refunds, refund to original tender, no-receipt needs manager PIN; packages/financial-engine/test/retail.test.ts, apps/api/test/pos.test.ts; pos-11/12 |
+| POS-009 | [POS — Drawer movements](modules/pos-retail.md) | Built + tested | safe drop, paid in/out, no-sale drawer open, all audited; apps/api/test/pos.test.ts |
+| POS-010 | [POS — Shift close](modules/pos-retail.md) | Built + tested | blind count close, X/Z reports, variance posting; apps/api/test/pos.test.ts; pos-13, pos-16, pos-17 |
+| POS-011 | [POS — Offline capture](modules/pos-retail.md) | Built + tested | localStorage cart + catalogue cache + idempotent offline outbox (client_ref); apps/web/test/pos-cart.test.ts; pos-14 |
+| POS-012 | [POS — Replay](modules/pos-retail.md) | Built + tested | outbox replay every 15 s / on online event; server dedupes client_ref; apps/web/test/pos-cart.test.ts, apps/api/test/pos.test.ts; pos-15 |
+| POS-013 | [POS — Receipts](modules/pos-retail.md) | Built + tested | slip + email-ready HTML receipt, reprint (audited, marked COPY); apps/api/test/pos.test.ts; pos-09 |
+| POS-014 | [POS — Loyalty](modules/pos-retail.md) | Built + tested | loyalty earn/redeem with deferral accounting (ADR-003); packages/financial-engine/test/retail.test.ts, apps/api/test/pos.test.ts; pos-04 |
+| POS-015 | [POS — Gift credit](modules/pos-retail.md) | Built + tested | gift cards / store credit issue, balance, redeem; apps/api/test/pos.test.ts |
+| POS-016 | [POS — Weighted/serial goods](modules/pos-retail.md) | Partial | weighed items and price-embedded (GS1 prefix 2) labels built + tested (packages/financial-engine/test/retail.test.ts); serial capture at POS not built |
+| POS-017 | [POS — Supervisor limits](modules/pos-retail.md) | Built + tested | manager PIN approvals for price override, discounts over limit, void, no-receipt return, negative stock; lockout after repeated wrong PINs; apps/api/test/pos.test.ts; pos-07 |
+| POS-018 | [POS — Fiscal readiness](modules/pos-retail.md) | Planned | FBR/PRA fiscal integration needs an external API; excluded by instruction |
+| POS-019 | [POS — Replenishment](modules/pos-retail.md) | Partial | real-time stock deduction per sale + INV-REORDER automation alerts; apps/api/test/pos.test.ts, apps/api/test/automation.test.ts |
+| POS-020 | [POS — Retail reports](modules/pos-retail.md) | Partial | X/Z reports, tender breakdown, variance; no BI dashboards |
 | PUR-001 | [PUR — Requisitions](modules/procurement.md) | Planned | Not yet implemented/tested |
 | PUR-002 | [PUR — Approvals](modules/procurement.md) | Planned | Not yet implemented/tested |
 | PUR-003 | [PUR — Catalog buying](modules/procurement.md) | Planned | Not yet implemented/tested |
