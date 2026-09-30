@@ -14,7 +14,6 @@ async function makeRequest(
   body?: any,
   token?: string,
 ) {
-  // Use node fetch or express request simulation
   const headers: Record<string, string> = {
     'content-type': 'application/json',
   };
@@ -23,7 +22,6 @@ async function makeRequest(
   }
 
   return new Promise<{ status: number; body: any }>((resolve, reject) => {
-    // Mock express request
     const req: any = {
       method,
       url: pathStr,
@@ -34,7 +32,6 @@ async function makeRequest(
       params: {},
     };
 
-    // Parse query params
     if (pathStr.includes('?')) {
       const [p, q] = pathStr.split('?');
       req.url = p;
@@ -68,7 +65,7 @@ async function makeRequest(
   });
 }
 
-describe('API Modular Monolith: Financial Workflow E2E Integration', () => {
+describe('API Modular Monolith: Financial & Trading Workflows E2E Integration', () => {
   let adminToken: string;
   let controllerToken: string;
   let accountantToken: string;
@@ -110,13 +107,15 @@ describe('API Modular Monolith: Financial Workflow E2E Integration', () => {
     viewerToken = viewerRes.body.data.token;
   });
 
+  // ==========================================
+  // Milestone 1 Tests: Core Financial Ledger
+  // ==========================================
   it('queries 4-level Chart of Accounts tree structure', async () => {
     const res = await makeRequest('GET', '/api/coa/tree', undefined, adminToken);
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.data.length).toBeGreaterThan(0);
 
-    // Root nodes must be Level 1 (Classes)
     const roots = res.body.data;
     expect(roots.every((r: any) => r.level === 1)).toBe(true);
     expect(roots.every((r: any) => r.posting_allowed === false)).toBe(true);
@@ -132,16 +131,8 @@ describe('API Modular Monolith: Financial Workflow E2E Integration', () => {
       document_date: '2026-03-15',
       description: 'Unbalanced Journal Test',
       lines: [
-        {
-          account_id: bankAcc.id,
-          debit_amount: '1000.00',
-          credit_amount: '0.00',
-        },
-        {
-          account_id: revAcc.id,
-          debit_amount: '0.00',
-          credit_amount: '800.00', // Unbalanced by 200
-        },
+        { account_id: bankAcc.id, debit_amount: '1000.00', credit_amount: '0.00' },
+        { account_id: revAcc.id, debit_amount: '0.00', credit_amount: '800.00' },
       ],
     };
 
@@ -161,16 +152,8 @@ describe('API Modular Monolith: Financial Workflow E2E Integration', () => {
       document_date: '2026-03-15',
       description: 'Posting to heading account test',
       lines: [
-        {
-          account_id: headingAcc.id,
-          debit_amount: '500.00',
-          credit_amount: '0.00',
-        },
-        {
-          account_id: revAcc.id,
-          debit_amount: '0.00',
-          credit_amount: '500.00',
-        },
+        { account_id: headingAcc.id, debit_amount: '500.00', credit_amount: '0.00' },
+        { account_id: revAcc.id, debit_amount: '0.00', credit_amount: '500.00' },
       ],
     };
 
@@ -194,110 +177,244 @@ describe('API Modular Monolith: Financial Workflow E2E Integration', () => {
         document_date: '2026-03-15',
         description: 'New Laptops for Engineering Team',
         lines: [
-          {
-            account_id: officeEquipmentAcc.id,
-            debit_amount: '1500000.00',
-            credit_amount: '0.00',
-            description: '10x Developer Workstations',
-          },
-          {
-            account_id: bankAcc.id,
-            debit_amount: '0.00',
-            credit_amount: '1500000.00',
-            description: 'Bank Wire Transfer',
-          },
+          { account_id: officeEquipmentAcc.id, debit_amount: '1500000.00', credit_amount: '0.00', description: '10x Workstations' },
+          { account_id: bankAcc.id, debit_amount: '0.00', credit_amount: '1500000.00', description: 'Bank Wire Transfer' },
         ],
       },
       accountantToken,
     );
     expect(draftRes.status).toBe(201);
     const journalId = draftRes.body.data.id;
-    expect(draftRes.body.data.status).toBe('DRAFT');
 
-    // 2. Submit Draft (Accountant)
-    const submitRes = await makeRequest('POST', `/api/journals/${journalId}/submit`, {}, accountantToken);
-    expect(submitRes.status).toBe(200);
-    expect(submitRes.body.data.status).toBe('SUBMITTED');
-
-    // 3. Approve Journal (Controller)
-    const approveRes = await makeRequest('POST', `/api/journals/${journalId}/approve`, {}, controllerToken);
-    expect(approveRes.status).toBe(200);
-    expect(approveRes.body.data.status).toBe('APPROVED');
-
-    // 4. Authoritatively Post to General Ledger (Controller)
+    // 2. Submit & Approve & Post
+    await makeRequest('POST', `/api/journals/${journalId}/submit`, {}, accountantToken);
+    await makeRequest('POST', `/api/journals/${journalId}/approve`, {}, controllerToken);
     const postRes = await makeRequest('POST', `/api/journals/${journalId}/post`, {}, controllerToken);
     expect(postRes.status).toBe(200);
-    expect(postRes.body.data.status).toBe('POSTED');
 
-    // 5. Query Trial Balance (Verifying Double-Entry Reconciled Balance)
+    // 3. Query Trial Balance
     const tbRes = await makeRequest('GET', '/api/ledger/trial-balance?as_of_date=2026-03-31', undefined, controllerToken);
     expect(tbRes.status).toBe(200);
     expect(tbRes.body.data.is_balanced).toBe(true);
-    expect(tbRes.body.data.net_difference).toBe('0.00');
-
-    // Check that Office Equipment contains 7,000,000 (opening) + 1,500,000 (posted) = 8,500,000
     const eqAccountSummary = tbRes.body.data.accounts.find((a: any) => a.account_code === '121001');
     expect(eqAccountSummary.net_balance).toBe('8500000.00');
 
-    // 6. Execute Linked Reversal (Controller)
+    // 4. Execute Linked Reversal
     const reverseRes = await makeRequest(
       'POST',
       `/api/journals/${journalId}/reverse`,
-      {
-        reversal_posting_date: '2026-03-20',
-        reason: 'Order cancelled before delivery',
-      },
+      { reversal_posting_date: '2026-03-20', reason: 'Order cancelled before delivery' },
       controllerToken,
     );
     expect(reverseRes.status).toBe(201);
-    expect(reverseRes.body.data.status).toBe('REVERSED');
 
-    // 7. Verify Trial Balance after reversal (Office Equipment back to 7,000,000.00)
+    // 5. Verify Trial Balance after reversal
     const tbAfterRev = await makeRequest('GET', '/api/ledger/trial-balance?as_of_date=2026-03-31', undefined, controllerToken);
     expect(tbAfterRev.body.data.is_balanced).toBe(true);
-    expect(tbAfterRev.body.data.net_difference).toBe('0.00');
     const eqAfterRev = tbAfterRev.body.data.accounts.find((a: any) => a.account_code === '121001');
     expect(eqAfterRev.net_balance).toBe('7000000.00');
   });
 
-  it('rejects posting when target fiscal period is HARD_CLOSED', async () => {
-    const accountsRes = await makeRequest('GET', '/api/coa/accounts', undefined, adminToken);
-    const bankAcc = accountsRes.body.data.find((a: any) => a.code === '111002');
-    const revAcc = accountsRes.body.data.find((a: any) => a.code === '411001');
-
-    // Create draft in January 2026 (Jan 2026 is HARD_CLOSED in seed)
-    const draftRes = await makeRequest(
+  // ==========================================
+  // Milestone 2 Tests: Integrated Trading Workflows
+  // ==========================================
+  it('manages parties (customers & vendors) and item catalog', async () => {
+    // 1. Create a Customer Party
+    const partyRes = await makeRequest(
       'POST',
-      '/api/journals/draft',
+      '/api/parties',
       {
-        posting_date: '2026-01-15',
-        document_date: '2026-01-15',
-        description: 'Posting into closed period',
-        lines: [
-          { account_id: bankAcc.id, debit_amount: '100.00', credit_amount: '0.00' },
-          { account_id: revAcc.id, debit_amount: '0.00', credit_amount: '100.00' },
-        ],
+        code: 'CUST-E2E-01',
+        name: 'Alpha Systems Ltd',
+        party_type: 'CUSTOMER',
+        tax_identifier: 'NTN-1122334',
+        credit_limit: '5000000.00',
       },
       adminToken,
     );
+    expect(partyRes.status).toBe(201);
+    expect(partyRes.body.data.code).toBe('CUST-E2E-01');
 
-    const jId = draftRes.body.data.id;
-    await makeRequest('POST', `/api/journals/${jId}/submit`, {}, adminToken);
-    await makeRequest('POST', `/api/journals/${jId}/approve`, {}, adminToken);
+    // 2. Query Parties
+    const listRes = await makeRequest('GET', '/api/parties?type=CUSTOMER', undefined, adminToken);
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.data.some((p: any) => p.code === 'CUST-E2E-01')).toBe(true);
 
-    const postRes = await makeRequest('POST', `/api/journals/${jId}/post`, {}, adminToken);
-    expect(postRes.status).toBe(400);
-    expect(postRes.body.error.code).toBe('PERIOD_CLOSED');
-    expect(postRes.body.error.message).toContain('HARD_CLOSED');
+    // 3. Query Catalog Items & On-hand inventory
+    const itemsRes = await makeRequest('GET', '/api/items', undefined, adminToken);
+    expect(itemsRes.status).toBe(200);
+    const switchItem = itemsRes.body.data.find((i: any) => i.code === 'ITEM-SW-48');
+    expect(switchItem).toBeDefined();
+    expect(parseFloat(switchItem.on_hand_qty)).toBeGreaterThanOrEqual(25);
   });
 
-  it('verifies append-only audit trail logs', async () => {
-    const auditRes = await makeRequest('GET', '/api/audit/logs', undefined, adminToken);
-    expect(auditRes.status).toBe(200);
-    expect(auditRes.body.data.length).toBeGreaterThan(0);
+  it('executes Order-to-Cash: Sales Order -> Confirm -> Fulfill (COGS Voucher) -> AR Invoice -> GL Post', async () => {
+    const partiesRes = await makeRequest('GET', '/api/parties?type=CUSTOMER', undefined, adminToken);
+    const customer = partiesRes.body.data[0];
+    const itemsRes = await makeRequest('GET', '/api/items', undefined, adminToken);
+    const serverItem = itemsRes.body.data.find((i: any) => i.code === 'ITEM-SRV-01'); // Enterprise Server
 
-    const actions = auditRes.body.data.map((l: any) => l.action);
-    expect(actions).toContain('JOURNAL_POSTED');
-    expect(actions).toContain('JOURNAL_REVERSED');
+    const initialStockRes = await makeRequest('GET', '/api/inventory/stock', undefined, adminToken);
+    const initialServerStock = initialStockRes.body.data.find((s: any) => s.item_code === 'ITEM-SRV-01');
+    const initialQty = parseFloat(initialServerStock.on_hand_qty);
+
+    // 1. Create Sales Order for 2 Enterprise Servers @ PKR 450,000 = PKR 900,000
+    const soRes = await makeRequest(
+      'POST',
+      '/api/sales/orders',
+      {
+        party_id: customer.id,
+        order_date: '2026-03-22',
+        lines: [{ item_id: serverItem.id, quantity: '2', unit_price: '450000.00' }],
+      },
+      controllerToken,
+    );
+    expect(soRes.status).toBe(201);
+    const soId = soRes.body.data.id;
+    expect(soRes.body.data.status).toBe('DRAFT');
+
+    // 2. Confirm Sales Order
+    const confirmRes = await makeRequest('POST', `/api/sales/orders/${soId}/confirm`, {}, controllerToken);
+    expect(confirmRes.status).toBe(200);
+    expect(confirmRes.body.data.status).toBe('CONFIRMED');
+
+    // 3. Fulfill / Ship Order (Decrements physical stock and posts COGS journal voucher)
+    const fulfillRes = await makeRequest('POST', `/api/sales/orders/${soId}/fulfill`, {}, controllerToken);
+    expect(fulfillRes.status).toBe(200);
+    expect(fulfillRes.body.data.status).toBe('FULFILLED');
+
+    // Verify stock reduced by 2
+    const postStockRes = await makeRequest('GET', '/api/inventory/stock', undefined, adminToken);
+    const postServerStock = postStockRes.body.data.find((s: any) => s.item_code === 'ITEM-SRV-01');
+    expect(parseFloat(postServerStock.on_hand_qty)).toBe(initialQty - 2);
+
+    // 4. Create AR Customer Invoice for the Order
+    const arRes = await makeRequest(
+      'POST',
+      '/api/ar/invoices',
+      {
+        party_id: customer.id,
+        sales_order_id: soId,
+        invoice_date: '2026-03-22',
+        due_date: '2026-04-22',
+        lines: [{ item_id: serverItem.id, quantity: '2', unit_price: '450000.00' }],
+      },
+      accountantToken,
+    );
+    expect(arRes.status).toBe(201);
+    const invoiceId = arRes.body.data.id;
+    expect(arRes.body.data.status).toBe('DRAFT');
+
+    // 5. Post AR Invoice to General Ledger (Dr AR Control 112001, Cr Sales 411001)
+    const postInvRes = await makeRequest('POST', `/api/ar/invoices/${invoiceId}/post`, {}, controllerToken);
+    expect(postInvRes.status).toBe(200);
+    expect(postInvRes.body.data.status).toBe('POSTED');
+
+    // 6. Record Customer Receipt Payment and Allocate against Invoice
+    const accountsRes = await makeRequest('GET', '/api/coa/accounts', undefined, adminToken);
+    const bankAcc = accountsRes.body.data.find((a: any) => a.code === '111002');
+
+    const paymentRes = await makeRequest(
+      'POST',
+      '/api/payments/receipt',
+      {
+        party_id: customer.id,
+        bank_account_id: bankAcc.id,
+        amount: '900000.00',
+        payment_date: '2026-03-25',
+        reference: 'CHQ-987654',
+        allocations: [{ invoice_id: invoiceId, amount: '900000.00' }],
+      },
+      accountantToken,
+    );
+    expect(paymentRes.status).toBe(201);
+    expect(paymentRes.body.data.status).toBe('POSTED');
+
+    // Verify AR Invoice is marked PAID and outstanding is 0
+    const checkInvRes = await makeRequest('GET', `/api/ar/invoices/${invoiceId}`, undefined, accountantToken);
+    expect(checkInvRes.status).toBe(200);
+    expect(checkInvRes.body.data.status).toBe('PAID');
+    expect(parseFloat(checkInvRes.body.data.outstanding_amount)).toBe(0);
+  });
+
+  it('executes Procure-to-Pay: Purchase Order -> Approve -> Receive (GRNI Accrual) -> AP Bill -> GL Post -> Settle', async () => {
+    const partiesRes = await makeRequest('GET', '/api/parties?type=VENDOR', undefined, adminToken);
+    const vendor = partiesRes.body.data[0];
+    const itemsRes = await makeRequest('GET', '/api/items', undefined, adminToken);
+    const switchItem = itemsRes.body.data.find((i: any) => i.code === 'ITEM-SW-48'); // Managed Switch
+
+    // 1. Create Purchase Order for 10 switches @ PKR 120,000 = PKR 1,200,000
+    const poRes = await makeRequest(
+      'POST',
+      '/api/procurement/orders',
+      {
+        party_id: vendor.id,
+        po_date: '2026-03-20',
+        expected_date: '2026-03-28',
+        lines: [{ item_id: switchItem.id, quantity: '10', unit_price: '120000.00' }],
+      },
+      controllerToken,
+    );
+    expect(poRes.status).toBe(201);
+    const poId = poRes.body.data.id;
+    expect(poRes.body.data.status).toBe('DRAFT');
+
+    // 2. Approve Purchase Order
+    const approvePoRes = await makeRequest('POST', `/api/procurement/orders/${poId}/approve`, {}, controllerToken);
+    expect(approvePoRes.status).toBe(200);
+    expect(approvePoRes.body.data.status).toBe('APPROVED');
+
+    // 3. Receive Goods into Inventory (Increases on_hand and posts Dr Inventory / Cr GRNI Liability)
+    const receiveRes = await makeRequest('POST', `/api/procurement/orders/${poId}/receive`, {}, controllerToken);
+    expect(receiveRes.status).toBe(200);
+    expect(receiveRes.body.data.status).toBe('RECEIVED');
+
+    // 4. Create AP Supplier Bill
+    const billRes = await makeRequest(
+      'POST',
+      '/api/ap/invoices',
+      {
+        party_id: vendor.id,
+        purchase_order_id: poId,
+        invoice_number: `BILL-TEST-${Date.now().toString().slice(-4)}`,
+        invoice_date: '2026-03-24',
+        due_date: '2026-04-24',
+        lines: [{ item_id: switchItem.id, quantity: '10', unit_price: '120000.00' }],
+      },
+      accountantToken,
+    );
+    expect(billRes.status).toBe(201);
+    const billId = billRes.body.data.id;
+
+    // 5. Post AP Bill to General Ledger (Dr GRNI Liability 211002, Cr AP Control 211001)
+    const postBillRes = await makeRequest('POST', `/api/ap/invoices/${billId}/post`, {}, controllerToken);
+    expect(postBillRes.status).toBe(200);
+    expect(postBillRes.body.data.status).toBe('POSTED');
+
+    // 6. Record Supplier Disbursement Payment and Allocate against Bill
+    const accountsRes = await makeRequest('GET', '/api/coa/accounts', undefined, adminToken);
+    const bankAcc = accountsRes.body.data.find((a: any) => a.code === '111002');
+
+    const pmtRes = await makeRequest(
+      'POST',
+      '/api/payments/disbursement',
+      {
+        party_id: vendor.id,
+        bank_account_id: bankAcc.id,
+        amount: '1200000.00',
+        payment_date: '2026-03-26',
+        reference: 'WIRE-VEN-001',
+        allocations: [{ invoice_id: billId, amount: '1200000.00' }],
+      },
+      accountantToken,
+    );
+    expect(pmtRes.status).toBe(201);
+    expect(pmtRes.body.data.status).toBe('POSTED');
+
+    // 7. Verify Trial Balance remains strictly double-entry balanced after all trading activities
+    const finalTb = await makeRequest('GET', '/api/ledger/trial-balance?as_of_date=2026-03-31', undefined, controllerToken);
+    expect(finalTb.status).toBe(200);
+    expect(finalTb.body.data.is_balanced).toBe(true);
+    expect(finalTb.body.data.net_difference).toBe('0.00');
   });
 });

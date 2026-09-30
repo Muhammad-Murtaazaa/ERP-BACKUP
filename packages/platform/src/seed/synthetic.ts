@@ -256,6 +256,130 @@ export class SyntheticSeedRunner {
       );
     }
 
+    // 8. Seed Parties (Customers & Vendors)
+    const parties = [
+      {
+        id: '60000000-0000-0000-0000-000000000001',
+        code: 'VEND-001',
+        name: 'Apex Industrial Supplies Ltd',
+        type: 'VENDOR',
+        email: 'billing@apexsupplies.pk',
+        tax: 'NTN-4567890-1',
+        limit: '0',
+      },
+      {
+        id: '60000000-0000-0000-0000-000000000002',
+        code: 'CUST-001',
+        name: 'Horizon Retail Enterprises',
+        type: 'CUSTOMER',
+        email: 'orders@horizonretail.com',
+        tax: 'NTN-1234567-8',
+        limit: '5000000.00',
+      },
+      {
+        id: '60000000-0000-0000-0000-000000000003',
+        code: 'CUST-002',
+        name: 'Crescent Logistics & Trade',
+        type: 'CUSTOMER',
+        email: 'accounts@crescenttrade.pk',
+        tax: 'NTN-9876543-2',
+        limit: '10000000.00',
+      },
+    ];
+
+    for (const p of parties) {
+      await this.db.query(
+        `
+        INSERT INTO parties (
+          id, organization_id, legal_entity_id, code, name, party_type, tax_identifier, email, credit_limit, is_active
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
+        ON CONFLICT (organization_id, code) DO UPDATE SET name = EXCLUDED.name, credit_limit = EXCLUDED.credit_limit
+      `,
+        [p.id, orgId, legalEntityId, p.code, p.name, p.type, p.tax, p.email, p.limit],
+      );
+    }
+
+    // 9. Seed Items
+    const salesAccId = codeToIdMap.get('411001')!;
+    const cogsAccId = codeToIdMap.get('511001')!;
+    const items = [
+      {
+        id: '70000000-0000-0000-0000-000000000001',
+        code: 'ITEM-SRV-01',
+        name: 'Enterprise Server Rack Unit',
+        type: 'INVENTORY',
+        uom: 'UNIT',
+        price: '450000.00',
+        cost: '320000.00',
+        qty: '15',
+      },
+      {
+        id: '70000000-0000-0000-0000-000000000002',
+        code: 'ITEM-SW-48',
+        name: 'Managed Switch 48-Port PoE',
+        type: 'INVENTORY',
+        uom: 'UNIT',
+        price: '180000.00',
+        cost: '120000.00',
+        qty: '25',
+      },
+      {
+        id: '70000000-0000-0000-0000-000000000003',
+        code: 'SRV-CONSULT',
+        name: 'Cloud Deployment Consultation',
+        type: 'SERVICE',
+        uom: 'HOUR',
+        price: '25000.00',
+        cost: '0.00',
+        qty: '0',
+      },
+    ];
+
+    for (const itm of items) {
+      await this.db.query(
+        `
+        INSERT INTO items (
+          id, organization_id, legal_entity_id, code, name, item_type, uom,
+          unit_price, unit_cost, sales_account_id, cogs_account_id, inventory_account_id, is_active
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true)
+        ON CONFLICT (organization_id, code) DO UPDATE SET
+          name = EXCLUDED.name, unit_price = EXCLUDED.unit_price, unit_cost = EXCLUDED.unit_cost
+      `,
+        [
+          itm.id,
+          orgId,
+          legalEntityId,
+          itm.code,
+          itm.name,
+          itm.type,
+          itm.uom,
+          itm.price,
+          itm.cost,
+          salesAccId,
+          cogsAccId,
+          itm.type === 'INVENTORY' ? inventoryId : null,
+        ],
+      );
+
+      // Add opening stock movement if inventory item
+      if (itm.type === 'INVENTORY') {
+        const movId = crypto.randomUUID();
+        const totalVal = (parseFloat(itm.cost) * parseFloat(itm.qty)).toFixed(8);
+        await this.db.query(
+          `
+          INSERT INTO stock_movements (
+            id, organization_id, legal_entity_id, item_id, warehouse_id,
+            movement_type, movement_date, quantity, unit_cost, total_value, description
+          )
+          VALUES ($1, $2, $3, $4, $5, 'OPENING', '2026-03-01', $6, $7, $8, 'Opening Stock Layer')
+        `,
+          [movId, orgId, legalEntityId, itm.id, branchId, itm.qty, itm.cost, totalVal],
+        );
+      }
+    }
+
     return {
       organizationId: orgId,
       legalEntityId: legalEntityId,

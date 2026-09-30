@@ -168,6 +168,224 @@ export const JournalSchema = z.object({
 export type Journal = z.infer<typeof JournalSchema>;
 
 // ==========================================
+// M2: Trading Entities (Parties, Items, Orders, Invoices, Payments)
+// ==========================================
+export const PartyType = {
+  CUSTOMER: 'CUSTOMER',
+  VENDOR: 'VENDOR',
+  BOTH: 'BOTH',
+} as const;
+export type PartyType = (typeof PartyType)[keyof typeof PartyType];
+
+export interface Party {
+  id: string;
+  organization_id: string;
+  legal_entity_id?: string | null;
+  code: string;
+  name: string;
+  party_type: PartyType;
+  tax_identifier?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  credit_limit: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export const ItemType = {
+  INVENTORY: 'INVENTORY',
+  SERVICE: 'SERVICE',
+  NON_INVENTORY: 'NON_INVENTORY',
+} as const;
+export type ItemType = (typeof ItemType)[keyof typeof ItemType];
+
+export interface Item {
+  id: string;
+  organization_id: string;
+  legal_entity_id?: string | null;
+  code: string;
+  name: string;
+  item_type: ItemType;
+  uom: string;
+  unit_price: string;
+  unit_cost: string;
+  sales_account_id?: string | null;
+  cogs_account_id?: string | null;
+  inventory_account_id?: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SalesOrderLine {
+  id?: string;
+  sales_order_id?: string;
+  line_number: number;
+  item_id: string;
+  quantity: string;
+  unit_price: string;
+  line_total: string;
+  description?: string | null;
+  fulfilled_quantity?: string;
+  invoiced_quantity?: string;
+  item_code?: string;
+  item_name?: string;
+}
+
+export interface SalesOrder {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string;
+  party_id: string;
+  party_name?: string;
+  order_number: string;
+  order_date: string;
+  delivery_date?: string | null;
+  status: 'DRAFT' | 'CONFIRMED' | 'FULFILLED' | 'INVOICED' | 'CANCELLED';
+  subtotal: string;
+  tax_amount: string;
+  total_amount: string;
+  notes?: string | null;
+  created_by?: string;
+  lines?: SalesOrderLine[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PurchaseOrderLine {
+  id?: string;
+  purchase_order_id?: string;
+  line_number: number;
+  item_id: string;
+  quantity: string;
+  unit_price: string;
+  line_total: string;
+  description?: string | null;
+  received_quantity?: string;
+  billed_quantity?: string;
+  item_code?: string;
+  item_name?: string;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string;
+  party_id: string;
+  party_name?: string;
+  po_number: string;
+  po_date: string;
+  expected_date?: string | null;
+  status: 'DRAFT' | 'APPROVED' | 'RECEIVED' | 'BILLED' | 'CANCELLED';
+  subtotal: string;
+  tax_amount: string;
+  total_amount: string;
+  notes?: string | null;
+  created_by?: string;
+  lines?: PurchaseOrderLine[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ArInvoiceLine {
+  id?: string;
+  invoice_id?: string;
+  line_number: number;
+  item_id: string;
+  quantity: string;
+  unit_price: string;
+  line_total: string;
+  description?: string | null;
+  item_code?: string;
+  item_name?: string;
+}
+
+export interface ArInvoice {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string;
+  party_id: string;
+  party_name?: string;
+  sales_order_id?: string | null;
+  invoice_number: string;
+  invoice_date: string;
+  due_date: string;
+  status: 'DRAFT' | 'POSTED' | 'PAID' | 'PARTIALLY_PAID' | 'CANCELLED';
+  subtotal: string;
+  tax_amount: string;
+  total_amount: string;
+  outstanding_amount: string;
+  posted_journal_id?: string | null;
+  notes?: string | null;
+  lines?: ArInvoiceLine[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApInvoiceLine {
+  id?: string;
+  invoice_id?: string;
+  line_number: number;
+  item_id: string;
+  quantity: string;
+  unit_price: string;
+  line_total: string;
+  description?: string | null;
+  item_code?: string;
+  item_name?: string;
+}
+
+export interface ApInvoice {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string;
+  party_id: string;
+  party_name?: string;
+  purchase_order_id?: string | null;
+  invoice_number: string;
+  invoice_date: string;
+  due_date: string;
+  status: 'DRAFT' | 'POSTED' | 'PAID' | 'PARTIALLY_PAID' | 'CANCELLED';
+  subtotal: string;
+  tax_amount: string;
+  total_amount: string;
+  outstanding_amount: string;
+  posted_journal_id?: string | null;
+  notes?: string | null;
+  lines?: ApInvoiceLine[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Payment {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string;
+  party_id: string;
+  party_name?: string;
+  payment_type: 'RECEIPT' | 'DISBURSEMENT';
+  payment_number: string;
+  payment_date: string;
+  bank_account_id: string;
+  bank_account_name?: string;
+  amount: string;
+  currency: string;
+  reference?: string | null;
+  status: 'POSTED' | 'CANCELLED';
+  posted_journal_id?: string | null;
+  allocations?: {
+    id: string;
+    invoice_id: string;
+    invoice_type: 'AR' | 'AP';
+    allocated_amount: string;
+    invoice_number?: string;
+  }[];
+  created_at: string;
+}
+
+// ==========================================
 // Organization, Legal Entity, User & Auth
 // ==========================================
 export const UserRole = {
@@ -195,6 +413,15 @@ export const Permission = {
   FINANCE_JOURNAL_POST: 'finance.journal.post',
   FINANCE_JOURNAL_REVERSE: 'finance.journal.reverse',
   FINANCE_REPORTS_VIEW: 'finance.reports.view',
+  // Trading Workflows (M2)
+  PARTIES_MANAGE: 'parties.manage',
+  ITEMS_MANAGE: 'items.manage',
+  INVENTORY_MANAGE: 'inventory.manage',
+  SALES_ORDER_MANAGE: 'sales.order.manage',
+  PURCHASE_ORDER_MANAGE: 'purchase.order.manage',
+  AR_INVOICE_MANAGE: 'ar.invoice.manage',
+  AP_INVOICE_MANAGE: 'ap.invoice.manage',
+  PAYMENT_MANAGE: 'payment.manage',
   // Audit
   AUDIT_VIEW: 'audit.view',
 } as const;
@@ -229,6 +456,8 @@ export const ErrorCode = {
   STALE_REVISION: 'STALE_REVISION',
   DUPLICATE_SOURCE_PURPOSE: 'DUPLICATE_SOURCE_PURPOSE',
   RESOURCE_NOT_FOUND: 'RESOURCE_NOT_FOUND',
+  INSUFFICIENT_STOCK: 'INSUFFICIENT_STOCK',
+  OVER_ALLOCATION: 'OVER_ALLOCATION',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
