@@ -170,3 +170,16 @@ registerSeeder('SUP', async (q, c) => {
     }
   }
 });
+
+registerSeeder('LOG', async (q, c) => {
+  const vendor = (await q.query(`SELECT id FROM parties WHERE organization_id = $1 AND party_type IN ('VENDOR','BOTH') ORDER BY code LIMIT 1`, [c.org])).rows[0];
+  const carriers = [
+    ['TCS', 'TCS Express', 'COURIER', null, 'https://www.tcsexpress.com/track/{tracking}'],
+    ['LEOPARDS', 'Leopards Courier', 'COURIER', null, null],
+    ['DAEWOO-CARGO', 'Daewoo FastEx Cargo', 'ROAD', vendor?.id ?? null, null],
+    ['OWN', 'OMNYSYNC service vans', 'OWN_FLEET', null, null],
+  ];
+  for (const [code, name, mode, party, url] of carriers) {
+    await q.query(`INSERT INTO log_carriers (organization_id, legal_entity_id, code, name, mode, party_id, tracking_url_template, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (organization_id, code) DO NOTHING`, [c.org, c.le, code, name, mode, party, url, c.admin]);
+  }
+});

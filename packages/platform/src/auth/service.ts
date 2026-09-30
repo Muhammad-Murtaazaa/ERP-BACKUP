@@ -398,6 +398,11 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.LOAN_VIEW,
     Permission.BUDGET_VIEW,
     Permission.SUPPLIER_VIEW,
+    Permission.LOGISTICS_VIEW,
+    Permission.SERVICE_VIEW,
+    Permission.TIME_VIEW,
+    Permission.FLEET_VIEW,
+    Permission.SUBSCRIPTION_VIEW,
   ],
   [UserRole.VIEWER]: [
     Permission.FINANCE_COA_VIEW,
