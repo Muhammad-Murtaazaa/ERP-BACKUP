@@ -230,8 +230,10 @@ export function registerFinanceRoutes(app: Express): void {
     const rawLines = arrayOf<any>(body.lines, 'lines', { min: 0, max: 500 });
 
     const lines = rawLines.map((l, i) => {
-      const debit = decimal(l?.debit_amount, `lines[${i}].debit_amount`, { required: false, sign: 'any' });
-      const credit = decimal(l?.credit_amount, `lines[${i}].credit_amount`, { required: false, sign: 'any' });
+      // Manual journals are single-currency PKR (lines are stored with currency 'PKR'): amounts are
+      // limited to the currency's 2 minor units so no sub-paisa balance can ever be created.
+      const debit = decimal(l?.debit_amount, `lines[${i}].debit_amount`, { required: false, sign: 'any', scale: 2 });
+      const credit = decimal(l?.credit_amount, `lines[${i}].credit_amount`, { required: false, sign: 'any', scale: 2 });
       return {
         line_number: i + 1,
         account_id: String(l?.account_id || ''),
