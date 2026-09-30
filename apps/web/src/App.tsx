@@ -13,6 +13,9 @@ import { ArInvoicesView } from './views/ArInvoicesView.js';
 import { ProcurementOrdersView } from './views/ProcurementOrdersView.js';
 import { ApInvoicesView } from './views/ApInvoicesView.js';
 import { PaymentsView } from './views/PaymentsView.js';
+import { BankReconciliationView } from './views/BankReconciliationView.js';
+import { FxRatesView } from './views/FxRatesView.js';
+import { OnboardingWizardView } from './views/OnboardingWizardView.js';
 import { Badge } from '@omnysync/ui';
 import {
   LayoutDashboard,
@@ -30,6 +33,9 @@ import {
   Truck,
   FileCheck,
   CreditCard,
+  Landmark,
+  ArrowRightLeft,
+  Sparkles,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -97,6 +103,8 @@ export const App: React.FC = () => {
       title: 'Treasury & Finance',
       items: [
         { id: 'payments', label: 'Payments & Allocations', icon: CreditCard },
+        { id: 'treasury-reconciliation', label: 'Bank Reconciliation', icon: Landmark },
+        { id: 'fx-rates', label: 'FX & Exchange Rates', icon: ArrowRightLeft },
         { id: 'journals', label: 'Journal Vouchers', icon: BookOpen },
         { id: 'trial-balance', label: 'Trial Balance & GL', icon: FileSpreadsheet },
         { id: 'coa', label: 'Chart of Accounts', icon: Layers },
@@ -104,8 +112,11 @@ export const App: React.FC = () => {
       ],
     },
     {
-      title: 'Governance',
-      items: [{ id: 'audit', label: 'Audit Trail', icon: ShieldAlert }],
+      title: 'Setup & Governance',
+      items: [
+        { id: 'onboarding', label: 'Onboarding & Templates', icon: Sparkles },
+        { id: 'audit', label: 'Audit Trail', icon: ShieldAlert },
+      ],
     },
   ];
 
@@ -230,6 +241,9 @@ export const App: React.FC = () => {
               {currentTab === 'procurement' && <ProcurementOrdersView />}
               {currentTab === 'ap-invoices' && <ApInvoicesView />}
               {currentTab === 'payments' && <PaymentsView />}
+              {currentTab === 'treasury-reconciliation' && <BankReconciliationView />}
+              {currentTab === 'fx-rates' && <FxRatesView />}
+              {currentTab === 'onboarding' && <OnboardingWizardView />}
               {currentTab === 'journals' && <JournalsView />}
               {currentTab === 'trial-balance' && <TrialBalanceView />}
               {currentTab === 'coa' && <CoaView />}

@@ -386,6 +386,82 @@ export interface Payment {
 }
 
 // ==========================================
+// M3: Treasury, FX & Onboarding Types
+// ==========================================
+export interface ExchangeRate {
+  id: string;
+  organization_id: string;
+  from_currency: string;
+  to_currency: string;
+  rate: string;
+  effective_date: string;
+  source: string;
+  created_at: string;
+}
+
+export interface BankStatementLine {
+  id: string;
+  statement_id: string;
+  line_number: number;
+  transaction_date: string;
+  value_date?: string | null;
+  amount: string;
+  reference?: string | null;
+  description?: string | null;
+  is_matched: boolean;
+  matched_journal_line_id?: string | null;
+}
+
+export interface BankStatement {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string;
+  bank_account_id: string;
+  bank_account_name?: string;
+  statement_reference: string;
+  statement_date: string;
+  opening_balance: string;
+  closing_balance: string;
+  status: 'UPLOADED' | 'RECONCILING' | 'RECONCILED';
+  created_by?: string;
+  lines?: BankStatementLine[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BankReconciliation {
+  id: string;
+  statement_id: string;
+  reconciled_date: string;
+  statement_closing_balance: string;
+  gl_closing_balance: string;
+  unreconciled_difference: string;
+  status: 'IN_PROGRESS' | 'COMPLETED' | 'LOCKED';
+  reconciled_by?: string;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const IndustryTemplate = {
+  WHOLESALE_DISTRIBUTION: 'WHOLESALE_DISTRIBUTION',
+  SERVICES_CONSULTING: 'SERVICES_CONSULTING',
+  LIGHT_MANUFACTURING: 'LIGHT_MANUFACTURING',
+  CUSTOM: 'CUSTOM',
+} as const;
+export type IndustryTemplate = (typeof IndustryTemplate)[keyof typeof IndustryTemplate];
+
+export interface OnboardingProfile {
+  id: string;
+  organization_id: string;
+  industry_template: IndustryTemplate;
+  setup_step: string;
+  is_completed: boolean;
+  completed_at?: string | null;
+  created_at: string;
+}
+
+// ==========================================
 // Organization, Legal Entity, User & Auth
 // ==========================================
 export const UserRole = {
@@ -422,6 +498,10 @@ export const Permission = {
   AR_INVOICE_MANAGE: 'ar.invoice.manage',
   AP_INVOICE_MANAGE: 'ap.invoice.manage',
   PAYMENT_MANAGE: 'payment.manage',
+  // Treasury, FX & Onboarding (M3)
+  TREASURY_BANK_RECONCILE: 'treasury.bank.reconcile',
+  TREASURY_FX_MANAGE: 'treasury.fx.manage',
+  ONBOARDING_MANAGE: 'onboarding.manage',
   // Audit
   AUDIT_VIEW: 'audit.view',
 } as const;
@@ -458,6 +538,9 @@ export const ErrorCode = {
   RESOURCE_NOT_FOUND: 'RESOURCE_NOT_FOUND',
   INSUFFICIENT_STOCK: 'INSUFFICIENT_STOCK',
   OVER_ALLOCATION: 'OVER_ALLOCATION',
+  STATEMENT_ALREADY_RECONCILED: 'STATEMENT_ALREADY_RECONCILED',
+  RECONCILIATION_MISMATCH: 'RECONCILIATION_MISMATCH',
+  FX_RATE_NOT_FOUND: 'FX_RATE_NOT_FOUND',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -481,3 +564,4 @@ export interface StandardSuccessResponse<T> {
     total_count?: number;
   };
 }
+

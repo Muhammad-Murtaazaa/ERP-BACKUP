@@ -4,3 +4,6 @@ export * from './periods.js';
 export * from './journal.js';
 export * from './ledger.js';
 export * from './reversals.js';
+export * from './reconciliation.js';
+export * from './fx.js';
+

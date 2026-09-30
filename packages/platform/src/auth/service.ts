@@ -23,6 +23,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.AR_INVOICE_MANAGE,
     Permission.AP_INVOICE_MANAGE,
     Permission.PAYMENT_MANAGE,
+    Permission.TREASURY_BANK_RECONCILE,
+    Permission.TREASURY_FX_MANAGE,
+    Permission.ONBOARDING_MANAGE,
     Permission.AUDIT_VIEW,
   ],
   [UserRole.CONTROLLER]: [
@@ -43,6 +46,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.AR_INVOICE_MANAGE,
     Permission.AP_INVOICE_MANAGE,
     Permission.PAYMENT_MANAGE,
+    Permission.TREASURY_BANK_RECONCILE,
+    Permission.TREASURY_FX_MANAGE,
+    Permission.ONBOARDING_MANAGE,
     Permission.AUDIT_VIEW,
   ],
   [UserRole.ACCOUNTANT]: [
@@ -55,6 +61,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.AR_INVOICE_MANAGE,
     Permission.AP_INVOICE_MANAGE,
     Permission.PAYMENT_MANAGE,
+    Permission.TREASURY_BANK_RECONCILE,
   ],
   [UserRole.SALES_OPERATOR]: [
     Permission.FINANCE_COA_VIEW,

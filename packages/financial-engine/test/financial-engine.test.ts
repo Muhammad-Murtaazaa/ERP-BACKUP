@@ -9,6 +9,8 @@ import {
   JournalValidator,
   LedgerEngine,
   JournalReversalEngine,
+  BankReconciliationEngine,
+  FxEngine,
 } from '../src/index.js';
 import {
   Account,
@@ -468,3 +470,109 @@ describe('Financial Engine: Linked Reversal and Trial Balance', () => {
     expect(bankAcc?.net_balance).toBe('0.00');
   });
 });
+
+describe('Financial Engine: Bank Statement Reconciliation', () => {
+  it('computes bank reconciliation summary and zero variance on fully matched statement', () => {
+    const statementLines: any[] = [
+      { id: 'sl-1', statement_id: 's-1', line_number: 1, transaction_date: '2026-03-10', amount: '50000.00', is_matched: true },
+      { id: 'sl-2', statement_id: 's-1', line_number: 2, transaction_date: '2026-03-15', amount: '-15000.00', is_matched: true },
+    ];
+
+    const summary = BankReconciliationEngine.computeReconciliation({
+      statementOpeningBalance: '100000.00',
+      statementClosingBalance: '135000.00', // 100k + 50k - 15k = 135k
+      glBalanceAsOfDate: '135000.00',
+      statementLines,
+    });
+
+    expect(summary.isReconciled).toBe(true);
+    expect(summary.unreconciledDifference).toBe('0.00');
+    expect(summary.clearedDeposits).toBe('50000.00');
+    expect(summary.clearedWithdrawals).toBe('15000.00');
+    expect(summary.matchedLinesCount).toBe(2);
+    expect(summary.unmatchedLinesCount).toBe(0);
+  });
+
+  it('detects variance when GL balance and statement balance disagree', () => {
+    const statementLines: any[] = [
+      { id: 'sl-1', statement_id: 's-1', line_number: 1, transaction_date: '2026-03-10', amount: '50000.00', is_matched: true },
+    ];
+
+    const summary = BankReconciliationEngine.computeReconciliation({
+      statementOpeningBalance: '100000.00',
+      statementClosingBalance: '150000.00',
+      glBalanceAsOfDate: '140000.00', // 10,000 difference
+      statementLines,
+    });
+
+    expect(summary.isReconciled).toBe(false);
+    expect(summary.unreconciledDifference).toBe('10000.00');
+  });
+
+  it('auto-matches statement lines with un-reconciled GL lines by amount', () => {
+    const statementLines: any[] = [
+      { id: 'sl-1', amount: '25000.00', is_matched: false },
+      { id: 'sl-2', amount: '-8000.00', is_matched: false },
+    ];
+
+    const glLines: any[] = [
+      { id: 'gl-1', debit_amount: '25000.00', credit_amount: '0.00' },
+      { id: 'gl-2', debit_amount: '0.00', credit_amount: '8000.00' },
+    ];
+
+    const matches = BankReconciliationEngine.autoMatchLines(statementLines, glLines);
+    expect(matches).toHaveLength(2);
+    expect(matches[0].journalLineId).toBe('gl-1');
+    expect(matches[0].matchType).toBe('EXACT_AMOUNT');
+    expect(matches[1].journalLineId).toBe('gl-2');
+  });
+});
+
+describe('Financial Engine: Multi-Currency & FX Calculations', () => {
+  it('converts foreign currency amount using exact 24,12 precision rate', () => {
+    const res = FxEngine.convertToBase({
+      amount: '1500.50',
+      fxRate: '278.452319000000',
+      currency: 'USD',
+      baseCurrency: 'PKR',
+    });
+
+    expect(res.foreignAmount).toBe('1500.50');
+    // 1500.50 * 278.452319 = 417817.7046595 -> 417817.70
+    expect(res.baseAmount).toBe('417817.70');
+  });
+
+  it('computes Realized FX Gain on customer AR invoice settlement', () => {
+    // Invoiced $10,000 @ 275 PKR = 2,750,000 PKR
+    // Settled $10,000 @ 280 PKR = 2,800,000 PKR
+    // Gain = +50,000 PKR
+    const res = FxEngine.computeRealizedGainLoss({
+      foreignAmount: '10000.00',
+      originalFxRate: '275.000000000000',
+      settlementFxRate: '280.000000000000',
+      transactionType: 'AR',
+    });
+
+    expect(res.isGain).toBe(true);
+    expect(res.isLoss).toBe(false);
+    expect(res.gainLossAmount).toBe('50000.00');
+    expect(res.originalBaseAmount).toBe('2750000.00');
+    expect(res.settledBaseAmount).toBe('2800000.00');
+  });
+
+  it('computes Realized FX Loss on vendor AP bill payment', () => {
+    // Billed $5,000 @ 275 PKR = 1,375,000 PKR
+    // Paid $5,000 @ 282 PKR = 1,410,000 PKR (we had to pay more base currency => Loss)
+    const res = FxEngine.computeRealizedGainLoss({
+      foreignAmount: '5000.00',
+      originalFxRate: '275.000000000000',
+      settlementFxRate: '282.000000000000',
+      transactionType: 'AP',
+    });
+
+    expect(res.isLoss).toBe(true);
+    expect(res.isGain).toBe(false);
+    expect(res.gainLossAmount).toBe('35000.00');
+  });
+});
+

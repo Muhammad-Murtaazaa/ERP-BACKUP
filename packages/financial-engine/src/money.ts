@@ -42,6 +42,14 @@ export class Money {
     return new Money(value);
   }
 
+  static fromDecimal(value: Decimal): Money {
+    return new Money(value);
+  }
+
+  toDecimal(): Decimal {
+    return this.val;
+  }
+
   add(other: Money | string | number): Money {
     const o = other instanceof Money ? other.val : new Money(other).val;
     return new Money(this.val.plus(o));
@@ -88,6 +96,10 @@ export class Money {
   eq(other: Money | string | number): boolean {
     const o = other instanceof Money ? other.val : new Money(other).val;
     return this.val.equals(o);
+  }
+
+  equals(other: Money | string | number): boolean {
+    return this.eq(other);
   }
 
   gt(other: Money | string | number): boolean {

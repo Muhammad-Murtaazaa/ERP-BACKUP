@@ -24,8 +24,26 @@
   - Supplier disbursement payment with open-item allocation marking bills `PAID`.
 - **General Ledger Reconciliation**: Trial Balance remains strictly balanced ($\sum\text{Debits} = \sum\text{Credits}$, net difference $0.00$) after completing full trading and payment cycles.
 
+## Milestone 3: Treasury, Bank Reconciliation, Multi-Currency FX Engine & Onboarding Wizard (Verified)
+- **Database Migration**: `packages/platform/src/db/migrations/003_treasury_fx_onboarding.sql` applied cleanly across PostgreSQL engines.
+- **Bank Statement Reconciliation Engine**:
+  - Ingested electronic statement lines with dates, references, descriptions, and net cash amounts.
+  - Executed two-way matching algorithm between statement lines and posted ledger payments.
+  - Automated journal generation for direct bank service fees and charges.
+  - Sign-off lock ensuring statement balance matches adjusted GL cash balance ($0.00$ unreconciled difference).
+- **Multi-Currency FX Engine**:
+  - Maintained daily spot exchange rates with 12-decimal precision (`24,12`).
+  - Calculated realized foreign exchange gain/loss on AR/AP invoice settlements.
+  - Generated unrealized FX gain/loss revaluation vouchers for month-end balance sheet assets/liabilities.
+- **Industry Template Provisioning & Onboarding**:
+  - Guided wizard provisioning industry profiles (`WHOLESALE_DISTRIBUTION`, `SERVICES_CONSULTING`, `LIGHT_MANUFACTURING`, `RETAIL_POS`).
+  - Auto-generated accounts, default tax rates, and operational parameters.
+
 ## Automated Test Summary
 - **Test Command**: `npx vitest run`
-- **Result**: 3 test files, 25 tests passed, 0 failures.
+- **Result**: 3 test files, 34 tests passed, 0 failures.
+  - `packages/financial-engine/test/financial-engine.test.ts`: 21/21 passed.
+  - `packages/platform/test/platform.test.ts`: 3/3 passed.
+  - `apps/api/test/api.test.ts`: 10/10 passed.
 - **Build Command**: `npm run build`
-- **Result**: All monorepo packages compiled cleanly. Web bundle generated in `apps/web/dist`.
+- **Result**: All monorepo packages and React UI bundle compiled cleanly with 0 type errors.

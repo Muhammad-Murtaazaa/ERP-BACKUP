@@ -417,4 +417,112 @@ describe('API Modular Monolith: Financial & Trading Workflows E2E Integration', 
     expect(finalTb.body.data.is_balanced).toBe(true);
     expect(finalTb.body.data.net_difference).toBe('0.00');
   });
+
+  // ==========================================
+  // Milestone 3 Tests: Treasury, FX & Onboarding
+  // ==========================================
+  it('manages multi-currency spot exchange rates', async () => {
+    // 1. Post USD/PKR Exchange Rate
+    const fxRes = await makeRequest(
+      'POST',
+      '/api/fx/rates',
+      {
+        from_currency: 'USD',
+        to_currency: 'PKR',
+        rate: '278.450000000000',
+        effective_date: '2026-03-25',
+        source: 'State Bank of Pakistan',
+      },
+      controllerToken,
+    );
+    expect(fxRes.status).toBe(201);
+    expect(fxRes.body.data.from_currency).toBe('USD');
+
+    // 2. Query FX rates
+    const listRes = await makeRequest('GET', '/api/fx/rates', undefined, accountantToken);
+    expect(listRes.status).toBe(200);
+    expect(listRes.body.data.some((r: any) => r.from_currency === 'USD')).toBe(true);
+  });
+
+  it('executes Bank Reconciliation: Import Statement -> Clear Matches -> Sign-Off Reconciliation', async () => {
+    const accountsRes = await makeRequest('GET', '/api/coa/accounts', undefined, adminToken);
+    const bankAcc = accountsRes.body.data.find((a: any) => a.code === '111002');
+
+    // 1. Upload Electronic Bank Statement
+    const uploadRes = await makeRequest(
+      'POST',
+      '/api/treasury/statements/upload',
+      {
+        bank_account_id: bankAcc.id,
+        statement_reference: `STMT-E2E-${Date.now().toString().slice(-4)}`,
+        statement_date: '2026-03-31',
+        opening_balance: '10000000.00',
+        closing_balance: '9700000.00', // 10M + 900k (customer receipt) - 1.2M (supplier payment) = 9.7M
+        lines: [
+          {
+            transaction_date: '2026-03-25',
+            reference: 'CHQ-987654',
+            description: 'Customer Receipt Horizon',
+            amount: '900000.00',
+          },
+          {
+            transaction_date: '2026-03-26',
+            reference: 'WIRE-VEN-001',
+            description: 'Supplier Wire Apex',
+            amount: '-1200000.00',
+          },
+        ],
+      },
+      accountantToken,
+    );
+    expect(uploadRes.status).toBe(201);
+    const statementId = uploadRes.body.data.id;
+
+    // 2. Fetch Statement Detail & Match Lines
+    const stmtDetail = await makeRequest('GET', `/api/treasury/statements/${statementId}`, undefined, accountantToken);
+    expect(stmtDetail.status).toBe(200);
+    expect(stmtDetail.body.data.lines).toHaveLength(2);
+
+    for (const line of stmtDetail.body.data.lines) {
+      const matchRes = await makeRequest(
+        'POST',
+        '/api/treasury/reconciliation/match',
+        { statement_line_id: line.id, is_matched: true },
+        accountantToken,
+      );
+      expect(matchRes.status).toBe(200);
+    }
+
+    // 3. Sign-Off Bank Reconciliation
+    const signOffRes = await makeRequest(
+      'POST',
+      '/api/treasury/reconciliation/sign-off',
+      { statement_id: statementId, notes: 'E2E Month-End Bank Reconciliation Completed' },
+      controllerToken,
+    );
+    expect(signOffRes.status).toBe(200);
+    expect(signOffRes.body.data.status).toBe('RECONCILED');
+
+    // 4. Verify Audit Log contains BANK_STATEMENT_RECONCILED
+    const auditRes = await makeRequest('GET', '/api/audit/logs', undefined, adminToken);
+    expect(auditRes.body.data.some((l: any) => l.action === 'BANK_STATEMENT_RECONCILED')).toBe(true);
+  });
+
+  it('provisions Industry Template Profile in Onboarding Wizard', async () => {
+    // 1. Query Onboarding Profile
+    const getRes = await makeRequest('GET', '/api/onboarding/profile', undefined, adminToken);
+    expect(getRes.status).toBe(200);
+
+    // 2. Provision Wholesale Distribution Template
+    const provRes = await makeRequest(
+      'POST',
+      '/api/onboarding/provision',
+      { industry_template: 'WHOLESALE_DISTRIBUTION' },
+      adminToken,
+    );
+    expect(provRes.status).toBe(201);
+    expect(provRes.body.data.industry_template).toBe('WHOLESALE_DISTRIBUTION');
+    expect(provRes.body.data.is_completed).toBe(true);
+  });
 });
+
