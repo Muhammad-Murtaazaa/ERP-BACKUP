@@ -232,7 +232,7 @@ export function registerManufacturingRoutes(app: Express): void {
         legalEntityId: req.session!.legal_entity_id,
         userId: req.session!.user_id,
         postingDate: posting_date,
-        purpose: AccountingPurpose.MANUFACTURING_ASSEMBLY_RECEIPT,
+        purpose: AccountingPurpose.MANUFACTURING_WIP_ISSUE,
         description: `Material issue to WIP: ${wo.work_order_number}`,
         sourceType: 'WORK_ORDER_CONSUMPTION',
         sourceId: cons.id,

@@ -1,329 +1,188 @@
-/* eslint-disable */
 import type { Express, Request, Response } from 'express';
 import crypto from 'node:crypto';
-import {
-  PGliteAdapter,
-  DbMigrator,
-  SyntheticSeedRunner,
-  AuthService,
-  AuditLogger,
-  OutboxService,
-} from '@omnysync/platform';
-import {
-  Money,
-  JournalValidator,
-  CoaHierarchyValidator,
-  PeriodManager,
-  LedgerEngine,
-  JournalReversalEngine,
-  BankReconciliationEngine,
-  FxEngine,
-  PayrollEngine,
-  ManufacturingEngine,
-  InventoryReconciliationEngine,
-  ProjectsEngine,
-  FixedAssetsEngine,
-  POSEngine,
-  QualityEngine,
-  MaintenanceEngine,
-} from '@omnysync/financial-engine';
-import {
-  ErrorCode,
-  StandardErrorResponse,
-  StandardSuccessResponse,
-  AuthSession,
-  UserRole,
-  Permission,
-  JournalStatus,
-  AccountingPurpose,
-  PeriodStatus,
-  Account,
-  Journal,
-  JournalLine,
-} from '@omnysync/contracts';
+import { Money } from '@omnysync/financial-engine';
+import { AccountingPurpose, ErrorCode, Permission } from '@omnysync/contracts';
+import { db, auditLogger, outboxService, authenticate, requirePermission, requireAnyPermission } from '../context.js';
+import { ok } from '../lib/http.js';
+import { ApiError, validationError } from '../lib/errors.js';
+import { arrayOf, dateOnly, decimal, optionalStr, pagination, str, todayIso, toIsoDate, uuid } from '../lib/validate.js';
+import { requireOrgRow } from '../lib/scope.js';
+import { transition } from '../lib/state.js';
+import { postJournal } from '../lib/posting.js';
+import { nextDocumentNumber } from '../lib/numbering.js';
+import { requireParty } from '../lib/trading.js';
 
-import { db, authService, auditLogger, outboxService, authenticate, requirePermission } from '../context.js';
+type Kind = 'RECEIPT' | 'DISBURSEMENT';
+
+async function requireCashAccount(q: any, org: string, id: string) {
+  const r = await q.query(`SELECT * FROM accounts WHERE id = $1 AND organization_id = $2`, [id, org]);
+  const a = r.rows[0];
+  if (!a || Number(a.level) !== 4 || !a.is_active || !(a.control_type === 'BANK' || String(a.code).startsWith('1110'))) {
+    throw validationError('bank_account_id must be an active bank/cash posting account', { field: 'bank_account_id' });
+  }
+  return a;
+}
+
+/**
+ * Records a customer receipt or supplier payment with allocations. Invoice rows are
+ * locked FOR UPDATE so two concurrent payments cannot over-allocate the same invoice;
+ * allocations can never exceed outstanding or the payment amount; the unapplied
+ * remainder stays on the party control account and is tracked on the payment.
+ */
+async function recordPayment(req: Request, kind: Kind) {
+  const org = req.session!.organization_id;
+  const party_id = uuid(req.body?.party_id, 'party_id');
+  const amount = decimal(req.body?.amount, 'amount', { sign: 'positive', scale: 2 });
+  const bank_account_id = uuid(req.body?.bank_account_id, 'bank_account_id');
+  const payment_date = dateOnly(req.body?.payment_date, 'payment_date', { defaultValue: todayIso() });
+  const reference = optionalStr(req.body?.reference, 'reference', 255);
+  const allocations = arrayOf<any>(req.body?.allocations ?? [], 'allocations', { min: 0, max: 500 }).map((a, i) => ({
+    invoice_id: uuid(a?.invoice_id, `allocations[${i}].invoice_id`),
+    amount: decimal(a?.amount, `allocations[${i}].amount`, { sign: 'positive', scale: 2 }),
+  }));
+  if (new Set(allocations.map((a) => a.invoice_id)).size !== allocations.length) throw validationError('Each invoice may appear only once in allocations', { field: 'allocations' });
+  await requireParty(db, org, party_id, kind === 'RECEIPT' ? 'CUSTOMER' : 'VENDOR');
+  await requireCashAccount(db, org, bank_account_id);
+  const invoiceTable = kind === 'RECEIPT' ? 'ar_invoices' : 'ap_invoices';
+  const invoiceType = kind === 'RECEIPT' ? 'AR' : 'AP';
+  let allocTotal = Money.zero();
+  for (const a of allocations) allocTotal = allocTotal.add(a.amount);
+  if (allocTotal.gt(amount)) throw new ApiError(409, ErrorCode.OVER_ALLOCATION, `Allocations (${allocTotal.format()}) exceed payment amount (${new Money(amount).format()})`);
+
+  return db.transaction(async (tx) => {
+    const paymentId = crypto.randomUUID();
+    const paymentNumber = optionalStr(req.body?.payment_number, 'payment_number', 64) || (await nextDocumentNumber(tx, org, kind === 'RECEIPT' ? 'RCPT' : 'PAY', payment_date));
+    const sorted = [...allocations].sort((a, b) => a.invoice_id.localeCompare(b.invoice_id));
+    const invoices: any[] = [];
+    for (const a of sorted) {
+      const inv = (await tx.query(`SELECT * FROM ${invoiceTable} WHERE id = $1 AND organization_id = $2 FOR UPDATE`, [a.invoice_id, org])).rows[0];
+      if (!inv) throw validationError(`Invoice ${a.invoice_id} not found`, { field: 'allocations' });
+      if (inv.party_id !== party_id) throw validationError(`Invoice ${inv.invoice_number} belongs to a different party`, { field: 'allocations' });
+      if (!['POSTED', 'PARTIALLY_PAID'].includes(inv.status)) throw new ApiError(409, ErrorCode.INVALID_STATE, `Invoice ${inv.invoice_number} is ${inv.status} and cannot receive allocations`);
+      if (toIsoDate(inv.invoice_date) > payment_date) throw validationError(`Payment date is before invoice ${inv.invoice_number} date`, { field: 'payment_date' });
+      if (new Money(a.amount).gt(inv.outstanding_amount)) {
+        throw new ApiError(409, ErrorCode.OVER_ALLOCATION, `Allocation ${new Money(a.amount).format()} exceeds outstanding ${new Money(inv.outstanding_amount).format()} on ${inv.invoice_number}`);
+      }
+      invoices.push({ inv, amount: a.amount });
+    }
+    const unallocated = new Money(amount).sub(allocTotal);
+    await tx.query(
+      `INSERT INTO payments (id, organization_id, legal_entity_id, party_id, payment_type, payment_number, payment_date, bank_account_id, amount, currency, reference, status, created_by, unallocated_amount)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'PKR', $10, 'POSTED', $11, $12)`,
+      [paymentId, org, req.session!.legal_entity_id, party_id, kind, paymentNumber, payment_date, bank_account_id, amount, reference, req.session!.user_id, unallocated.toFixed(8)],
+    );
+    for (const { inv, amount: amt } of invoices) {
+      const outstanding = new Money(inv.outstanding_amount).sub(amt);
+      await tx.query(`INSERT INTO allocations (id, organization_id, payment_id, invoice_id, invoice_type, allocated_amount, allocated_date) VALUES ($1, $2, $3, $4, $5, $6, $7)`, [
+        crypto.randomUUID(),
+        org,
+        paymentId,
+        inv.id,
+        invoiceType,
+        amt,
+        payment_date,
+      ]);
+      await tx.query(`UPDATE ${invoiceTable} SET outstanding_amount = $1, status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`, [
+        outstanding.toFixed(8),
+        outstanding.isZero() ? 'PAID' : 'PARTIALLY_PAID',
+        inv.id,
+      ]);
+    }
+    const lines =
+      kind === 'RECEIPT'
+        ? [
+            { account_id: bank_account_id, debit: amount, description: `Receipt ${paymentNumber}` },
+            { account_code: '112001', credit: amount, description: `AR settlement ${paymentNumber}` },
+          ]
+        : [
+            { account_code: '211001', debit: amount, description: `AP settlement ${paymentNumber}` },
+            { account_id: bank_account_id, credit: amount, description: `Payment ${paymentNumber}` },
+          ];
+    const posted = await postJournal(tx, auditLogger, outboxService, {
+      organizationId: org,
+      legalEntityId: req.session!.legal_entity_id,
+      userId: req.session!.user_id,
+      postingDate: payment_date,
+      purpose: kind === 'RECEIPT' ? AccountingPurpose.CUSTOMER_PAYMENT : AccountingPurpose.SUPPLIER_PAYMENT,
+      description: `${kind === 'RECEIPT' ? 'Customer receipt' : 'Supplier payment'} ${paymentNumber}${reference ? ` (${reference})` : ''}`,
+      sourceType: 'PAYMENT',
+      sourceId: paymentId,
+      sourceKey: `PAYMENT:${paymentId}`,
+      numberPrefix: kind === 'RECEIPT' ? 'JV-RCPT' : 'JV-PAY',
+      correlationId: req.correlationId,
+      lines,
+    });
+    await tx.query(`UPDATE payments SET posted_journal_id = $1 WHERE id = $2`, [posted?.journalId ?? null, paymentId]);
+    await auditLogger.record(
+      { organization_id: org, user_id: req.session!.user_id, action: `PAYMENT_${kind}_POSTED`, entity_type: 'PAYMENT', entity_id: paymentId, after_state: { payment_number: paymentNumber, amount, allocated: allocTotal.format(), unallocated: unallocated.format() }, correlation_id: req.correlationId },
+      tx,
+    );
+    return { id: paymentId, payment_number: paymentNumber, status: 'POSTED', amount: new Money(amount).format(), allocated_amount: allocTotal.format(), unallocated_amount: unallocated.format(), posted_journal_id: posted?.journalId ?? null };
+  });
+}
 
 export function registerPaymentsRoutes(app: Express): void {
-  // 13. M2: Payments & Allocations (Receipts & Disbursements)
-  // ==========================================
-  app.get('/api/payments', authenticate, async (req: Request, res: Response) => {
-    const paymentsRes = await db.query(
-      `
-      SELECT pmt.*, p.name as party_name, a.name as bank_account_name
-      FROM payments pmt
-      JOIN parties p ON p.id = pmt.party_id
-      JOIN accounts a ON a.id = pmt.bank_account_id
-      WHERE pmt.organization_id = $1
-      ORDER BY pmt.payment_date DESC, pmt.created_at DESC
-    `,
+  const payRead = requireAnyPermission(Permission.PAYMENT_MANAGE, Permission.AR_INVOICE_MANAGE, Permission.AP_INVOICE_MANAGE, Permission.FINANCE_REPORTS_VIEW, Permission.TREASURY_BANK_RECONCILE);
+
+  app.get('/api/payments', authenticate, payRead, async (req: Request, res: Response) => {
+    const { limit, offset } = pagination(req.query as any);
+    const r = await db.query(
+      `SELECT pm.*, p.name as party_name, p.code as party_code, a.name as bank_account_name
+       FROM payments pm JOIN parties p ON p.id = pm.party_id LEFT JOIN accounts a ON a.id = pm.bank_account_id
+       WHERE pm.organization_id = $1 ORDER BY pm.payment_date DESC, pm.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
       [req.session!.organization_id],
     );
-
-    return res.json({
-      success: true,
-      data: paymentsRes.rows,
-      meta: {
-        correlation_id: req.correlationId,
-        timestamp: new Date().toISOString(),
-        total_count: paymentsRes.rows.length,
-      },
-    } satisfies StandardSuccessResponse<any>);
+    return ok(req, res, r.rows, 200, { total_count: r.rows.length, limit, offset });
   });
 
-  app.post('/api/payments/receipt', authenticate, requirePermission(Permission.PAYMENT_MANAGE), async (req: Request, res: Response) => {
-    const { party_id, amount, bank_account_id, payment_date, reference, allocations } = req.body;
+  app.post('/api/payments/receipt', authenticate, requirePermission(Permission.PAYMENT_MANAGE), async (req: Request, res: Response) => ok(req, res, await recordPayment(req, 'RECEIPT'), 201));
+  app.post('/api/payments/disbursement', authenticate, requirePermission(Permission.PAYMENT_MANAGE), async (req: Request, res: Response) => ok(req, res, await recordPayment(req, 'DISBURSEMENT'), 201));
 
-    if (!party_id || !amount || !bank_account_id) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: ErrorCode.VALIDATION_FAILED,
-          message: 'party_id, amount, and bank_account_id are required',
-          correlation_id: req.correlationId,
-        },
-      } satisfies StandardErrorResponse);
-    }
-
-    const pmtAmount = new Money(amount);
-    const paymentId = crypto.randomUUID();
-    const paymentNumber = `RCT-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`;
-
-    // Accounts: Operating Bank (111002 / custom) and AR Control (112001)
-    const arAccRes = await db.query("SELECT id FROM accounts WHERE code = '112001' AND organization_id = $1", [req.session!.organization_id]);
-    const arAccId = arAccRes.rows[0].id;
-    const journalId = crypto.randomUUID();
-
-    await db.transaction(async (tx) => {
-      // 1. Post GL Journal (Dr Bank, Cr AR Control)
-      await tx.query(
-        `
-        INSERT INTO journals (
-          id, organization_id, legal_entity_id, journal_number, posting_date, document_date,
-          accounting_purpose, status, base_currency, total_base_debit, total_base_credit,
-          description, source_type, source_id, created_by, posted_by, posted_at
-        ) VALUES ($1, $2, $3, $4, $5, $5, 'CUSTOMER_PAYMENT', 'POSTED', 'PKR', $6, $6, $7, 'PAYMENT', $8, $9, $9, CURRENT_TIMESTAMP)
-      `,
-        [
-          journalId,
-          req.session!.organization_id,
-          req.session!.legal_entity_id,
-          `JV-${paymentNumber}`,
-          payment_date || new Date().toISOString().slice(0, 10),
-          pmtAmount.toFixed(8),
-          `Customer Receipt ${paymentNumber}`,
-          paymentId,
-          req.session!.user_id,
-        ],
-      );
-
-      await tx.query(
-        `
-        INSERT INTO journal_lines (id, journal_id, line_number, account_id, debit_amount, credit_amount, base_debit, base_credit, description, party_id)
-        VALUES
-          ($1, $2, 1, $3, $4, 0, $4, 0, 'Cash received in bank', $5),
-          ($6, $2, 2, $7, 0, $4, 0, $4, 'AR settlement', $5)
-      `,
-        [
-          crypto.randomUUID(),
-          journalId,
-          bank_account_id,
-          pmtAmount.toFixed(8),
-          party_id,
-          crypto.randomUUID(),
-          arAccId,
-        ],
-      );
-
-      // 2. Insert Payment Record
-      await tx.query(
-        `
-        INSERT INTO payments (
-          id, organization_id, legal_entity_id, party_id, payment_type, payment_number,
-          payment_date, bank_account_id, amount, currency, reference, status, posted_journal_id, created_by
-        ) VALUES ($1, $2, $3, $4, 'RECEIPT', $5, $6, $7, $8, 'PKR', $9, 'POSTED', $10, $11)
-      `,
-        [
-          paymentId,
-          req.session!.organization_id,
-          req.session!.legal_entity_id,
-          party_id,
-          paymentNumber,
-          payment_date || new Date().toISOString().slice(0, 10),
-          bank_account_id,
-          pmtAmount.toFixed(8),
-          reference || null,
-          journalId,
-          req.session!.user_id,
-        ],
-      );
-
-      // 3. Process Allocations against AR Invoices
-      if (allocations && Array.isArray(allocations)) {
-        for (const alloc of allocations) {
-          const allocId = crypto.randomUUID();
-          const allocAmt = new Money(alloc.amount);
-
-          await tx.query(
-            `
-            INSERT INTO allocations (id, organization_id, payment_id, invoice_id, invoice_type, allocated_amount, allocated_date)
-            VALUES ($1, $2, $3, $4, 'AR', $5, $6)
-          `,
-            [allocId, req.session!.organization_id, paymentId, alloc.invoice_id, allocAmt.toFixed(8), payment_date || new Date().toISOString().slice(0, 10)],
-          );
-
-          // Update AR invoice outstanding balance and status
-          await tx.query(
-            `
-            UPDATE ar_invoices
-            SET 
-              outstanding_amount = GREATEST(0, outstanding_amount - $1),
-              status = CASE WHEN outstanding_amount - $1 <= 0 THEN 'PAID' ELSE 'PARTIALLY_PAID' END,
-              updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2
-          `,
-            [allocAmt.toFixed(8), alloc.invoice_id],
-          );
+  /** Cancel a payment: reverses its journal and allocations; invoices re-open. */
+  app.post('/api/payments/:id/cancel', authenticate, requirePermission(Permission.PAYMENT_MANAGE), async (req: Request, res: Response) => {
+    const org = req.session!.organization_id;
+    const reason = str(req.body?.reason, 'reason', { max: 500 });
+    const reversal_date = dateOnly(req.body?.reversal_date, 'reversal_date', { defaultValue: todayIso() });
+    const out = await db.transaction(async (tx) => {
+      const pm = await requireOrgRow(tx, 'payments', req.params.id, org, 'Payment', { forUpdate: true });
+      if (reversal_date < toIsoDate(pm.payment_date)) throw validationError('reversal_date cannot be before the payment date', { field: 'reversal_date' });
+      await transition(tx, { table: 'payments', id: pm.id, organizationId: org, from: ['POSTED'], to: 'CANCELLED', label: 'Payment', set: { cancelled_by: req.session!.user_id } });
+      const table = pm.payment_type === 'RECEIPT' ? 'ar_invoices' : 'ap_invoices';
+      const allocs = (await tx.query(`SELECT * FROM allocations WHERE payment_id = $1 AND reversed_at IS NULL ORDER BY invoice_id`, [pm.id])).rows;
+      for (const a of allocs) {
+        const inv = (await tx.query(`SELECT * FROM ${table} WHERE id = $1 FOR UPDATE`, [a.invoice_id])).rows[0];
+        const outstanding = new Money(inv.outstanding_amount).add(a.allocated_amount);
+        const status = outstanding.gte(inv.total_amount) ? 'POSTED' : 'PARTIALLY_PAID';
+        await tx.query(`UPDATE ${table} SET outstanding_amount = $1, status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`, [outstanding.toFixed(8), status, inv.id]);
+        await tx.query(`UPDATE allocations SET reversed_at = CURRENT_TIMESTAMP WHERE id = $1`, [a.id]);
+      }
+      let reversalId: string | null = null;
+      if (pm.posted_journal_id) {
+        const lines = (await tx.query(`SELECT * FROM journal_lines WHERE journal_id = $1 ORDER BY line_number`, [pm.posted_journal_id])).rows;
+        const posted = await postJournal(tx, auditLogger, outboxService, {
+          organizationId: org,
+          legalEntityId: pm.legal_entity_id,
+          userId: req.session!.user_id,
+          postingDate: reversal_date,
+          purpose: AccountingPurpose.REVERSAL,
+          description: `Reversal of payment ${pm.payment_number}: ${reason}`,
+          sourceType: 'PAYMENT',
+          sourceId: pm.id,
+          sourceKey: `PAYMENT_REVERSAL:${pm.id}`,
+          numberPrefix: 'JV-REV',
+          reversalOfJournalId: pm.posted_journal_id,
+          correlationId: req.correlationId,
+          lines: lines.map((l: any) => ({ account_id: l.account_id, debit: l.base_credit, credit: l.base_debit, description: `Reversal: ${l.description || ''}` })),
+        });
+        reversalId = posted?.journalId ?? null;
+        if (reversalId) {
+          await tx.query(`UPDATE journals SET status = 'REVERSED', reversed_by_journal_id = $1 WHERE id = $2 AND status = 'POSTED'`, [reversalId, pm.posted_journal_id]);
         }
       }
+      await tx.query(`UPDATE payments SET reversal_journal_id = $1 WHERE id = $2`, [reversalId, pm.id]);
+      await auditLogger.record({ organization_id: org, user_id: req.session!.user_id, action: 'PAYMENT_CANCELLED', entity_type: 'PAYMENT', entity_id: pm.id, after_state: { reason, reversal_journal_id: reversalId }, correlation_id: req.correlationId }, tx);
+      return { id: pm.id, status: 'CANCELLED', reversal_journal_id: reversalId };
     });
-
-    return res.status(201).json({
-      success: true,
-      data: { id: paymentId, payment_number: paymentNumber, status: 'POSTED' },
-      meta: {
-        correlation_id: req.correlationId,
-        timestamp: new Date().toISOString(),
-      },
-    } satisfies StandardSuccessResponse<any>);
+    return ok(req, res, out);
   });
-
-  app.post('/api/payments/disbursement', authenticate, requirePermission(Permission.PAYMENT_MANAGE), async (req: Request, res: Response) => {
-    const { party_id, amount, bank_account_id, payment_date, reference, allocations } = req.body;
-
-    if (!party_id || !amount || !bank_account_id) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: ErrorCode.VALIDATION_FAILED,
-          message: 'party_id, amount, and bank_account_id are required',
-          correlation_id: req.correlationId,
-        },
-      } satisfies StandardErrorResponse);
-    }
-
-    const pmtAmount = new Money(amount);
-    const paymentId = crypto.randomUUID();
-    const paymentNumber = `DISB-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`;
-
-    // Accounts: Trade AP Control (211001) and Operating Bank
-    const apAccRes = await db.query("SELECT id FROM accounts WHERE code = '211001' AND organization_id = $1", [req.session!.organization_id]);
-    const apAccId = apAccRes.rows[0].id;
-    const journalId = crypto.randomUUID();
-
-    await db.transaction(async (tx) => {
-      // 1. Post GL Journal (Dr AP Control, Cr Bank)
-      await tx.query(
-        `
-        INSERT INTO journals (
-          id, organization_id, legal_entity_id, journal_number, posting_date, document_date,
-          accounting_purpose, status, base_currency, total_base_debit, total_base_credit,
-          description, source_type, source_id, created_by, posted_by, posted_at
-        ) VALUES ($1, $2, $3, $4, $5, $5, 'SUPPLIER_PAYMENT', 'POSTED', 'PKR', $6, $6, $7, 'PAYMENT', $8, $9, $9, CURRENT_TIMESTAMP)
-      `,
-        [
-          journalId,
-          req.session!.organization_id,
-          req.session!.legal_entity_id,
-          `JV-${paymentNumber}`,
-          payment_date || new Date().toISOString().slice(0, 10),
-          pmtAmount.toFixed(8),
-          `Supplier Payment ${paymentNumber}`,
-          paymentId,
-          req.session!.user_id,
-        ],
-      );
-
-      await tx.query(
-        `
-        INSERT INTO journal_lines (id, journal_id, line_number, account_id, debit_amount, credit_amount, base_debit, base_credit, description, party_id)
-        VALUES
-          ($1, $2, 1, $3, $4, 0, $4, 0, 'AP settlement', $5),
-          ($6, $2, 2, $7, 0, $4, 0, $4, 'Cash paid from bank', $5)
-      `,
-        [
-          crypto.randomUUID(),
-          journalId,
-          apAccId,
-          pmtAmount.toFixed(8),
-          party_id,
-          crypto.randomUUID(),
-          bank_account_id,
-        ],
-      );
-
-      // 2. Insert Payment Record
-      await tx.query(
-        `
-        INSERT INTO payments (
-          id, organization_id, legal_entity_id, party_id, payment_type, payment_number,
-          payment_date, bank_account_id, amount, currency, reference, status, posted_journal_id, created_by
-        ) VALUES ($1, $2, $3, $4, 'DISBURSEMENT', $5, $6, $7, $8, 'PKR', $9, 'POSTED', $10, $11)
-      `,
-        [
-          paymentId,
-          req.session!.organization_id,
-          req.session!.legal_entity_id,
-          party_id,
-          paymentNumber,
-          payment_date || new Date().toISOString().slice(0, 10),
-          bank_account_id,
-          pmtAmount.toFixed(8),
-          reference || null,
-          journalId,
-          req.session!.user_id,
-        ],
-      );
-
-      // 3. Process Allocations against AP Bills
-      if (allocations && Array.isArray(allocations)) {
-        for (const alloc of allocations) {
-          const allocId = crypto.randomUUID();
-          const allocAmt = new Money(alloc.amount);
-
-          await tx.query(
-            `
-            INSERT INTO allocations (id, organization_id, payment_id, invoice_id, invoice_type, allocated_amount, allocated_date)
-            VALUES ($1, $2, $3, $4, 'AP', $5, $6)
-          `,
-            [allocId, req.session!.organization_id, paymentId, alloc.invoice_id, allocAmt.toFixed(8), payment_date || new Date().toISOString().slice(0, 10)],
-          );
-
-          // Update AP invoice outstanding balance and status
-          await tx.query(
-            `
-            UPDATE ap_invoices
-            SET 
-              outstanding_amount = GREATEST(0, outstanding_amount - $1),
-              status = CASE WHEN outstanding_amount - $1 <= 0 THEN 'PAID' ELSE 'PARTIALLY_PAID' END,
-              updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2
-          `,
-            [allocAmt.toFixed(8), alloc.invoice_id],
-          );
-        }
-      }
-    });
-
-    return res.status(201).json({
-      success: true,
-      data: { id: paymentId, payment_number: paymentNumber, status: 'POSTED' },
-      meta: {
-        correlation_id: req.correlationId,
-        timestamp: new Date().toISOString(),
-      },
-    } satisfies StandardSuccessResponse<any>);
-  });
-
-  // ==========================================
 }

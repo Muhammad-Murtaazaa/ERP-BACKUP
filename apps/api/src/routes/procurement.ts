@@ -1,455 +1,321 @@
-/* eslint-disable */
 import type { Express, Request, Response } from 'express';
 import crypto from 'node:crypto';
-import {
-  PGliteAdapter,
-  DbMigrator,
-  SyntheticSeedRunner,
-  AuthService,
-  AuditLogger,
-  OutboxService,
-} from '@omnysync/platform';
-import {
-  Money,
-  JournalValidator,
-  CoaHierarchyValidator,
-  PeriodManager,
-  LedgerEngine,
-  JournalReversalEngine,
-  BankReconciliationEngine,
-  FxEngine,
-  PayrollEngine,
-  ManufacturingEngine,
-  InventoryReconciliationEngine,
-  ProjectsEngine,
-  FixedAssetsEngine,
-  POSEngine,
-  QualityEngine,
-  MaintenanceEngine,
-} from '@omnysync/financial-engine';
-import {
-  ErrorCode,
-  StandardErrorResponse,
-  StandardSuccessResponse,
-  AuthSession,
-  UserRole,
-  Permission,
-  JournalStatus,
-  AccountingPurpose,
-  PeriodStatus,
-  Account,
-  Journal,
-  JournalLine,
-} from '@omnysync/contracts';
+import { Money } from '@omnysync/financial-engine';
+import { AccountingPurpose, ErrorCode, Permission } from '@omnysync/contracts';
+import { db, auditLogger, outboxService, authenticate, requirePermission, requireAnyPermission } from '../context.js';
+import { ok } from '../lib/http.js';
+import { ApiError, sodViolation, validationError } from '../lib/errors.js';
+import { arrayOf, dateOnly, decimal, optionalDate, optionalStr, optionalUuid, pagination, str, todayIso, toIsoDate, uuid } from '../lib/validate.js';
+import { assertOrgRef, requireOrgRow } from '../lib/scope.js';
+import { transition } from '../lib/state.js';
+import { postJournal } from '../lib/posting.js';
+import { nextDocumentNumber } from '../lib/numbering.js';
+import { defaultWarehouseId, lockItems, postStockMovement } from '../lib/stock.js';
+import { accountByCode, parseLines, priceLines, requireParty } from '../lib/trading.js';
 
-import { db, authService, auditLogger, outboxService, authenticate, requirePermission } from '../context.js';
+const PO_READ = [Permission.PURCHASE_ORDER_MANAGE, Permission.AP_INVOICE_MANAGE, Permission.INVENTORY_MANAGE, Permission.PAYMENT_MANAGE, Permission.FINANCE_REPORTS_VIEW];
+const AP_READ = [Permission.AP_INVOICE_MANAGE, Permission.PAYMENT_MANAGE, Permission.PURCHASE_ORDER_MANAGE, Permission.FINANCE_REPORTS_VIEW];
+
+async function audit(req: Request, tx: any, action: string, type: string, id: string, before?: unknown, after?: unknown) {
+  await auditLogger.record(
+    { organization_id: req.session!.organization_id, user_id: req.session!.user_id, action, entity_type: type, entity_id: id, before_state: before as any, after_state: after as any, correlation_id: req.correlationId },
+    tx,
+  );
+}
 
 export function registerProcurementRoutes(app: Express): void {
-  // 12. M2: Purchase Orders & AP Invoices (Procure-to-Pay)
-  // ==========================================
-  app.get('/api/procurement/orders', authenticate, async (req: Request, res: Response) => {
-    const ordersRes = await db.query(
-      `
-      SELECT po.*, p.name as party_name, p.code as party_code
-      FROM purchase_orders po
-      JOIN parties p ON p.id = po.party_id
-      WHERE po.organization_id = $1
-      ORDER BY po.po_date DESC, po.created_at DESC
-    `,
+  const poRead = requireAnyPermission(...PO_READ);
+  const apRead = requireAnyPermission(...AP_READ);
+
+  app.get('/api/procurement/orders', authenticate, poRead, async (req: Request, res: Response) => {
+    const { limit, offset } = pagination(req.query as any);
+    const r = await db.query(
+      `SELECT po.*, p.name as party_name, p.code as party_code FROM purchase_orders po JOIN parties p ON p.id = po.party_id
+       WHERE po.organization_id = $1 ORDER BY po.po_date DESC, po.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
       [req.session!.organization_id],
     );
-
-    return res.json({
-      success: true,
-      data: ordersRes.rows,
-      meta: {
-        correlation_id: req.correlationId,
-        timestamp: new Date().toISOString(),
-        total_count: ordersRes.rows.length,
-      },
-    } satisfies StandardSuccessResponse<any>);
+    for (const po of r.rows) {
+      po.lines = (
+        await db.query(`SELECT pol.*, i.code as item_code, i.name as item_name FROM purchase_order_lines pol JOIN items i ON i.id = pol.item_id WHERE pol.purchase_order_id = $1 ORDER BY line_number`, [po.id])
+      ).rows;
+    }
+    return ok(req, res, r.rows, 200, { total_count: r.rows.length, limit, offset });
   });
 
   app.post('/api/procurement/orders', authenticate, requirePermission(Permission.PURCHASE_ORDER_MANAGE), async (req: Request, res: Response) => {
-    const { party_id, po_date, expected_date, lines, notes } = req.body;
-
-    if (!party_id || !lines || lines.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: ErrorCode.VALIDATION_FAILED,
-          message: 'party_id and at least 1 line are required',
-          correlation_id: req.correlationId,
-        },
-      } satisfies StandardErrorResponse);
-    }
-
-    let subtotal = Money.zero();
-    for (const l of lines) {
-      const qty = new Money(l.quantity || '0');
-      const price = new Money(l.unit_price || '0');
-      subtotal = subtotal.add(qty.mul(price));
-    }
-
+    const org = req.session!.organization_id;
+    const party_id = uuid(req.body?.party_id, 'party_id');
+    const po_date = dateOnly(req.body?.po_date, 'po_date', { defaultValue: todayIso() });
+    const expected_date = optionalDate(req.body?.expected_date, 'expected_date');
+    if (expected_date && expected_date < po_date) throw validationError('expected_date cannot be before po_date', { field: 'expected_date' });
+    const warehouse_id = optionalUuid(req.body?.warehouse_id, 'warehouse_id');
+    await assertOrgRef(db, 'warehouses', warehouse_id, org, 'warehouse_id');
+    await requireParty(db, org, party_id, 'VENDOR');
+    const priced = await priceLines(db, org, parseLines(req.body?.lines));
     const poId = crypto.randomUUID();
-    const poNumber = `PO-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`;
-
-    await db.transaction(async (tx) => {
+    const out = await db.transaction(async (tx) => {
+      const poNumber = optionalStr(req.body?.po_number, 'po_number', 64) || (await nextDocumentNumber(tx, org, 'PO', po_date));
       await tx.query(
-        `
-        INSERT INTO purchase_orders (
-          id, organization_id, legal_entity_id, party_id, po_number, po_date,
-          expected_date, status, subtotal, tax_amount, total_amount, notes, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'DRAFT', $8, 0, $8, $9, $10)
-      `,
-        [
-          poId,
-          req.session!.organization_id,
-          req.session!.legal_entity_id,
-          party_id,
-          poNumber,
-          po_date || new Date().toISOString().slice(0, 10),
-          expected_date || null,
-          subtotal.toFixed(8),
-          notes || null,
-          req.session!.user_id,
-        ],
+        `INSERT INTO purchase_orders (id, organization_id, legal_entity_id, party_id, po_number, po_date, expected_date, status, subtotal, tax_amount, total_amount, notes, created_by, warehouse_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'DRAFT', $8, $9, $10, $11, $12, $13)`,
+        [poId, org, req.session!.legal_entity_id, party_id, poNumber, po_date, expected_date, priced.subtotal, priced.tax_amount, priced.total_amount, optionalStr(req.body?.notes, 'notes'), req.session!.user_id, warehouse_id],
       );
-
-      for (let i = 0; i < lines.length; i++) {
-        const l = lines[i];
-        const lineId = crypto.randomUUID();
-        const lineTotal = new Money(l.quantity).mul(new Money(l.unit_price)).toFixed(8);
-
+      for (const l of priced.lines) {
         await tx.query(
-          `
-          INSERT INTO purchase_order_lines (
-            id, purchase_order_id, line_number, item_id, quantity, unit_price, line_total, description
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        `,
-          [lineId, poId, i + 1, l.item_id, l.quantity, l.unit_price, lineTotal, l.description || null],
+          `INSERT INTO purchase_order_lines (id, purchase_order_id, line_number, item_id, quantity, unit_price, line_total, tax_amount, description)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [crypto.randomUUID(), poId, l.line_number, l.item_id, l.quantity, l.unit_price, l.line_total, l.tax_amount, l.description],
         );
       }
+      await audit(req, tx, 'PURCHASE_ORDER_CREATED', 'PURCHASE_ORDER', poId, undefined, { po_number: poNumber, total_amount: priced.total_amount });
+      return { id: poId, po_number: poNumber, status: 'DRAFT', subtotal: new Money(priced.subtotal).format(), total_amount: new Money(priced.total_amount).format() };
     });
-
-    return res.status(201).json({
-      success: true,
-      data: { id: poId, po_number: poNumber, status: 'DRAFT', subtotal: subtotal.toFixed(2) },
-      meta: {
-        correlation_id: req.correlationId,
-        timestamp: new Date().toISOString(),
-      },
-    } satisfies StandardSuccessResponse<any>);
+    return ok(req, res, out, 201);
   });
 
   app.post('/api/procurement/orders/:id/approve', authenticate, requirePermission(Permission.PURCHASE_ORDER_MANAGE), async (req: Request, res: Response) => {
-    const { id } = req.params;
-    await db.query("UPDATE purchase_orders SET status = 'APPROVED', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [id]);
-
-    return res.json({
-      success: true,
-      data: { id, status: 'APPROVED' },
-      meta: {
-        correlation_id: req.correlationId,
-        timestamp: new Date().toISOString(),
-      },
-    } satisfies StandardSuccessResponse<any>);
-  });
-
-  app.post('/api/procurement/orders/:id/receive', authenticate, requirePermission(Permission.INVENTORY_MANAGE), async (req: Request, res: Response) => {
-    const { id } = req.params;
-
-    const poRes = await db.query('SELECT * FROM purchase_orders WHERE id = $1 AND organization_id = $2', [
-      id,
-      req.session!.organization_id,
-    ]);
-    if (poRes.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: {
-          code: ErrorCode.RESOURCE_NOT_FOUND,
-          message: 'Purchase order not found',
-          correlation_id: req.correlationId,
-        },
-      } satisfies StandardErrorResponse);
-    }
-
-    const po = poRes.rows[0];
-    const linesRes = await db.query(
-      'SELECT pol.*, i.item_type, i.unit_cost FROM purchase_order_lines pol JOIN items i ON i.id = pol.item_id WHERE pol.purchase_order_id = $1',
-      [id],
-    );
-
-    const branchRow = await db.query('SELECT id FROM branches WHERE organization_id = $1 LIMIT 1', [req.session!.organization_id]);
-    const branchId = branchRow.rows[0]?.id;
-
-    let totalReceivedVal = Money.zero();
-
-    await db.transaction(async (tx) => {
-      for (const line of linesRes.rows) {
-        if (line.item_type === 'INVENTORY') {
-          const qty = parseFloat(line.quantity);
-          const cost = new Money(line.unit_price || line.unit_cost || '0');
-          const lineVal = cost.mul(qty);
-          totalReceivedVal = totalReceivedVal.add(lineVal);
-
-          const smId = crypto.randomUUID();
-          await tx.query(
-            `
-            INSERT INTO stock_movements (
-              id, organization_id, legal_entity_id, item_id, warehouse_id,
-              movement_type, movement_date, quantity, unit_cost, total_value, reference_type, reference_id, description
-            ) VALUES ($1, $2, $3, $4, $5, 'RECEIPT', CURRENT_DATE, $6, $7, $8, 'PURCHASE_ORDER', $9, 'Goods Receipt from PO')
-          `,
-            [smId, req.session!.organization_id, req.session!.legal_entity_id, line.item_id, branchId, qty, cost.toFixed(8), lineVal.toFixed(8), id],
-          );
-
-          await tx.query('UPDATE purchase_order_lines SET received_quantity = quantity WHERE id = $1', [line.id]);
-        }
-      }
-
-      await tx.query("UPDATE purchase_orders SET status = 'RECEIVED', updated_at = CURRENT_TIMESTAMP WHERE id = $1", [id]);
-
-      // Post Inventory / GRNI Journal (Dr Inventory 113001, Cr GRNI 211002)
-      if (totalReceivedVal.isPositive()) {
-        const invAccRes = await tx.query("SELECT id FROM accounts WHERE code = '113001' AND organization_id = $1", [req.session!.organization_id]);
-        const grniAccRes = await tx.query("SELECT id FROM accounts WHERE code = '211002' AND organization_id = $1", [req.session!.organization_id]);
-
-        if (invAccRes.rows[0] && grniAccRes.rows[0]) {
-          const jId = crypto.randomUUID();
-          const jNum = `JV-GRNI-${Date.now().toString().slice(-6)}`;
-          await tx.query(
-            `
-            INSERT INTO journals (
-              id, organization_id, legal_entity_id, journal_number, posting_date, document_date,
-              accounting_purpose, status, base_currency, total_base_debit, total_base_credit,
-              description, source_type, source_id, created_by, posted_by, posted_at
-            ) VALUES ($1, $2, $3, $4, CURRENT_DATE, CURRENT_DATE, 'PURCHASE_RECEIPT', 'POSTED', 'PKR', $5, $5, $6, 'PURCHASE_ORDER', $7, $8, $8, CURRENT_TIMESTAMP)
-          `,
-            [jId, req.session!.organization_id, req.session!.legal_entity_id, jNum, totalReceivedVal.toFixed(8), `Goods receipt for PO ${po.po_number}`, id, req.session!.user_id],
-          );
-
-          await tx.query(
-            `
-            INSERT INTO journal_lines (id, journal_id, line_number, account_id, debit_amount, credit_amount, base_debit, base_credit, description)
-            VALUES 
-              ($1, $2, 1, $3, $4, 0, $4, 0, 'Inventory received'),
-              ($5, $2, 2, $6, 0, $4, 0, $4, 'GRNI liability')
-          `,
-            [crypto.randomUUID(), jId, invAccRes.rows[0].id, totalReceivedVal.toFixed(8), crypto.randomUUID(), grniAccRes.rows[0].id],
-          );
-        }
-      }
+    const org = req.session!.organization_id;
+    const out = await db.transaction(async (tx) => {
+      const po = await requireOrgRow(tx, 'purchase_orders', req.params.id, org, 'Purchase order', { forUpdate: true });
+      // Requester vs approver (FINANCIAL-CONTROLS.md segregation of duties).
+      if (po.created_by === req.session!.user_id) throw sodViolation('Segregation of duties: the requester cannot approve their own purchase order');
+      await transition(tx, { table: 'purchase_orders', id: po.id, organizationId: org, from: ['DRAFT'], to: 'APPROVED', label: 'Purchase order', set: { approved_by: req.session!.user_id, updated_at: new Date().toISOString() } });
+      await audit(req, tx, 'PURCHASE_ORDER_APPROVED', 'PURCHASE_ORDER', po.id, { status: po.status }, { status: 'APPROVED' });
+      return { id: po.id, status: 'APPROVED' };
     });
-
-    return res.json({
-      success: true,
-      data: { id, status: 'RECEIVED' },
-      meta: {
-        correlation_id: req.correlationId,
-        timestamp: new Date().toISOString(),
-      },
-    } satisfies StandardSuccessResponse<any>);
+    return ok(req, res, out);
   });
 
-  app.get('/api/ap/invoices', authenticate, async (req: Request, res: Response) => {
-    const invRes = await db.query(
-      `
-      SELECT inv.*, p.name as party_name, p.code as party_code
-      FROM ap_invoices inv
-      JOIN parties p ON p.id = inv.party_id
-      WHERE inv.organization_id = $1
-      ORDER BY inv.invoice_date DESC, inv.created_at DESC
-    `,
+  app.post('/api/procurement/orders/:id/cancel', authenticate, requirePermission(Permission.PURCHASE_ORDER_MANAGE), async (req: Request, res: Response) => {
+    const reason = str(req.body?.reason, 'reason', { max: 500 });
+    const out = await db.transaction(async (tx) => {
+      const po = await requireOrgRow(tx, 'purchase_orders', req.params.id, req.session!.organization_id, 'Purchase order', { forUpdate: true });
+      const received = await tx.query(`SELECT 1 FROM purchase_order_lines WHERE purchase_order_id = $1 AND received_quantity > 0 LIMIT 1`, [po.id]);
+      if (received.rows.length) throw new ApiError(409, ErrorCode.INVALID_STATE, 'Purchase orders with receipts cannot be cancelled');
+      await transition(tx, { table: 'purchase_orders', id: po.id, organizationId: req.session!.organization_id, from: ['DRAFT', 'APPROVED'], to: 'CANCELLED', label: 'Purchase order' });
+      await audit(req, tx, 'PURCHASE_ORDER_CANCELLED', 'PURCHASE_ORDER', po.id, undefined, { reason });
+      return { id: po.id, status: 'CANCELLED' };
+    });
+    return ok(req, res, out);
+  });
+
+  /**
+   * Goods receipt (full or partial). Over-receipt is blocked; stock and the
+   * Dr Inventory / Cr GRNI accrual are posted atomically per receipt.
+   */
+  app.post('/api/procurement/orders/:id/receive', authenticate, requirePermission(Permission.INVENTORY_MANAGE), async (req: Request, res: Response) => {
+    const org = req.session!.organization_id;
+    const receipt_date = dateOnly(req.body?.receipt_date, 'receipt_date', { defaultValue: todayIso() });
+    const bodyWarehouse = optionalUuid(req.body?.warehouse_id, 'warehouse_id');
+    await assertOrgRef(db, 'warehouses', bodyWarehouse, org, 'warehouse_id');
+    const requested = req.body?.lines
+      ? arrayOf<any>(req.body.lines, 'lines', { min: 1, max: 500 }).map((l, i) => ({ line_id: uuid(l?.line_id, `lines[${i}].line_id`), quantity: decimal(l?.quantity, `lines[${i}].quantity`, { sign: 'positive' }) }))
+      : null;
+    const out = await db.transaction(async (tx) => {
+      const po = await requireOrgRow(tx, 'purchase_orders', req.params.id, org, 'Purchase order', { forUpdate: true });
+      if (po.status !== 'APPROVED') throw new ApiError(409, ErrorCode.INVALID_STATE, `Only APPROVED purchase orders can be received (current: ${po.status})`);
+      if (receipt_date < toIsoDate(po.po_date)) throw validationError('receipt_date cannot be before po_date', { field: 'receipt_date' });
+      const lines = (await tx.query(`SELECT * FROM purchase_order_lines WHERE purchase_order_id = $1 ORDER BY line_number FOR UPDATE`, [po.id])).rows;
+      const items = await lockItems(tx, org, lines.map((l: any) => l.item_id));
+      const warehouseId = bodyWarehouse || po.warehouse_id || (await defaultWarehouseId(tx, org));
+      const receiptId = crypto.randomUUID();
+      const defaultInv = await accountByCode(tx, org, '113001');
+      const byAccount = new Map<string, Money>();
+      let received = 0;
+      for (const l of lines) {
+        const remaining = new Money(l.quantity).sub(l.received_quantity);
+        const want = requested ? requested.find((r) => r.line_id === l.id)?.quantity : remaining.isPositive() ? remaining.toFixed(8) : null;
+        if (!want) continue;
+        if (new Money(want).gt(remaining)) throw new ApiError(409, ErrorCode.OVER_ALLOCATION, `Over-receipt on line ${l.line_number}: remaining ${remaining.format(4)}`);
+        const item = items.get(l.item_id);
+        const value = new Money(want).mul(l.unit_price).round(2);
+        if (item.item_type === 'INVENTORY') {
+          await postStockMovement(tx, {
+            organizationId: org,
+            legalEntityId: po.legal_entity_id,
+            itemId: l.item_id,
+            warehouseId,
+            movementType: 'RECEIPT',
+            movementDate: receipt_date,
+            quantity: new Money(want).toFixed(8),
+            unitCost: new Money(l.unit_price).toFixed(8),
+            referenceType: 'PURCHASE_ORDER',
+            referenceId: po.id,
+            description: `Goods receipt for ${po.po_number}`,
+          });
+          const acc = item.inventory_account_id || defaultInv;
+          byAccount.set(acc, (byAccount.get(acc) || Money.zero()).add(value));
+        } else {
+          const acc = item.cogs_account_id || (await accountByCode(tx, org, '511001'));
+          byAccount.set(acc, (byAccount.get(acc) || Money.zero()).add(value));
+        }
+        await tx.query(`UPDATE purchase_order_lines SET received_quantity = received_quantity + $1 WHERE id = $2`, [want, l.id]);
+        received++;
+      }
+      if (received === 0) throw new ApiError(409, ErrorCode.INVALID_STATE, 'Nothing left to receive on this purchase order');
+      if (requested && requested.some((r) => !lines.find((l: any) => l.id === r.line_id))) throw validationError('Unknown purchase order line', { field: 'lines' });
+      let total = Money.zero();
+      const jLines: any[] = [];
+      for (const [acc, amt] of byAccount) {
+        total = total.add(amt);
+        jLines.push({ account_id: acc, debit: amt.toFixed(8), description: `Receipt ${po.po_number}` });
+      }
+      jLines.push({ account_code: '211002', credit: total.toFixed(8), description: `GRNI accrual ${po.po_number}` });
+      const posted = await postJournal(tx, auditLogger, outboxService, {
+        organizationId: org,
+        legalEntityId: po.legal_entity_id,
+        userId: req.session!.user_id,
+        postingDate: receipt_date,
+        purpose: AccountingPurpose.PURCHASE_RECEIPT,
+        description: `Goods received for ${po.po_number}`,
+        sourceType: 'GOODS_RECEIPT',
+        sourceId: receiptId,
+        sourceKey: `GOODS_RECEIPT:${receiptId}`,
+        numberPrefix: 'JV-GRN',
+        correlationId: req.correlationId,
+        lines: jLines,
+      });
+      const after = (await tx.query(`SELECT BOOL_AND(received_quantity >= quantity) AS full FROM purchase_order_lines WHERE purchase_order_id = $1`, [po.id])).rows[0];
+      const status = after.full ? 'RECEIVED' : 'APPROVED';
+      await tx.query(`UPDATE purchase_orders SET status = $1, warehouse_id = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3`, [status, warehouseId, po.id]);
+      await audit(req, tx, 'GOODS_RECEIVED', 'PURCHASE_ORDER', po.id, { status: po.status }, { status, receipt_id: receiptId, value: total.format() });
+      return { id: po.id, status, receipt_id: receiptId, journal_id: posted?.journalId ?? null, received_value: total.format() };
+    });
+    return ok(req, res, out);
+  });
+
+  // ---------------- AP invoices ----------------
+  app.get('/api/ap/invoices', authenticate, apRead, async (req: Request, res: Response) => {
+    const { limit, offset } = pagination(req.query as any);
+    const r = await db.query(
+      `SELECT ai.*, p.name as party_name, p.code as party_code FROM ap_invoices ai JOIN parties p ON p.id = ai.party_id
+       WHERE ai.organization_id = $1 ORDER BY ai.invoice_date DESC, ai.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
       [req.session!.organization_id],
     );
-
-    return res.json({
-      success: true,
-      data: invRes.rows,
-      meta: {
-        correlation_id: req.correlationId,
-        timestamp: new Date().toISOString(),
-        total_count: invRes.rows.length,
-      },
-    } satisfies StandardSuccessResponse<any>);
+    return ok(req, res, r.rows, 200, { total_count: r.rows.length, limit, offset });
   });
 
   app.post('/api/ap/invoices', authenticate, requirePermission(Permission.AP_INVOICE_MANAGE), async (req: Request, res: Response) => {
-    const { party_id, purchase_order_id, invoice_number, invoice_date, due_date, lines, notes } = req.body;
-
-    if (!party_id || !lines || lines.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: ErrorCode.VALIDATION_FAILED,
-          message: 'party_id and at least 1 line are required',
-          correlation_id: req.correlationId,
-        },
-      } satisfies StandardErrorResponse);
-    }
-
-    let subtotal = Money.zero();
-    for (const l of lines) {
-      const qty = new Money(l.quantity || '0');
-      const price = new Money(l.unit_price || '0');
-      subtotal = subtotal.add(qty.mul(price));
-    }
-
+    const org = req.session!.organization_id;
+    const party_id = uuid(req.body?.party_id, 'party_id');
+    const purchase_order_id = optionalUuid(req.body?.purchase_order_id, 'purchase_order_id');
+    const invoice_number = str(req.body?.invoice_number, 'invoice_number', { max: 64 });
+    const invoice_date = dateOnly(req.body?.invoice_date, 'invoice_date', { defaultValue: todayIso() });
+    const due_date = dateOnly(req.body?.due_date, 'due_date', { defaultValue: new Date(Date.parse(`${invoice_date}T00:00:00Z`) + 30 * 86400000).toISOString().slice(0, 10) });
+    if (due_date < invoice_date) throw validationError('due_date cannot be before invoice_date', { field: 'due_date' });
+    await requireParty(db, org, party_id, 'VENDOR');
+    const inputLines = parseLines(req.body?.lines);
     const invoiceId = crypto.randomUUID();
-    const invNum = invoice_number || `BILL-${new Date().getFullYear()}-${Date.now().toString().slice(-5)}`;
-
-    await db.transaction(async (tx) => {
+    const out = await db.transaction(async (tx) => {
+      // Duplicate supplier bill detection (same vendor + supplier invoice number).
+      const dup = await tx.query(`SELECT id FROM ap_invoices WHERE organization_id = $1 AND party_id = $2 AND invoice_number = $3 AND status <> 'CANCELLED'`, [org, party_id, invoice_number]);
+      if (dup.rows.length) throw new ApiError(409, ErrorCode.DUPLICATE_RESOURCE, `Supplier invoice ${invoice_number} was already recorded for this vendor`);
+      let priceVariance = Money.zero();
+      if (purchase_order_id) {
+        const po = await requireOrgRow(tx, 'purchase_orders', purchase_order_id, org, 'Purchase order', { forUpdate: true });
+        if (po.party_id !== party_id) throw validationError('Bill vendor must match the purchase order vendor', { field: 'party_id' });
+        if (!['APPROVED', 'RECEIVED'].includes(po.status)) throw new ApiError(409, ErrorCode.INVALID_STATE, `Purchase order ${po.po_number} is ${po.status} and cannot be billed`);
+        const poLines = (await tx.query(`SELECT * FROM purchase_order_lines WHERE purchase_order_id = $1 ORDER BY line_number FOR UPDATE`, [po.id])).rows;
+        // Three-way match: billed qty <= received qty - already billed.
+        for (const l of inputLines) {
+          const match =
+            poLines.find((p: any) => p.id === l.source_line_id) ||
+            poLines.find((p: any) => p.item_id === l.item_id && new Money(p.received_quantity).sub(p.billed_quantity).gte(l.quantity));
+          if (!match) throw new ApiError(409, ErrorCode.OVER_ALLOCATION, `Billed quantity for item ${l.item_id} exceeds received-not-billed quantity on ${po.po_number}`);
+          const open = new Money(match.received_quantity).sub(match.billed_quantity);
+          if (new Money(l.quantity).gt(open)) throw new ApiError(409, ErrorCode.OVER_ALLOCATION, `Billed quantity exceeds received-not-billed quantity (${open.format(4)})`);
+          match.billed_quantity = new Money(match.billed_quantity).add(l.quantity).toFixed(8);
+          l.source_line_id = match.id;
+          priceVariance = priceVariance.add(new Money(l.unit_price).sub(match.unit_price).mul(l.quantity).round(2));
+          await tx.query(`UPDATE purchase_order_lines SET billed_quantity = $1 WHERE id = $2`, [match.billed_quantity, match.id]);
+        }
+        if (poLines.every((p: any) => new Money(p.billed_quantity).gte(p.quantity))) await tx.query(`UPDATE purchase_orders SET status = 'BILLED' WHERE id = $1`, [po.id]);
+      }
+      const priced = await priceLines(tx, org, inputLines);
+      if (!purchase_order_id) {
+        for (const l of priced.lines) {
+          if (l.item.item_type === 'INVENTORY') throw validationError(`Inventory item ${l.item.code} must be billed against a purchase order receipt`, { field: 'purchase_order_id' });
+        }
+      }
       await tx.query(
-        `
-        INSERT INTO ap_invoices (
-          id, organization_id, legal_entity_id, party_id, purchase_order_id, invoice_number,
-          invoice_date, due_date, status, subtotal, tax_amount, total_amount, outstanding_amount,
-          notes, created_by
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'DRAFT', $9, 0, $9, $9, $10, $11)
-      `,
-        [
-          invoiceId,
-          req.session!.organization_id,
-          req.session!.legal_entity_id,
-          party_id,
-          purchase_order_id || null,
-          invNum,
-          invoice_date || new Date().toISOString().slice(0, 10),
-          due_date || new Date().toISOString().slice(0, 10),
-          subtotal.toFixed(8),
-          notes || null,
-          req.session!.user_id,
-        ],
+        `INSERT INTO ap_invoices (id, organization_id, legal_entity_id, party_id, purchase_order_id, invoice_number, invoice_date, due_date, status,
+           subtotal, tax_amount, total_amount, outstanding_amount, notes, created_by, price_variance)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'DRAFT', $9, $10, $11, $11, $12, $13, $14)`,
+        [invoiceId, org, req.session!.legal_entity_id, party_id, purchase_order_id, invoice_number, invoice_date, due_date, priced.subtotal, priced.tax_amount, priced.total_amount, optionalStr(req.body?.notes, 'notes'), req.session!.user_id, priceVariance.toFixed(8)],
       );
-
-      for (let i = 0; i < lines.length; i++) {
-        const l = lines[i];
-        const lineId = crypto.randomUUID();
-        const lineTotal = new Money(l.quantity).mul(new Money(l.unit_price)).toFixed(8);
-
+      for (const l of priced.lines) {
         await tx.query(
-          `
-          INSERT INTO ap_invoice_lines (
-            id, invoice_id, line_number, item_id, quantity, unit_price, line_total, description
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        `,
-          [lineId, invoiceId, i + 1, l.item_id, l.quantity, l.unit_price, lineTotal, l.description || null],
+          `INSERT INTO ap_invoice_lines (id, invoice_id, line_number, item_id, quantity, unit_price, line_total, tax_amount, description, purchase_order_line_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [crypto.randomUUID(), invoiceId, l.line_number, l.item_id, l.quantity, l.unit_price, l.line_total, l.tax_amount, l.description, l.source_line_id || null],
         );
       }
+      await audit(req, tx, 'AP_INVOICE_CREATED', 'AP_INVOICE', invoiceId, undefined, { invoice_number, total_amount: priced.total_amount, price_variance: priceVariance.format() });
+      return { id: invoiceId, invoice_number, status: 'DRAFT', total_amount: new Money(priced.total_amount).format(), price_variance: priceVariance.format() };
     });
-
-    return res.status(201).json({
-      success: true,
-      data: { id: invoiceId, invoice_number: invNum, status: 'DRAFT', total_amount: subtotal.toFixed(2) },
-      meta: {
-        correlation_id: req.correlationId,
-        timestamp: new Date().toISOString(),
-      },
-    } satisfies StandardSuccessResponse<any>);
+    return ok(req, res, out, 201);
   });
 
   app.post('/api/ap/invoices/:id/post', authenticate, requirePermission(Permission.AP_INVOICE_MANAGE), async (req: Request, res: Response) => {
-    const { id } = req.params;
-
-    const invRes = await db.query(
-      'SELECT inv.*, p.name as party_name FROM ap_invoices inv JOIN parties p ON p.id = inv.party_id WHERE inv.id = $1 AND inv.organization_id = $2',
-      [id, req.session!.organization_id],
-    );
-
-    if (invRes.rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        error: {
-          code: ErrorCode.RESOURCE_NOT_FOUND,
-          message: 'AP bill not found',
-          correlation_id: req.correlationId,
-        },
-      } satisfies StandardErrorResponse);
-    }
-
-    const bill = invRes.rows[0];
-    if (bill.status === 'POSTED') {
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: ErrorCode.ALREADY_POSTED,
-          message: 'Bill is already posted',
-          correlation_id: req.correlationId,
-        },
-      } satisfies StandardErrorResponse);
-    }
-
-    // Look up GRNI (211002) or Inventory (113001) and Trade AP Control (211001)
-    const apAccRes = await db.query("SELECT id FROM accounts WHERE code = '211001' AND organization_id = $1", [req.session!.organization_id]);
-    const grniAccRes = await db.query("SELECT id FROM accounts WHERE code = '211002' AND organization_id = $1", [req.session!.organization_id]);
-
-    const apAccId = apAccRes.rows[0].id;
-    const grniAccId = grniAccRes.rows[0]?.id;
-    const total = new Money(bill.total_amount);
-
-    const journalId = crypto.randomUUID();
-    const journalNumber = `JV-AP-${bill.invoice_number}`;
-
-    await db.transaction(async (tx) => {
-      // 1. Post GL Journal (Dr GRNI/Inventory, Cr AP Control)
-      await tx.query(
-        `
-        INSERT INTO journals (
-          id, organization_id, legal_entity_id, journal_number, posting_date, document_date,
-          accounting_purpose, status, base_currency, total_base_debit, total_base_credit,
-          description, source_type, source_id, created_by, posted_by, posted_at
-        ) VALUES ($1, $2, $3, $4, $5, $5, 'PURCHASE_INVOICE', 'POSTED', 'PKR', $6, $6, $7, 'AP_INVOICE', $8, $9, $9, CURRENT_TIMESTAMP)
-      `,
-        [
-          journalId,
-          req.session!.organization_id,
-          req.session!.legal_entity_id,
-          journalNumber,
-          bill.invoice_date,
-          total.toFixed(8),
-          `Bill ${bill.invoice_number} from ${bill.party_name}`,
-          id,
-          req.session!.user_id,
-        ],
-      );
-
-      // 2. Insert Lines
-      await tx.query(
-        `
-        INSERT INTO journal_lines (id, journal_id, line_number, account_id, debit_amount, credit_amount, base_debit, base_credit, description, party_id)
-        VALUES
-          ($1, $2, 1, $3, $4, 0, $4, 0, $5, $6),
-          ($7, $2, 2, $8, 0, $4, 0, $4, $5, $6)
-      `,
-        [
-          crypto.randomUUID(),
-          journalId,
-          grniAccId,
-          total.toFixed(8),
-          `Goods clearance for ${bill.party_name}`,
-          bill.party_id,
-          crypto.randomUUID(),
-          apAccId,
-        ],
-      );
-
-      // 3. Mark AP Invoice as POSTED
-      await tx.query(
-        "UPDATE ap_invoices SET status = 'POSTED', posted_journal_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
-        [journalId, id],
-      );
+    const org = req.session!.organization_id;
+    const out = await db.transaction(async (tx) => {
+      const inv = await transition(tx, { table: 'ap_invoices', id: req.params.id, organizationId: org, from: ['DRAFT'], to: 'POSTED', label: 'AP invoice', set: { posted_by: req.session!.user_id, updated_at: new Date().toISOString() } });
+      const lines = (
+        await tx.query(
+          `SELECT ail.*, i.cogs_account_id, i.item_type, pol.unit_price AS po_price FROM ap_invoice_lines ail JOIN items i ON i.id = ail.item_id
+           LEFT JOIN purchase_order_lines pol ON pol.id = ail.purchase_order_line_id WHERE ail.invoice_id = $1`,
+          [inv.id],
+        )
+      ).rows;
+      const jLines: any[] = [];
+      let lineSum = Money.zero();
+      let taxSum = Money.zero();
+      for (const l of lines) {
+        lineSum = lineSum.add(l.line_total);
+        taxSum = taxSum.add(l.tax_amount || '0');
+        if (l.purchase_order_line_id) {
+          // Clear GRNI at the receipt (PO) price; any price difference is a variance.
+          const grni = new Money(l.po_price).mul(l.quantity).round(2);
+          jLines.push({ account_code: '211002', debit: grni.toFixed(8), description: 'GRNI clearing' });
+          const variance = new Money(l.line_total).sub(grni);
+          if (!variance.isZero()) jLines.push({ account_code: '511002', debit: variance.toFixed(8), description: 'Purchase price variance' });
+        } else {
+          if (!l.cogs_account_id) throw new ApiError(400, ErrorCode.MAPPING_MISSING, 'Non-PO bill lines need an expense (COGS) account on the item');
+          jLines.push({ account_id: l.cogs_account_id, debit: new Money(l.line_total).toFixed(8), description: 'Direct expense' });
+        }
+      }
+      if (!lineSum.eq(inv.subtotal) || !lineSum.add(taxSum).eq(inv.total_amount)) throw new ApiError(409, ErrorCode.JOURNAL_UNBALANCED, 'Bill header totals do not match its lines');
+      if (taxSum.isPositive()) jLines.push({ account_code: '114001', debit: taxSum.toFixed(8), description: 'Input tax' });
+      jLines.push({ account_code: '211001', credit: new Money(inv.total_amount).toFixed(8), description: `AP ${inv.invoice_number}` });
+      const posted = await postJournal(tx, auditLogger, outboxService, {
+        organizationId: org,
+        legalEntityId: inv.legal_entity_id,
+        userId: req.session!.user_id,
+        postingDate: toIsoDate(inv.invoice_date),
+        purpose: AccountingPurpose.PURCHASE_INVOICE,
+        description: `Supplier bill ${inv.invoice_number}`,
+        sourceType: 'AP_INVOICE',
+        sourceId: inv.id,
+        sourceKey: `AP_INVOICE:${inv.id}`,
+        numberPrefix: 'JV-AP',
+        correlationId: req.correlationId,
+        lines: jLines,
+      });
+      await tx.query(`UPDATE ap_invoices SET posted_journal_id = $1 WHERE id = $2`, [posted?.journalId ?? null, inv.id]);
+      return { id: inv.id, status: 'POSTED', posted_journal_id: posted?.journalId ?? null };
     });
-
-    return res.json({
-      success: true,
-      data: { id, status: 'POSTED', posted_journal_id: journalId },
-      meta: {
-        correlation_id: req.correlationId,
-        timestamp: new Date().toISOString(),
-      },
-    } satisfies StandardSuccessResponse<any>);
+    return ok(req, res, out);
   });
 
-  // ==========================================
+  app.post('/api/ap/invoices/:id/cancel', authenticate, requirePermission(Permission.AP_INVOICE_MANAGE), async (req: Request, res: Response) => {
+    const out = await db.transaction(async (tx) => {
+      const inv = await transition(tx, { table: 'ap_invoices', id: req.params.id, organizationId: req.session!.organization_id, from: ['DRAFT'], to: 'CANCELLED', label: 'AP invoice' });
+      const lines = (await tx.query(`SELECT * FROM ap_invoice_lines WHERE invoice_id = $1 AND purchase_order_line_id IS NOT NULL`, [inv.id])).rows;
+      for (const l of lines) await tx.query(`UPDATE purchase_order_lines SET billed_quantity = billed_quantity - $1 WHERE id = $2`, [l.quantity, l.purchase_order_line_id]);
+      if (inv.purchase_order_id) await tx.query(`UPDATE purchase_orders SET status = 'RECEIVED' WHERE id = $1 AND status = 'BILLED'`, [inv.purchase_order_id]);
+      await audit(req, tx, 'AP_INVOICE_CANCELLED', 'AP_INVOICE', inv.id);
+      return { id: inv.id, status: 'CANCELLED' };
+    });
+    return ok(req, res, out);
+  });
 }

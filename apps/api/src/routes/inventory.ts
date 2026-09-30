@@ -108,21 +108,48 @@ export function registerInventoryRoutes(app: Express): void {
     return ok(req, res, r.rows[0], 201);
   });
 
-  // ---------- Stock on hand (per warehouse, with reorder flags) ----------
+  // ---------- Stock on hand (org-wide or per warehouse) ----------
   app.get('/api/inventory/stock', authenticate, invRead, async (req: Request, res: Response) => {
+    const org = req.session!.organization_id;
     const warehouse_id = optionalUuid(req.query.warehouse_id, 'warehouse_id');
-    await assertOrgRef(db, 'warehouses', warehouse_id, req.session!.organization_id, 'warehouse_id');
-    const items = (
-      await db.query(`SELECT id, code, name, uom, unit_cost, unit_price FROM items WHERE organization_id = $1 AND item_type = 'INVENTORY' ORDER BY code`, [
-        req.session!.organization_id,
-      ])
-    ).rows;
-    const rows = [];
-    for (const it of items) {
-      const qty = await onHand(db, req.session!.organization_id, it.id, warehouse_id);
-      rows.push({ ...it, on_hand: qty, stock_value: new Money(qty).mul(it.unit_cost).format(2) });
+    await assertOrgRef(db, 'warehouses', warehouse_id, org, 'warehouse_id');
+    const params: any[] = [org];
+    let locFilter = '';
+    if (warehouse_id) {
+      params.push(warehouse_id);
+      // Legacy movements without a location belong to the default warehouse.
+      locFilter = ` AND (sm.location_id = $2 OR (sm.location_id IS NULL AND EXISTS (SELECT 1 FROM warehouses w WHERE w.id = $2 AND w.is_default = true)))`;
     }
+    const r = await db.query(
+      `SELECT i.id as item_id, i.code as item_code, i.name as item_name, i.uom, i.unit_cost, i.unit_price, i.barcode,
+              i.reorder_point, i.reorder_qty,
+              COALESCE(SUM(sm.quantity), 0) as on_hand_qty, COALESCE(SUM(sm.total_value), 0) as total_valuation
+       FROM items i LEFT JOIN stock_movements sm ON sm.item_id = i.id AND sm.organization_id = i.organization_id${locFilter}
+       WHERE i.organization_id = $1 AND i.item_type = 'INVENTORY'
+       GROUP BY i.id ORDER BY i.name ASC`,
+      params,
+    );
+    const rows = r.rows.map((x: any) => ({
+      ...x,
+      below_reorder_point: new Money(x.reorder_point || '0').isPositive() && new Money(x.on_hand_qty).lte(x.reorder_point),
+    }));
     return ok(req, res, rows, 200, { total_count: rows.length, warehouse_id });
+  });
+
+  /** Movement history (stock card) for one item. */
+  app.get('/api/inventory/items/:id/movements', authenticate, invRead, async (req: Request, res: Response) => {
+    await requireOrgRow(db, 'items', req.params.id, req.session!.organization_id, 'Item');
+    const r = await db.query(
+      `SELECT sm.*, w.code as warehouse_code FROM stock_movements sm LEFT JOIN warehouses w ON w.id = sm.location_id
+       WHERE sm.organization_id = $1 AND sm.item_id = $2 ORDER BY sm.movement_date ASC, sm.created_at ASC LIMIT 5000`,
+      [req.session!.organization_id, req.params.id],
+    );
+    let running = new Money(0);
+    const rows = r.rows.map((m: any) => {
+      running = running.add(m.quantity);
+      return { ...m, running_qty: running.toFixed(8) };
+    });
+    return ok(req, res, rows, 200, { total_count: rows.length });
   });
 
   // ---------- Lots & serials ----------

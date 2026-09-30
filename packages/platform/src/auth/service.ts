@@ -216,10 +216,18 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.MAINT_WORK_ORDER_MANAGE,
     Permission.CALIBRATION_MANAGE,
   ],
+  // Cashiers previously held ITEMS_MANAGE, letting a till operator change master
+  // prices; price changes at the till now require a manager PIN approval instead.
   [UserRole.CASHIER]: [
-    Permission.ITEMS_MANAGE,
     Permission.POS_TERMINAL,
     Permission.POS_SESSION_CLOSE,
+  ],
+  [UserRole.STORE_MANAGER]: [
+    Permission.POS_TERMINAL,
+    Permission.POS_SESSION_CLOSE,
+    Permission.POS_REGISTER_MANAGE,
+    Permission.PARTIES_MANAGE,
+    Permission.FINANCE_REPORTS_VIEW,
   ],
   [UserRole.AUDITOR]: [
     Permission.FINANCE_COA_VIEW,

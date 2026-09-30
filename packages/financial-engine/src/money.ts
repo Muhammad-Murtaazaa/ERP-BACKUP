@@ -81,6 +81,32 @@ export class Money {
     return new Money(this.val.dividedBy(o));
   }
 
+  /** Explicit HALF_UP rounding to a scale (default: currency scale 2). */
+  round(scale: number = 2): Money {
+    return new Money(this.val.toDecimalPlaces(scale, Decimal.ROUND_HALF_UP));
+  }
+
+  roundToCurrency(scale: number = 2): Money {
+    return this.round(scale);
+  }
+
+  /** Rounding toward zero (used for loyalty points / whole units). */
+  floor(scale: number = 0): Money {
+    return new Money(this.val.toDecimalPlaces(scale, Decimal.ROUND_DOWN));
+  }
+
+  static min(a: Money | string, b: Money | string): Money {
+    const x = new Money(a);
+    const y = new Money(b);
+    return x.lte(y) ? x : y;
+  }
+
+  static max(a: Money | string, b: Money | string): Money {
+    const x = new Money(a);
+    const y = new Money(b);
+    return x.gte(y) ? x : y;
+  }
+
   abs(): Money {
     return new Money(this.val.abs());
   }

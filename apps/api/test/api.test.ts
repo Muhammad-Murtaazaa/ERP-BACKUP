@@ -370,8 +370,11 @@ describe('API Modular Monolith: Financial & Trading Workflows E2E Integration', 
     const poId = poRes.body.data.id;
     expect(poRes.body.data.status).toBe('DRAFT');
 
-    // 2. Approve Purchase Order
-    const approvePoRes = await makeRequest('POST', `/api/procurement/orders/${poId}/approve`, {}, controllerToken);
+    // 2. Approve Purchase Order. SoD: the requester (controller) cannot self-approve.
+    const selfApproveRes = await makeRequest('POST', `/api/procurement/orders/${poId}/approve`, {}, controllerToken);
+    expect(selfApproveRes.status).toBe(403);
+    expect(selfApproveRes.body.error.code).toBe('SEGREGATION_OF_DUTIES');
+    const approvePoRes = await makeRequest('POST', `/api/procurement/orders/${poId}/approve`, {}, adminToken);
     expect(approvePoRes.status).toBe(200);
     expect(approvePoRes.body.data.status).toBe('APPROVED');
 
