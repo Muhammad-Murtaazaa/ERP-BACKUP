@@ -1,3 +1,4 @@
+import { Money } from '@omnysync/financial-engine';
 import crypto from 'node:crypto';
 import { DbClient } from '../db/driver.js';
 import { AuthService } from '../auth/service.js';
@@ -203,7 +204,10 @@ export class SyntheticSeedRunner {
     const shareCapitalId = codeToIdMap.get('311001')!;
     const retainedEarningsId = codeToIdMap.get('321001')!;
 
-    await this.db.query(
+    // Journal header + lines form one unit of work: the deferred balance constraint
+    // (migration 011) validates the posted journal at COMMIT.
+    await this.db.transaction(async (tx) => {
+    await tx.query(
       `
       INSERT INTO journals (
         id, organization_id, legal_entity_id, journal_number, posting_date, document_date,
@@ -243,7 +247,7 @@ export class SyntheticSeedRunner {
 
     for (const l of lines) {
       const lineId = crypto.randomUUID();
-      await this.db.query(
+      await tx.query(
         `
         INSERT INTO journal_lines (
           id, journal_id, line_number, account_id, debit_amount, credit_amount,
@@ -255,6 +259,7 @@ export class SyntheticSeedRunner {
         [lineId, openingJournalId, l.num, l.acc, l.dr, l.cr, l.dr, l.cr, l.desc],
       );
     }
+    });
 
     // 8. Seed Parties (Customers & Vendors)
     const parties = [
@@ -325,6 +330,19 @@ export class SyntheticSeedRunner {
         qty: '25',
       },
       {
+        // Brings the opening stock subledger (7.8M + 0.2M) into agreement with the
+        // 8,000,000 opening Inventory control balance (113001). Previously the
+        // subledger totalled 7,800,000 and never reconciled to the GL.
+        id: '70000000-0000-0000-0000-000000000004',
+        code: 'ITEM-CAT6-BOX',
+        name: 'Cat6 Patch Cable Box (305m)',
+        type: 'INVENTORY',
+        uom: 'BOX',
+        price: '7500.00',
+        cost: '5000.00',
+        qty: '40',
+      },
+      {
         id: '70000000-0000-0000-0000-000000000003',
         code: 'SRV-CONSULT',
         name: 'Cloud Deployment Consultation',
@@ -365,8 +383,10 @@ export class SyntheticSeedRunner {
 
       // Add opening stock movement if inventory item
       if (itm.type === 'INVENTORY') {
-        const movId = crypto.randomUUID();
-        const totalVal = (parseFloat(itm.cost) * parseFloat(itm.qty)).toFixed(8);
+        // Deterministic id + ON CONFLICT: re-running the seed no longer duplicates
+        // opening stock (it previously doubled on-hand quantity on every run).
+        const movId = `7a000000-0000-0000-0000-${itm.id.slice(-12)}`;
+        const totalVal = new Money(itm.cost).mul(itm.qty).toFixed(8);
         await this.db.query(
           `
           INSERT INTO stock_movements (
@@ -374,6 +394,7 @@ export class SyntheticSeedRunner {
             movement_type, movement_date, quantity, unit_cost, total_value, description
           )
           VALUES ($1, $2, $3, $4, $5, 'OPENING', '2026-03-01', $6, $7, $8, 'Opening Stock Layer')
+          ON CONFLICT (id) DO NOTHING
         `,
           [movId, orgId, legalEntityId, itm.id, branchId, itm.qty, itm.cost, totalVal],
         );
