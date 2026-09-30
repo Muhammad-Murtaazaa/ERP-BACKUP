@@ -71,3 +71,6 @@ ALTER TABLE payments ADD COLUMN IF NOT EXISTS unallocated_amount NUMERIC(24, 8) 
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS reversal_journal_id UUID REFERENCES journals(id) ON DELETE RESTRICT;
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS cancelled_by UUID REFERENCES users(id) ON DELETE RESTRICT;
 ALTER TABLE allocations ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ;
+
+-- Fixed assets: one depreciation entry per asset per period.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_asset_depr_period ON asset_depreciation_entries(asset_id, period_id);

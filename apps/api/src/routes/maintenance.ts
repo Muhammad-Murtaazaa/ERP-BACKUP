@@ -43,6 +43,11 @@ import {
 } from '@omnysync/contracts';
 
 import { db, authService, auditLogger, outboxService, authenticate, requirePermission } from '../context.js';
+import { postJournal } from '../lib/posting.js';
+import { transition } from '../lib/state.js';
+import { dateOnly, decimal, todayIso } from '../lib/validate.js';
+import { lockItems, postStockMovement } from '../lib/stock.js';
+import { accountByCode } from '../lib/trading.js';
 
 export function registerMaintenanceRoutes(app: Express): void {
   // 24. Plant Maintenance & Equipment Engineering (M9)
@@ -316,102 +321,55 @@ export function registerMaintenanceRoutes(app: Express): void {
       } satisfies StandardErrorResponse);
     }
 
-    // Look up COA accounts: 521005 (Equipment Maintenance Expense), 113002 (Spare Parts / Raw Materials), 211004 (Labor / Salaries Clearing)
-    const accRes = await db.query(
-      `SELECT id, code FROM accounts WHERE organization_id = $1 AND code IN ('521005', '113002', '113001', '211004')`,
-      [req.session!.organization_id]
-    );
-    const map = new Map<string, string>(accRes.rows.map((r) => [r.code, r.id]));
-    const maintExpAcc = map.get('521005');
-    const sparesAcc = map.get('113002') || map.get('113001');
-    const laborAcc = map.get('211004');
-
-    if (!maintExpAcc || !sparesAcc || !laborAcc) {
-      return res.status(422).json({
-        success: false,
-        error: { code: ErrorCode.VALIDATION_FAILED, message: 'Required accounts (521005/113002/211004) not configured for maintenance settlement', correlation_id: req.correlationId },
-      } satisfies StandardErrorResponse);
-    }
-
-    const today = new Date().toISOString().slice(0, 10);
-    const settlementJournalDraft = MaintenanceEngine.generateSettlementJournal({
-      organization_id: req.session!.organization_id,
-      legal_entity_id: req.session!.legal_entity_id,
-      period_id: '',
-      posting_date: today,
-      work_order_number: wo.work_order_number,
-      equipment_code: wo.equipment_code,
-      equipment_name: wo.equipment_name,
-      total_parts_cost: wo.total_parts_cost,
-      total_labor_cost: wo.total_labor_cost,
-      maint_expense_account_id: maintExpAcc,
-      spare_parts_inventory_account_id: sparesAcc,
-      labor_clearing_account_id: laborAcc,
-    });
-
-    const journalId = crypto.randomUUID();
-
-    await db.transaction(async (tx) => {
-      let totalDebit = Money.zero();
-      let totalCredit = Money.zero();
-      for (const l of settlementJournalDraft.lines) {
-        totalDebit = totalDebit.add(new Money(l.base_debit));
-        totalCredit = totalCredit.add(new Money(l.base_credit));
+    const completionDate = dateOnly(req.body?.completion_date, 'completion_date', { defaultValue: todayIso() });
+    const downtime = decimal(downtime_hours == null ? undefined : String(downtime_hours), 'downtime_hours', { required: false, defaultValue: '0' });
+    const journalId = await db.transaction(async (tx) => {
+      // Atomic completion (double-complete previously re-posted the settlement).
+      await transition(tx, { table: 'maintenance_work_orders', id, organizationId: req.session!.organization_id, from: ['DRAFT', 'SCHEDULED', 'IN_PROGRESS'], to: 'COMPLETED', label: 'Maintenance work order', set: { completion_date: completionDate, downtime_hours: downtime } });
+      const org = req.session!.organization_id;
+      // Spare parts leave stock and are credited to each part's own inventory account.
+      const parts = (await tx.query(`SELECT * FROM maint_order_parts WHERE work_order_id = $1`, [id])).rows;
+      const items = await lockItems(tx, org, parts.map((p: any) => p.item_id));
+      const lines: any[] = [];
+      let partsTotal = Money.zero();
+      for (const p of parts) {
+        const item = items.get(p.item_id);
+        const cost = new Money(p.total_cost).round(2);
+        partsTotal = partsTotal.add(cost);
+        if (item.item_type === 'INVENTORY') {
+          await postStockMovement(tx, { organizationId: org, legalEntityId: req.session!.legal_entity_id, itemId: p.item_id, warehouseId: null, movementType: 'ADJUSTMENT', movementDate: completionDate, quantity: new Money(p.quantity).negated().toFixed(8), unitCost: p.unit_cost, referenceType: 'MAINT_WORK_ORDER', referenceId: id, description: `Spare parts issued to ${wo.work_order_number}` });
+        }
+        lines.push({ account_id: item.inventory_account_id || (await accountByCode(tx, org, '113001')), credit: cost.toFixed(8), description: `Spare parts ${item.code}` });
       }
-
-      // Insert journal
-      await tx.query(
-        `INSERT INTO journals (
-          id, organization_id, legal_entity_id, journal_number, posting_date, document_date,
-          accounting_purpose, status, base_currency, total_base_debit, total_base_credit,
-          description, source_type, source_id, created_by, posted_by, posted_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'POSTED', 'PKR', $8, $9, $10, 'MAINT_WORK_ORDER', $11, $12, $12, CURRENT_TIMESTAMP)`,
-        [
-          journalId,
-          req.session!.organization_id,
-          req.session!.legal_entity_id,
-          settlementJournalDraft.journal_number,
-          today,
-          today,
-          settlementJournalDraft.accounting_purpose,
-          totalDebit.format(),
-          totalCredit.format(),
-          settlementJournalDraft.description,
-          id,
-          req.session!.user_id,
-        ]
-      );
-
-      // Insert journal lines
-      for (const line of settlementJournalDraft.lines) {
-        await tx.query(
-          `INSERT INTO journal_lines (
-            id, journal_id, line_number, account_id, debit_amount, credit_amount, currency, fx_rate, base_debit, base_credit, description
-          ) VALUES ($1, $2, $3, $4, $5, $6, 'PKR', '1.000000000000', $7, $8, $9)`,
-          [
-            crypto.randomUUID(),
-            journalId,
-            line.line_number,
-            line.account_id,
-            line.debit_amount,
-            line.credit_amount,
-            line.base_debit,
-            line.base_credit,
-            line.description,
-          ]
-        );
+      // Internal labour is re-classified out of salaries expense (it was previously
+      // credited to Salaries Payable, double-counting the payroll liability).
+      const labor = new Money(wo.total_labor_cost || '0').round(2);
+      if (labor.isPositive()) lines.push({ account_code: '521002', credit: labor.toFixed(8), description: `Labour absorbed by ${wo.work_order_number}` });
+      const total = partsTotal.add(labor);
+      let posted = null;
+      if (total.isPositive()) {
+        lines.unshift({ account_code: '521005', debit: total.toFixed(8), description: `Maintenance cost ${wo.equipment_code}` });
+        posted = await postJournal(tx, auditLogger, outboxService, {
+          organizationId: org, legalEntityId: req.session!.legal_entity_id, userId: req.session!.user_id, postingDate: completionDate,
+          purpose: AccountingPurpose.MAINTENANCE_EXPENSE_SETTLEMENT, description: `Maintenance settlement ${wo.work_order_number} — ${wo.equipment_name}`,
+          sourceType: 'MAINT_WORK_ORDER', sourceId: id, sourceKey: `MAINT_SETTLEMENT:${id}`, numberPrefix: 'JV-MNT', correlationId: req.correlationId, lines,
+        });
       }
-
-      // Update work order
-      await tx.query(
-        `UPDATE maintenance_work_orders 
-         SET status = 'COMPLETED', completion_date = $1, downtime_hours = $2, settlement_journal_id = $3, updated_at = NOW() 
-         WHERE id = $4`,
-        [today, downtime_hours || '0.00000000', journalId, id]
-      );
-
-      // Reset equipment status to OPERATIONAL
+      await tx.query(`UPDATE maintenance_work_orders SET settlement_journal_id = $1, updated_at = NOW() WHERE id = $2`, [posted?.journalId ?? null, id]);
       await tx.query(`UPDATE maintenance_equipment SET status = 'OPERATIONAL' WHERE id = $1`, [wo.equipment_id]);
+      // Preventive maintenance: roll the schedule forward from the actual completion date.
+      if (wo.pm_schedule_id) {
+        const sch = (await tx.query(`SELECT * FROM pm_schedules WHERE id = $1 FOR UPDATE`, [wo.pm_schedule_id])).rows[0];
+        if (sch && sch.frequency_type === 'TIME_BASED_DAYS') {
+          const days = Math.max(1, Math.round(Number(sch.frequency_interval)));
+          const next = new Date(Date.parse(`${completionDate}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+          await tx.query(`UPDATE pm_schedules SET last_performed_date = $1, next_due_date = $2 WHERE id = $3`, [completionDate, next, sch.id]);
+        } else if (sch) {
+          await tx.query(`UPDATE pm_schedules SET last_performed_date = $1 WHERE id = $2`, [completionDate, sch.id]);
+        }
+      }
+      await auditLogger.record({ organization_id: org, user_id: req.session!.user_id, action: 'MAINT_WORK_ORDER_COMPLETED', entity_type: 'MAINT_WORK_ORDER', entity_id: id, after_state: { total: total.format(), downtime }, correlation_id: req.correlationId }, tx);
+      return posted?.journalId ?? null;
     });
 
     return res.json({

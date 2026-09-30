@@ -43,6 +43,10 @@ import {
 } from '@omnysync/contracts';
 
 import { db, authService, auditLogger, outboxService, authenticate, requirePermission } from '../context.js';
+import { ApiError, validationError } from '../lib/errors.js';
+import { transition } from '../lib/state.js';
+import { postJournal } from '../lib/posting.js';
+import { toIsoDate } from '../lib/validate.js';
 
 export function registerProjectsRoutes(app: Express): void {
   // 20. Projects, Cost Centers, BOQ & Progress Invoicing (M6)
@@ -358,6 +362,9 @@ export function registerProjectsRoutes(app: Express): void {
     const project = prjRes.rows[0];
 
     // Fetch BOQ items
+    // The BOQ must belong to this project (previously any BOQ id was accepted).
+    const boqOwner = await db.query('SELECT 1 FROM bill_of_quantities WHERE id = $1 AND project_id = $2', [boq_id, id]);
+    if (boqOwner.rows.length === 0) throw validationError('BOQ does not belong to this project', { field: 'boq_id' });
     const boqItemsRes = await db.query('SELECT * FROM boq_items WHERE boq_id = $1', [boq_id]);
     const boqItems = boqItemsRes.rows;
 
@@ -467,20 +474,22 @@ export function registerProjectsRoutes(app: Express): void {
       } satisfies StandardErrorResponse);
     }
 
-    const itemsRes = await db.query('SELECT * FROM progress_certificate_items WHERE certificate_id = $1', [certId]);
-
     await db.transaction(async (tx) => {
-      for (const item of itemsRes.rows) {
-        await tx.query(
-          'UPDATE boq_items SET certified_quantity = $1 WHERE id = $2',
-          [item.cumulative_quantity, item.boq_item_id]
-        );
+      // Atomic DRAFT -> CERTIFIED; quantities are added to the locked BOQ balance so two
+      // drafts prepared from the same baseline can no longer overwrite each other or
+      // together exceed the contract quantity.
+      await transition(tx, { table: 'progress_certificates', id: certId, organizationId: req.session!.organization_id, from: ['DRAFT'], to: 'CERTIFIED', label: 'Progress certificate', set: { updated_at: new Date().toISOString() } });
+      const items = (await tx.query('SELECT * FROM progress_certificate_items WHERE certificate_id = $1 ORDER BY boq_item_id', [certId])).rows;
+      for (const item of items) {
+        const boq = (await tx.query('SELECT * FROM boq_items WHERE id = $1 FOR UPDATE', [item.boq_item_id])).rows[0];
+        const cumulative = new Money(boq.certified_quantity || '0').add(item.current_quantity);
+        if (cumulative.gt(boq.contract_quantity)) {
+          throw new ApiError(422, ErrorCode.OVER_CERTIFICATION, `Certification for BOQ item ${boq.item_code} would exceed contract quantity (${new Money(boq.contract_quantity).format(4)})`);
+        }
+        await tx.query('UPDATE boq_items SET certified_quantity = $1 WHERE id = $2', [cumulative.toFixed(8), boq.id]);
+        await tx.query('UPDATE progress_certificate_items SET previous_quantity = $1, cumulative_quantity = $2 WHERE id = $3', [boq.certified_quantity || '0', cumulative.toFixed(8), item.id]);
       }
-
-      await tx.query(
-        "UPDATE progress_certificates SET status = 'CERTIFIED', updated_at = CURRENT_TIMESTAMP WHERE id = $1",
-        [certId]
-      );
+      await auditLogger.record({ organization_id: req.session!.organization_id, user_id: req.session!.user_id, action: 'PROGRESS_CERTIFIED', entity_type: 'PROGRESS_CERTIFICATE', entity_id: certId, correlation_id: req.correlationId }, tx);
     });
 
     return res.json({
@@ -557,59 +566,24 @@ export function registerProjectsRoutes(app: Express): void {
       user_id: req.session!.user_id,
     });
 
-    const journalId = crypto.randomUUID();
-    const today = new Date().toISOString().slice(0, 10);
-
-    await db.transaction(async (tx) => {
-      // Insert journal
-      await tx.query(
-        `INSERT INTO journals (
-          id, organization_id, legal_entity_id, journal_number, posting_date, document_date,
-          accounting_purpose, status, base_currency, total_base_debit, total_base_credit,
-          description, source_type, source_id, created_by, posted_by, posted_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'POSTED', 'PKR', $8, $9, $10, 'PROGRESS_CERTIFICATE', $11, $12, $12, CURRENT_TIMESTAMP)`,
-        [
-          journalId,
-          req.session!.organization_id,
-          req.session!.legal_entity_id,
-          journalDraft.journal_number,
-          today,
-          today,
-          journalDraft.accounting_purpose,
-          cert.gross_certified_amount,
-          cert.gross_certified_amount,
-          journalDraft.description,
-          certId,
-          req.session!.user_id,
-        ]
-      );
-
-      // Insert journal lines
-      for (let i = 0; i < journalDraft.lines.length; i++) {
-        const line = journalDraft.lines[i];
-        await tx.query(
-          `INSERT INTO journal_lines (
-            id, journal_id, line_number, account_id, debit_amount, credit_amount, currency, fx_rate, base_debit, base_credit, description
-          ) VALUES ($1, $2, $3, $4, $5, $6, 'PKR', '1.000000000000', $7, $8, $9)`,
-          [
-            crypto.randomUUID(),
-            journalId,
-            i + 1,
-            line.account_id,
-            line.debit_amount,
-            line.credit_amount,
-            line.base_debit,
-            line.base_credit,
-            line.description,
-          ]
-        );
-      }
-
-      // Update progress certificate
-      await tx.query(
-        "UPDATE progress_certificates SET status = 'INVOICED', journal_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2",
-        [journalId, certId]
-      );
+    const journalId = await db.transaction(async (tx) => {
+      await transition(tx, { table: 'progress_certificates', id: certId, organizationId: req.session!.organization_id, from: ['CERTIFIED'], to: 'INVOICED', label: 'Progress certificate', set: { updated_at: new Date().toISOString() } });
+      const posted = await postJournal(tx, auditLogger, outboxService, {
+        organizationId: req.session!.organization_id,
+        legalEntityId: req.session!.legal_entity_id,
+        userId: req.session!.user_id,
+        postingDate: toIsoDate(cert.certificate_date),
+        purpose: AccountingPurpose.PROJECT_PROGRESS_INVOICE,
+        description: journalDraft.description,
+        sourceType: 'PROGRESS_CERTIFICATE',
+        sourceId: certId,
+        sourceKey: `PROGRESS_INVOICE:${certId}`,
+        numberPrefix: 'JV-IPC',
+        correlationId: req.correlationId,
+        lines: journalDraft.lines.map((l: any) => ({ account_id: l.account_id, debit: l.base_debit, credit: l.base_credit, description: l.description, cost_center_id: l.cost_center_id })),
+      });
+      await tx.query('UPDATE progress_certificates SET journal_id = $1 WHERE id = $2', [posted?.journalId ?? null, certId]);
+      return posted?.journalId ?? null;
     });
 
     return res.json({

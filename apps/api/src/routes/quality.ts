@@ -43,6 +43,11 @@ import {
 } from '@omnysync/contracts';
 
 import { db, authService, auditLogger, outboxService, authenticate, requirePermission } from '../context.js';
+import { ApiError } from '../lib/errors.js';
+import { postJournal } from '../lib/posting.js';
+import { dateOnly, todayIso } from '../lib/validate.js';
+import { lockItems, onHand, postStockMovement } from '../lib/stock.js';
+import { accountByCode } from '../lib/trading.js';
 
 export function registerQualityRoutes(app: Express): void {
   // 23. Quality Management (QM) Module (M8)
@@ -385,97 +390,63 @@ export function registerQualityRoutes(app: Express): void {
       } satisfies StandardErrorResponse);
     }
 
-    // Look up COA accounts: 511003 (Manufacturing Scrap & Variance) and 113002/113001 (Raw Materials / Inventory)
-    const accRes = await db.query(
-      `SELECT id, code FROM accounts WHERE organization_id = $1 AND code IN ('511003', '113002', '113001')`,
-      [req.session!.organization_id]
-    );
-    const map = new Map<string, string>(accRes.rows.map((r) => [r.code, r.id]));
-    const scrapAcc = map.get('511003');
-    const invAcc = map.get('113002') || map.get('113001');
-
-    if (!scrapAcc || !invAcc) {
-      return res.status(422).json({
-        success: false,
-        error: { code: ErrorCode.VALIDATION_FAILED, message: 'Required COA accounts (511003/113002) not found', correlation_id: req.correlationId },
-      } satisfies StandardErrorResponse);
-    }
-
-    const today = new Date().toISOString().slice(0, 10);
-    const scrapJournalDraft = QualityEngine.generateScrapWriteOffJournal({
-      organization_id: req.session!.organization_id,
-      legal_entity_id: req.session!.legal_entity_id,
-      period_id: '',
-      posting_date: today,
-      ncr_number: ncr.ncr_number,
-      item_code: ncr.item_code,
-      item_name: ncr.item_name,
-      quantity: ncr.quantity,
-      unit_cost: ncr.unit_cost && !new Money(ncr.unit_cost).isZero() ? ncr.unit_cost : '100.00000000',
-      scrap_expense_account_id: scrapAcc,
-      inventory_account_id: invAcc,
-    });
-
-    const journalId = crypto.randomUUID();
-
-    await db.transaction(async (tx) => {
-      let totalDebit = Money.zero();
-      let totalCredit = Money.zero();
-      for (const l of scrapJournalDraft.lines) {
-        totalDebit = totalDebit.add(new Money(l.base_debit));
-        totalCredit = totalCredit.add(new Money(l.base_credit));
+    const scrapDate = dateOnly(req.body?.scrap_date, 'scrap_date', { defaultValue: todayIso() });
+    const journalId = await db.transaction(async (tx) => {
+      // Atomic state change: a second concurrent scrap of the same NCR is rejected.
+      const locked = (await tx.query(`SELECT * FROM quality_non_conformance_reports WHERE id = $1 AND organization_id = $2 FOR UPDATE`, [id, req.session!.organization_id])).rows[0];
+      if (locked.status === 'CLOSED') throw new ApiError(409, ErrorCode.NCR_ALREADY_CLOSED, 'NCR is already closed');
+      const item = (await lockItems(tx, req.session!.organization_id, [ncr.item_id])).get(ncr.item_id);
+      // Previously a fabricated 100.00 unit cost was used when the item had none, and the
+      // credit always hit Raw Materials regardless of the item's inventory account.
+      const unitCost = new Money(item.unit_cost || '0');
+      const invAcc = item.inventory_account_id || (await accountByCode(tx, req.session!.organization_id, '113001'));
+      const scrapAcc = await accountByCode(tx, req.session!.organization_id, '511003');
+      // QM lots are not yet linked to a goods receipt, so stock is only reduced when the
+      // quantity is actually on hand; otherwise the write-off is flagged as a
+      // stock/GL reconciliation exception (surfaced by the automation reconciliation job).
+      let stockAdjusted = false;
+      if (item.item_type === 'INVENTORY' && !new Money(await onHand(tx, req.session!.organization_id, ncr.item_id, null)).lt(ncr.quantity)) {
+        stockAdjusted = true;
+        await postStockMovement(tx, {
+          organizationId: req.session!.organization_id,
+          legalEntityId: req.session!.legal_entity_id,
+          itemId: ncr.item_id,
+          warehouseId: null,
+          movementType: 'ADJUSTMENT',
+          movementDate: scrapDate,
+          quantity: new Money(ncr.quantity).negated().toFixed(8),
+          unitCost: unitCost.toFixed(8),
+          referenceType: 'QUALITY_NCR',
+          referenceId: id,
+          description: `Scrap write-off ${ncr.ncr_number}`,
+        });
       }
-
-      // Insert journal
+      const value = unitCost.mul(ncr.quantity).round(2);
+      const posted = value.isPositive()
+        ? await postJournal(tx, auditLogger, outboxService, {
+            organizationId: req.session!.organization_id,
+            legalEntityId: req.session!.legal_entity_id,
+            userId: req.session!.user_id,
+            postingDate: scrapDate,
+            purpose: AccountingPurpose.QUALITY_SCRAP_WRITEOFF,
+            description: `Quality scrap write-off ${ncr.ncr_number} (${ncr.item_code})`,
+            sourceType: 'QUALITY_NCR',
+            sourceId: id,
+            sourceKey: `NCR_SCRAP:${id}`,
+            numberPrefix: 'JV-QSC',
+            correlationId: req.correlationId,
+            lines: [
+              { account_id: scrapAcc, debit: value.toFixed(8), description: `Scrap expense ${ncr.ncr_number}` },
+              { account_id: invAcc, credit: value.toFixed(8), description: `Inventory write-off ${ncr.item_code}` },
+            ],
+          })
+        : null;
       await tx.query(
-        `INSERT INTO journals (
-          id, organization_id, legal_entity_id, journal_number, posting_date, document_date,
-          accounting_purpose, status, base_currency, total_base_debit, total_base_credit,
-          description, source_type, source_id, created_by, posted_by, posted_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'POSTED', 'PKR', $8, $9, $10, 'QUALITY_NCR', $11, $12, $12, CURRENT_TIMESTAMP)`,
-        [
-          journalId,
-          req.session!.organization_id,
-          req.session!.legal_entity_id,
-          scrapJournalDraft.journal_number,
-          today,
-          today,
-          scrapJournalDraft.accounting_purpose,
-          totalDebit.format(),
-          totalCredit.format(),
-          scrapJournalDraft.description,
-          id,
-          req.session!.user_id,
-        ]
+        `UPDATE quality_non_conformance_reports SET status = 'CLOSED', disposition = 'SCRAP', scrap_journal_id = $1, updated_at = NOW() WHERE id = $2`,
+        [posted?.journalId ?? null, id],
       );
-
-      // Insert journal lines
-      for (const line of scrapJournalDraft.lines) {
-        await tx.query(
-          `INSERT INTO journal_lines (
-            id, journal_id, line_number, account_id, debit_amount, credit_amount, currency, fx_rate, base_debit, base_credit, description
-          ) VALUES ($1, $2, $3, $4, $5, $6, 'PKR', '1.000000000000', $7, $8, $9)`,
-          [
-            crypto.randomUUID(),
-            journalId,
-            line.line_number,
-            line.account_id,
-            line.debit_amount,
-            line.credit_amount,
-            line.base_debit,
-            line.base_credit,
-            line.description,
-          ]
-        );
-      }
-
-      // Update NCR status
-      await tx.query(
-        `UPDATE quality_non_conformance_reports 
-         SET status = 'CLOSED', disposition = 'SCRAP', scrap_journal_id = $1, updated_at = NOW() 
-         WHERE id = $2`,
-        [journalId, id]
-      );
+      await auditLogger.record({ organization_id: req.session!.organization_id, user_id: req.session!.user_id, action: 'NCR_SCRAPPED', entity_type: 'QUALITY_NCR', entity_id: id, after_state: { quantity: ncr.quantity, value: value.format(), stock_adjusted: stockAdjusted, reconciliation_exception: !stockAdjusted && item.item_type === 'INVENTORY' }, correlation_id: req.correlationId }, tx);
+      return posted?.journalId ?? null;
     });
 
     return res.json({
