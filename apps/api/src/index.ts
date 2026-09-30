@@ -18,6 +18,7 @@ import {
   JournalReversalEngine,
   BankReconciliationEngine,
   FxEngine,
+  PayrollEngine,
 } from '@omnysync/financial-engine';
 import {
   ErrorCode,
@@ -2777,7 +2778,766 @@ app.post('/api/onboarding/provision', authenticate, requirePermission(Permission
 });
 
 // ==========================================
-// 17. Admin & Seed Execution
+// 17. Workforce & Human Resources (M4)
+// ==========================================
+app.get('/api/hrm/departments', authenticate, async (req: Request, res: Response) => {
+  const result = await db.query(
+    `SELECT * FROM departments WHERE legal_entity_id = $1 ORDER BY code ASC`,
+    [req.session!.legal_entity_id],
+  );
+  return res.json({
+    success: true,
+    data: result.rows,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString(), total_count: result.rows.length },
+  } satisfies StandardSuccessResponse<any[]>);
+});
+
+app.post('/api/hrm/departments', authenticate, requirePermission(Permission.HRM_MANAGE), async (req: Request, res: Response) => {
+  const { code, name, cost_center_code } = req.body;
+  if (!code || !name) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'Department code and name are required', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const deptId = crypto.randomUUID();
+  await db.query(
+    `INSERT INTO departments (id, organization_id, legal_entity_id, code, name, cost_center_code, is_active)
+     VALUES ($1, $2, $3, $4, $5, $6, true)`,
+    [deptId, req.session!.organization_id, req.session!.legal_entity_id, code, name, cost_center_code || null],
+  );
+
+  const dept = (await db.query(`SELECT * FROM departments WHERE id = $1`, [deptId])).rows[0];
+  return res.status(201).json({
+    success: true,
+    data: dept,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.get('/api/hrm/designations', authenticate, async (req: Request, res: Response) => {
+  const result = await db.query(
+    `SELECT d.*, dept.name as department_name 
+     FROM designations d 
+     LEFT JOIN departments dept ON dept.id = d.department_id 
+     WHERE d.legal_entity_id = $1 ORDER BY d.code ASC`,
+    [req.session!.legal_entity_id],
+  );
+  return res.json({
+    success: true,
+    data: result.rows,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString(), total_count: result.rows.length },
+  } satisfies StandardSuccessResponse<any[]>);
+});
+
+app.post('/api/hrm/designations', authenticate, requirePermission(Permission.HRM_MANAGE), async (req: Request, res: Response) => {
+  const { code, title, department_id } = req.body;
+  if (!code || !title) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'Designation code and title are required', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const desigId = crypto.randomUUID();
+  await db.query(
+    `INSERT INTO designations (id, organization_id, legal_entity_id, code, title, department_id, is_active)
+     VALUES ($1, $2, $3, $4, $5, $6, true)`,
+    [desigId, req.session!.organization_id, req.session!.legal_entity_id, code, title, department_id || null],
+  );
+
+  const desig = (await db.query(`SELECT * FROM designations WHERE id = $1`, [desigId])).rows[0];
+  return res.status(201).json({
+    success: true,
+    data: desig,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.get('/api/hrm/salary-structures', authenticate, async (req: Request, res: Response) => {
+  const result = await db.query(
+    `SELECT * FROM salary_structures WHERE legal_entity_id = $1 ORDER BY name ASC`,
+    [req.session!.legal_entity_id],
+  );
+  return res.json({
+    success: true,
+    data: result.rows,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString(), total_count: result.rows.length },
+  } satisfies StandardSuccessResponse<any[]>);
+});
+
+app.post('/api/hrm/salary-structures', authenticate, requirePermission(Permission.HRM_MANAGE), async (req: Request, res: Response) => {
+  const { name, currency, basic_salary, house_rent_allowance, utility_allowance, medical_allowance, other_allowances } = req.body;
+  if (!name || !basic_salary) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'Name and basic salary are required', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const { gross } = PayrollEngine.computeGross({
+    basic_salary,
+    house_rent_allowance,
+    utility_allowance,
+    medical_allowance,
+    other_allowances,
+  });
+
+  const structId = crypto.randomUUID();
+  await db.query(
+    `INSERT INTO salary_structures (
+      id, organization_id, legal_entity_id, name, currency,
+      basic_salary, house_rent_allowance, utility_allowance, medical_allowance, other_allowances, gross_salary, is_active
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true)`,
+    [
+      structId,
+      req.session!.organization_id,
+      req.session!.legal_entity_id,
+      name,
+      currency || 'PKR',
+      new Money(basic_salary).format(),
+      new Money(house_rent_allowance || '0').format(),
+      new Money(utility_allowance || '0').format(),
+      new Money(medical_allowance || '0').format(),
+      new Money(other_allowances || '0').format(),
+      gross.format(),
+    ],
+  );
+
+  const struct = (await db.query(`SELECT * FROM salary_structures WHERE id = $1`, [structId])).rows[0];
+  return res.status(201).json({
+    success: true,
+    data: struct,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.get('/api/hrm/employees', authenticate, async (req: Request, res: Response) => {
+  const result = await db.query(
+    `SELECT e.*, 
+            dept.name as department_name, 
+            desig.title as designation_title,
+            ss.id as salary_structure_id,
+            ss.name as salary_structure_name,
+            ss.basic_salary,
+            ss.gross_salary
+     FROM employees e
+     LEFT JOIN departments dept ON dept.id = e.department_id
+     LEFT JOIN designations desig ON desig.id = e.designation_id
+     LEFT JOIN employee_salary_assignments esa ON esa.employee_id = e.id AND esa.is_current = true
+     LEFT JOIN salary_structures ss ON ss.id = esa.salary_structure_id
+     WHERE e.legal_entity_id = $1
+     ORDER BY e.employee_number ASC`,
+    [req.session!.legal_entity_id],
+  );
+
+  const formatted = result.rows.map((r) => ({
+    id: r.id,
+    organization_id: r.organization_id,
+    legal_entity_id: r.legal_entity_id,
+    employee_number: r.employee_number,
+    first_name: r.first_name,
+    last_name: r.last_name,
+    email: r.email,
+    phone: r.phone,
+    national_id: r.national_id,
+    department_id: r.department_id,
+    department_name: r.department_name,
+    designation_id: r.designation_id,
+    designation_title: r.designation_title,
+    employment_type: r.employment_type,
+    joining_date: r.joining_date,
+    status: r.status,
+    bank_name: r.bank_name,
+    bank_account_number: r.bank_account_number,
+    salary_structure: r.salary_structure_id ? {
+      id: r.salary_structure_id,
+      name: r.salary_structure_name,
+      basic_salary: r.basic_salary,
+      gross_salary: r.gross_salary,
+    } : null,
+    created_at: r.created_at,
+    updated_at: r.updated_at,
+  }));
+
+  return res.json({
+    success: true,
+    data: formatted,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString(), total_count: formatted.length },
+  } satisfies StandardSuccessResponse<any[]>);
+});
+
+app.post('/api/hrm/employees', authenticate, requirePermission(Permission.HRM_MANAGE), async (req: Request, res: Response) => {
+  const {
+    employee_number,
+    first_name,
+    last_name,
+    email,
+    phone,
+    national_id,
+    department_id,
+    designation_id,
+    employment_type,
+    joining_date,
+    salary_structure_id,
+    bank_name,
+    bank_account_number,
+  } = req.body;
+
+  if (!employee_number || !first_name || !last_name || !joining_date) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'Employee number, name, and joining date are required', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const empId = crypto.randomUUID();
+  await db.query(
+    `INSERT INTO employees (
+      id, organization_id, legal_entity_id, employee_number, first_name, last_name,
+      email, phone, national_id, department_id, designation_id, employment_type, joining_date,
+      status, bank_name, bank_account_number
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'ACTIVE', $14, $15)`,
+    [
+      empId,
+      req.session!.organization_id,
+      req.session!.legal_entity_id,
+      employee_number,
+      first_name,
+      last_name,
+      email || null,
+      phone || null,
+      national_id || null,
+      department_id || null,
+      designation_id || null,
+      employment_type || 'FULL_TIME',
+      joining_date,
+      bank_name || null,
+      bank_account_number || null,
+    ],
+  );
+
+  if (salary_structure_id) {
+    await db.query(
+      `INSERT INTO employee_salary_assignments (id, employee_id, salary_structure_id, effective_from, is_current)
+       VALUES ($1, $2, $3, $4, true)`,
+      [crypto.randomUUID(), empId, salary_structure_id, joining_date],
+    );
+  }
+
+  const emp = (await db.query(`SELECT * FROM employees WHERE id = $1`, [empId])).rows[0];
+  return res.status(201).json({
+    success: true,
+    data: emp,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+// ==========================================
+// 18. Payroll Calculation & Runs (M4)
+// ==========================================
+app.post('/api/hrm/payroll/calculate', authenticate, requirePermission(Permission.PAYROLL_MANAGE), async (req: Request, res: Response) => {
+  const { period_id, month_year } = req.body;
+  if (!period_id || !month_year) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'period_id and month_year are required', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  // Fetch all active employees with their current salary structures
+  const employeesRes = await db.query(
+    `SELECT e.id as employee_id, e.employee_number, e.first_name, e.last_name,
+            ss.basic_salary, ss.house_rent_allowance, ss.utility_allowance, ss.medical_allowance, ss.other_allowances
+     FROM employees e
+     JOIN employee_salary_assignments esa ON esa.employee_id = e.id AND esa.is_current = true
+     JOIN salary_structures ss ON ss.id = esa.salary_structure_id
+     WHERE e.legal_entity_id = $1 AND e.status = 'ACTIVE'`,
+    [req.session!.legal_entity_id],
+  );
+
+  if (employeesRes.rows.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'No active employees with assigned salary structures found', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const calculatedItems = employeesRes.rows.map((emp) => {
+    const calc = PayrollEngine.computeEmployeePayroll(emp.employee_id, {
+      basic_salary: emp.basic_salary,
+      house_rent_allowance: emp.house_rent_allowance,
+      utility_allowance: emp.utility_allowance,
+      medical_allowance: emp.medical_allowance,
+      other_allowances: emp.other_allowances,
+    });
+    return {
+      ...calc,
+      employee_number: emp.employee_number,
+      employee_name: `${emp.first_name} ${emp.last_name}`,
+      payment_status: 'PENDING',
+    };
+  });
+
+  const totals = PayrollEngine.aggregatePayrollRun(calculatedItems);
+
+  return res.json({
+    success: true,
+    data: {
+      period_id,
+      month_year,
+      totals,
+      items: calculatedItems,
+    },
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.get('/api/hrm/payroll-runs', authenticate, async (req: Request, res: Response) => {
+  const runsRes = await db.query(
+    `SELECT pr.*, fp.name as period_name
+     FROM payroll_runs pr
+     LEFT JOIN fiscal_periods fp ON fp.id = pr.period_id
+     WHERE pr.legal_entity_id = $1
+     ORDER BY pr.created_at DESC`,
+    [req.session!.legal_entity_id],
+  );
+
+  const runsWithItems = await Promise.all(
+    runsRes.rows.map(async (run) => {
+      const itemsRes = await db.query(
+        `SELECT pri.*, e.employee_number, e.first_name, e.last_name
+         FROM payroll_run_items pri
+         JOIN employees e ON e.id = pri.employee_id
+         WHERE pri.payroll_run_id = $1
+         ORDER BY e.employee_number ASC`,
+        [run.id],
+      );
+      return {
+        ...run,
+        items: itemsRes.rows.map((it) => ({
+          ...it,
+          employee_name: `${it.first_name} ${it.last_name}`,
+        })),
+      };
+    }),
+  );
+
+  return res.json({
+    success: true,
+    data: runsWithItems,
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString(), total_count: runsWithItems.length },
+  } satisfies StandardSuccessResponse<any[]>);
+});
+
+app.post('/api/hrm/payroll-runs', authenticate, requirePermission(Permission.PAYROLL_MANAGE), async (req: Request, res: Response) => {
+  const { period_id, month_year, run_number } = req.body;
+  if (!period_id || !month_year || !run_number) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'period_id, month_year, and run_number are required', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  // Fetch employees
+  const employeesRes = await db.query(
+    `SELECT e.id as employee_id, e.employee_number, e.first_name, e.last_name,
+            ss.basic_salary, ss.house_rent_allowance, ss.utility_allowance, ss.medical_allowance, ss.other_allowances
+     FROM employees e
+     JOIN employee_salary_assignments esa ON esa.employee_id = e.id AND esa.is_current = true
+     JOIN salary_structures ss ON ss.id = esa.salary_structure_id
+     WHERE e.legal_entity_id = $1 AND e.status = 'ACTIVE'`,
+    [req.session!.legal_entity_id],
+  );
+
+  if (employeesRes.rows.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'No active employees with assigned salary structures', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const calculatedItems = employeesRes.rows.map((emp) => {
+    return PayrollEngine.computeEmployeePayroll(emp.employee_id, {
+      basic_salary: emp.basic_salary,
+      house_rent_allowance: emp.house_rent_allowance,
+      utility_allowance: emp.utility_allowance,
+      medical_allowance: emp.medical_allowance,
+      other_allowances: emp.other_allowances,
+    });
+  });
+
+  const totals = PayrollEngine.aggregatePayrollRun(calculatedItems);
+  const runId = crypto.randomUUID();
+
+  await db.query(
+    `INSERT INTO payroll_runs (
+      id, organization_id, legal_entity_id, period_id, run_number, month_year,
+      total_gross, total_tax, total_eobi, total_provident_fund, total_other_deductions,
+      total_deductions, total_net, status, created_by
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'DRAFT', $14)`,
+    [
+      runId,
+      req.session!.organization_id,
+      req.session!.legal_entity_id,
+      period_id,
+      run_number,
+      month_year,
+      totals.total_gross,
+      totals.total_tax,
+      totals.total_eobi,
+      totals.total_provident_fund,
+      totals.total_other_deductions,
+      totals.total_deductions,
+      totals.total_net,
+      req.session!.user_id,
+    ],
+  );
+
+  for (const item of calculatedItems) {
+    await db.query(
+      `INSERT INTO payroll_run_items (
+        id, payroll_run_id, employee_id, basic_salary, allowances_total, gross_salary,
+        tax_deduction, eobi_deduction, provident_fund_deduction, other_deductions,
+        total_deductions, net_salary, payment_status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'PENDING')`,
+      [
+        crypto.randomUUID(),
+        runId,
+        item.employee_id,
+        item.basic_salary,
+        item.allowances_total,
+        item.gross_salary,
+        item.tax_deduction,
+        item.eobi_deduction,
+        item.provident_fund_deduction,
+        item.other_deductions,
+        item.total_deductions,
+        item.net_salary,
+      ],
+    );
+  }
+
+  const run = (await db.query(`SELECT * FROM payroll_runs WHERE id = $1`, [runId])).rows[0];
+  return res.status(201).json({
+    success: true,
+    data: { ...run, totals, items: calculatedItems },
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/hrm/payroll-runs/:id/approve', authenticate, requirePermission(Permission.PAYROLL_APPROVE), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const runRes = await db.query(
+    `SELECT * FROM payroll_runs WHERE id = $1 AND legal_entity_id = $2`,
+    [id, req.session!.legal_entity_id],
+  );
+
+  if (runRes.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: ErrorCode.RESOURCE_NOT_FOUND, message: 'Payroll run not found', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const run = runRes.rows[0];
+  if (run.status !== 'DRAFT') {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: `Only DRAFT payroll runs can be approved (current: ${run.status})`, correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  await db.query(`UPDATE payroll_runs SET status = 'APPROVED', updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [id]);
+
+  return res.json({
+    success: true,
+    data: { id, status: 'APPROVED' },
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/hrm/payroll-runs/:id/post', authenticate, requirePermission(Permission.PAYROLL_POST), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const runRes = await db.query(
+    `SELECT * FROM payroll_runs WHERE id = $1 AND legal_entity_id = $2`,
+    [id, req.session!.legal_entity_id],
+  );
+
+  if (runRes.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: ErrorCode.RESOURCE_NOT_FOUND, message: 'Payroll run not found', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const run = runRes.rows[0];
+  if (run.status !== 'APPROVED') {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: `Only APPROVED payroll runs can be posted (current: ${run.status})`, correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  // Verify Fiscal Period is OPEN
+  const periodRes = await db.query(`SELECT * FROM fiscal_periods WHERE id = $1`, [run.period_id]);
+  const period = periodRes.rows[0];
+  if (!period || period.status !== PeriodStatus.OPEN) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.PERIOD_CLOSED, message: `Fiscal period is closed or invalid for posting`, correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  // Lookup GL Accounts
+  const accountsRes = await db.query(
+    `SELECT id, code, name FROM accounts WHERE legal_entity_id = $1 AND code IN ('521002', '212002', '212003', '212004', '211004')`,
+    [req.session!.legal_entity_id],
+  );
+  const accountMap = new Map(accountsRes.rows.map((a) => [a.code, a.id]));
+
+  const salExpId = accountMap.get('521002');
+  const taxPayId = accountMap.get('212002');
+  const eobiPayId = accountMap.get('212003');
+  const pfPayId = accountMap.get('212004');
+  const salPayId = accountMap.get('211004');
+
+  if (!salExpId || !taxPayId || !eobiPayId || !salPayId) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'Required payroll GL accounts (521002, 212002, 212003, 211004) are missing in COA', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const journalLines = PayrollEngine.generatePayrollJournalLines({
+    totals: {
+      total_gross: run.total_gross,
+      total_tax: run.total_tax,
+      total_eobi: run.total_eobi,
+      total_provident_fund: run.total_provident_fund,
+      total_other_deductions: run.total_other_deductions,
+      total_deductions: run.total_deductions,
+      total_net: run.total_net,
+    },
+    salariesExpenseAccountId: salExpId,
+    taxPayableAccountId: taxPayId,
+    eobiPayableAccountId: eobiPayId,
+    providentFundPayableAccountId: pfPayId,
+    salariesPayableAccountId: salPayId,
+  });
+
+  const journalId = crypto.randomUUID();
+  const journalNumber = `PAY-JRN-${run.run_number}`;
+
+  // Insert Journal and Lines
+  const todayStr = new Date().toISOString().slice(0, 10);
+  await db.query(
+    `INSERT INTO journals (
+      id, organization_id, legal_entity_id, journal_number, posting_date, document_date,
+      status, accounting_purpose, total_base_debit, total_base_credit, description,
+      source_type, source_id, created_by, posted_by, posted_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP)`,
+    [
+      journalId,
+      req.session!.organization_id,
+      req.session!.legal_entity_id,
+      journalNumber,
+      todayStr,
+      todayStr,
+      JournalStatus.POSTED,
+      AccountingPurpose.PAYROLL_RUN,
+      run.total_gross,
+      run.total_gross,
+      `Payroll expense and liabilities accrual for ${run.month_year} (${run.run_number})`,
+      'PAYROLL_RUN',
+      run.id,
+      req.session!.user_id,
+      req.session!.user_id,
+    ],
+  );
+
+  for (const line of journalLines) {
+    await db.query(
+      `INSERT INTO journal_lines (
+        id, journal_id, line_number, account_id, debit_amount, credit_amount,
+        currency, fx_rate, base_debit, base_credit, description
+      ) VALUES ($1, $2, $3, $4, $5, $6, 'PKR', 1.0, $7, $8, $9)`,
+      [
+        crypto.randomUUID(),
+        journalId,
+        line.line_number,
+        line.account_id,
+        line.debit_amount,
+        line.credit_amount,
+        line.base_debit,
+        line.base_credit,
+        line.description,
+      ],
+    );
+  }
+
+  // Update Payroll Run
+  await db.query(
+    `UPDATE payroll_runs SET status = 'POSTED', posted_journal_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+    [journalId, id],
+  );
+
+  await auditLogger.log({
+    organizationId: req.session!.organization_id,
+    userId: req.session!.user_id,
+    action: 'POST_PAYROLL_RUN',
+    entityType: 'PAYROLL_RUN',
+    entityId: id,
+    afterState: { id, journal_id: journalId, totals: run.total_gross },
+    correlationId: req.correlationId,
+  });
+
+  return res.json({
+    success: true,
+    data: { id, status: 'POSTED', posted_journal_id: journalId },
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+app.post('/api/hrm/payroll-runs/:id/disburse', authenticate, requirePermission(Permission.PAYROLL_DISBURSE), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { bank_account_id } = req.body;
+
+  const runRes = await db.query(
+    `SELECT * FROM payroll_runs WHERE id = $1 AND legal_entity_id = $2`,
+    [id, req.session!.legal_entity_id],
+  );
+
+  if (runRes.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: ErrorCode.RESOURCE_NOT_FOUND, message: 'Payroll run not found', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  const run = runRes.rows[0];
+  if (run.status !== 'POSTED') {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: `Only POSTED payroll runs can be disbursed (current: ${run.status})`, correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+
+  // Lookup Accounts
+  const salPayRes = await db.query(
+    `SELECT id FROM accounts WHERE legal_entity_id = $1 AND code = '211004'`,
+    [req.session!.legal_entity_id],
+  );
+  if (salPayRes.rows.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: { code: ErrorCode.VALIDATION_FAILED, message: 'Salaries Payable account 211004 not found', correlation_id: req.correlationId },
+    } satisfies StandardErrorResponse);
+  }
+  const salPayId = salPayRes.rows[0].id;
+
+  let targetBankId = bank_account_id;
+  if (!targetBankId) {
+    const bankRes = await db.query(
+      `SELECT id FROM accounts WHERE legal_entity_id = $1 AND code = '111002'`,
+      [req.session!.legal_entity_id],
+    );
+    if (bankRes.rows.length > 0) {
+      targetBankId = bankRes.rows[0].id;
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: { code: ErrorCode.VALIDATION_FAILED, message: 'Bank account not found for disbursement', correlation_id: req.correlationId },
+      } satisfies StandardErrorResponse);
+    }
+  }
+
+  const disbLines = PayrollEngine.generateDisbursementJournalLines({
+    totalNet: run.total_net,
+    salariesPayableAccountId: salPayId,
+    bankAccountId: targetBankId,
+  });
+
+  const journalId = crypto.randomUUID();
+  const journalNumber = `PAY-DISB-${run.run_number}`;
+
+  // Insert Journal and Lines
+  const todayStr = new Date().toISOString().slice(0, 10);
+  await db.query(
+    `INSERT INTO journals (
+      id, organization_id, legal_entity_id, journal_number, posting_date, document_date,
+      status, accounting_purpose, total_base_debit, total_base_credit, description,
+      source_type, source_id, created_by, posted_by, posted_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP)`,
+    [
+      journalId,
+      req.session!.organization_id,
+      req.session!.legal_entity_id,
+      journalNumber,
+      todayStr,
+      todayStr,
+      JournalStatus.POSTED,
+      AccountingPurpose.PAYROLL_DISBURSEMENT,
+      run.total_net,
+      run.total_net,
+      `Bank disbursement of net salaries for ${run.month_year} (${run.run_number})`,
+      'PAYROLL_RUN',
+      run.id,
+      req.session!.user_id,
+      req.session!.user_id,
+    ],
+  );
+
+  for (const line of disbLines) {
+    await db.query(
+      `INSERT INTO journal_lines (
+        id, journal_id, line_number, account_id, debit_amount, credit_amount,
+        currency, fx_rate, base_debit, base_credit, description
+      ) VALUES ($1, $2, $3, $4, $5, $6, 'PKR', 1.0, $7, $8, $9)`,
+      [
+        crypto.randomUUID(),
+        journalId,
+        line.line_number,
+        line.account_id,
+        line.debit_amount,
+        line.credit_amount,
+        line.base_debit,
+        line.base_credit,
+        line.description,
+      ],
+    );
+  }
+
+  // Update Payroll Run and Items
+  await db.query(
+    `UPDATE payroll_runs SET status = 'DISBURSED', disbursement_journal_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+    [journalId, id],
+  );
+  await db.query(
+    `UPDATE payroll_run_items SET payment_status = 'PAID' WHERE payroll_run_id = $1`,
+    [id],
+  );
+
+  await auditLogger.log({
+    organizationId: req.session!.organization_id,
+    userId: req.session!.user_id,
+    action: 'DISBURSE_PAYROLL_RUN',
+    entityType: 'PAYROLL_RUN',
+    entityId: id,
+    afterState: { id, disbursement_journal_id: journalId, total_disbursed: run.total_net },
+    correlationId: req.correlationId,
+  });
+
+  return res.json({
+    success: true,
+    data: { id, status: 'DISBURSED', disbursement_journal_id: journalId },
+    meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
+  } satisfies StandardSuccessResponse<any>);
+});
+
+// ==========================================
+// 19. Admin & Seed Execution
 // ==========================================
 app.post('/api/admin/seed', async (req: Request, res: Response) => {
   const seeder = new SyntheticSeedRunner(db);

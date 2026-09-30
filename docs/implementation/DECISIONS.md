@@ -21,3 +21,21 @@
 - **Consequences**:
   - Eliminates structural accounting errors and accidental postings to classification headings.
 - **Revisit Trigger**: Client localization packs that require arbitrary n-level account hierarchies.
+
+## ADR-003: Treasury Two-Way Bank Matching & FX Revaluation
+- **Context**: Accurate cash positions require reconciling bank statement lines with ERP payments and handling daily exchange rate volatility without introducing unapproved balance modifications.
+- **Decision**:
+  1. Electronic bank statement ingestion creates distinct statement lines matched to system payment records.
+  2. Direct bank fees automatically generate and post balanced journal vouchers during reconciliation.
+  3. Revaluation computes unrealized FX gains/losses across open foreign-currency monetary balances at period-end, posting to designated P&L accounts.
+- **Consequences**:
+  - Full auditability of cash position reconciliation with zero manual ledger overrides.
+
+## ADR-004: Workforce Salary Structures & Gross-to-Net Engine
+- **Context**: Statutory compliance and corporate payroll require transparent gross-to-net salary computation, progressive income tax withholding, pension contributions (EOBI), and multi-tier GL expense allocation.
+- **Decision**:
+  1. Salary structures are decoupled into modular allowances (Basic, HRA, Utility, Medical) and assigned to employees with effective dates.
+  2. Progressive tax slabs calculate withholding tax dynamically with exact decimal precision.
+  3. Batch payroll execution generates balanced dual-stage vouchers: first accrual (`Dr Salaries Expense / Cr Tax Withholding / Cr EOBI / Cr Net Salaries Payable`), followed by bank disbursement (`Dr Net Salaries Payable / Cr Operating Bank`).
+- **Consequences**:
+  - Zero rounding discrepancies in employee payslips and GL balance sheets.

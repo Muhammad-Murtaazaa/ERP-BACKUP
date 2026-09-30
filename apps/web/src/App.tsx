@@ -16,6 +16,8 @@ import { PaymentsView } from './views/PaymentsView.js';
 import { BankReconciliationView } from './views/BankReconciliationView.js';
 import { FxRatesView } from './views/FxRatesView.js';
 import { OnboardingWizardView } from './views/OnboardingWizardView.js';
+import { EmployeesView } from './views/EmployeesView.js';
+import { PayrollView } from './views/PayrollView.js';
 import { Badge } from '@omnysync/ui';
 import {
   LayoutDashboard,
@@ -36,6 +38,7 @@ import {
   Landmark,
   ArrowRightLeft,
   Sparkles,
+  Wallet,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -97,6 +100,13 @@ export const App: React.FC = () => {
       items: [
         { id: 'procurement', label: 'Purchase Orders', icon: Truck },
         { id: 'ap-invoices', label: 'AP Supplier Bills', icon: FileCheck },
+      ],
+    },
+    {
+      title: 'Workforce & Payroll',
+      items: [
+        { id: 'employees', label: 'Workforce & HRM', icon: Users },
+        { id: 'payroll', label: 'Payroll & Disbursals', icon: Wallet },
       ],
     },
     {
@@ -240,6 +250,8 @@ export const App: React.FC = () => {
               {currentTab === 'ar-invoices' && <ArInvoicesView />}
               {currentTab === 'procurement' && <ProcurementOrdersView />}
               {currentTab === 'ap-invoices' && <ApInvoicesView />}
+              {currentTab === 'employees' && <EmployeesView />}
+              {currentTab === 'payroll' && <PayrollView />}
               {currentTab === 'payments' && <PaymentsView />}
               {currentTab === 'treasury-reconciliation' && <BankReconciliationView />}
               {currentTab === 'fx-rates' && <FxRatesView />}

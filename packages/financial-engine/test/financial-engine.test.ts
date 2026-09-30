@@ -11,6 +11,7 @@ import {
   JournalReversalEngine,
   BankReconciliationEngine,
   FxEngine,
+  PayrollEngine,
 } from '../src/index.js';
 import {
   Account,
@@ -575,4 +576,77 @@ describe('Financial Engine: Multi-Currency & FX Calculations', () => {
     expect(res.gainLossAmount).toBe('35000.00');
   });
 });
+
+describe('Financial Engine: Workforce & Payroll Calculations', () => {
+  it('computes gross salary and progressive monthly tax accurately', () => {
+    // Basic: 100,000, House Rent: 40,000, Utility: 10,000 => Monthly Gross = 150,000
+    // Annual Gross = 1,800,000
+    // Tax Slab (1.2M - 2.4M): 30,000 + (1,800,000 - 1,200,000)*0.15 = 30,000 + 90,000 = 120,000
+    // Monthly Tax = 120,000 / 12 = 10,000
+    const calc = PayrollEngine.computeEmployeePayroll('emp-1', {
+      basic_salary: '100000.00',
+      house_rent_allowance: '40000.00',
+      utility_allowance: '10000.00',
+    });
+
+    expect(calc.gross_salary).toBe('150000.00');
+    expect(calc.tax_deduction).toBe('10000.00');
+    expect(calc.eobi_deduction).toBe('300.00');
+    // Total deductions = 10,000 + 300 = 10,300
+    expect(calc.total_deductions).toBe('10300.00');
+    // Net salary = 150,000 - 10,300 = 139,700
+    expect(calc.net_salary).toBe('139700.00');
+  });
+
+  it('aggregates payroll run totals and enforces Gross = Deductions + Net invariant', () => {
+    const item1 = PayrollEngine.computeEmployeePayroll('emp-1', {
+      basic_salary: '100000.00',
+      house_rent_allowance: '50000.00',
+    });
+    const item2 = PayrollEngine.computeEmployeePayroll('emp-2', {
+      basic_salary: '50000.00',
+      house_rent_allowance: '20000.00',
+    });
+
+    const totals = PayrollEngine.aggregatePayrollRun([item1, item2]);
+    expect(totals.total_gross).toBe('220000.00');
+    expect(new Money(totals.total_deductions).add(new Money(totals.total_net)).format()).toBe(totals.total_gross);
+  });
+
+  it('generates strictly balanced General Ledger journal lines for payroll posting and disbursement', () => {
+    const item = PayrollEngine.computeEmployeePayroll('emp-1', {
+      basic_salary: '150000.00',
+      house_rent_allowance: '50000.00',
+    });
+    const totals = PayrollEngine.aggregatePayrollRun([item]);
+
+    const journalLines = PayrollEngine.generatePayrollJournalLines({
+      totals,
+      salariesExpenseAccountId: 'acc-sal-exp',
+      taxPayableAccountId: 'acc-tax-pay',
+      eobiPayableAccountId: 'acc-eobi-pay',
+      salariesPayableAccountId: 'acc-sal-pay',
+    });
+
+    // Check balancing
+    let totalDebit = Money.zero();
+    let totalCredit = Money.zero();
+    for (const l of journalLines) {
+      totalDebit = totalDebit.add(new Money(l.debit_amount));
+      totalCredit = totalCredit.add(new Money(l.credit_amount));
+    }
+    expect(totalDebit.format()).toBe(totalCredit.format());
+    expect(totalDebit.format()).toBe('200000.00');
+
+    // Test disbursement lines
+    const disbLines = PayrollEngine.generateDisbursementJournalLines({
+      totalNet: totals.total_net,
+      salariesPayableAccountId: 'acc-sal-pay',
+      bankAccountId: 'acc-bank',
+    });
+    expect(disbLines[0].debit_amount).toBe(totals.total_net);
+    expect(disbLines[1].credit_amount).toBe(totals.total_net);
+  });
+});
+
 

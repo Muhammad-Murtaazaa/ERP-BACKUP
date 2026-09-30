@@ -59,6 +59,10 @@ export const AccountingPurpose = {
   INVENTORY_ISSUE: 'INVENTORY_ISSUE',
   REVERSAL: 'REVERSAL',
   OPENING_BALANCE: 'OPENING_BALANCE',
+  BANK_CHARGE: 'BANK_CHARGE',
+  FX_REVALUATION: 'FX_REVALUATION',
+  PAYROLL_RUN: 'PAYROLL_RUN',
+  PAYROLL_DISBURSEMENT: 'PAYROLL_DISBURSEMENT',
 } as const;
 export type AccountingPurpose = (typeof AccountingPurpose)[keyof typeof AccountingPurpose];
 
@@ -462,6 +466,129 @@ export interface OnboardingProfile {
 }
 
 // ==========================================
+// Workforce, HRM & Payroll (M4)
+// ==========================================
+export interface Department {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string;
+  code: string;
+  name: string;
+  cost_center_code?: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface Designation {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string;
+  code: string;
+  title: string;
+  department_id?: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface Employee {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string;
+  employee_number: string;
+  first_name: string;
+  last_name: string;
+  email?: string | null;
+  phone?: string | null;
+  national_id?: string | null;
+  department_id?: string | null;
+  department_name?: string | null;
+  designation_id?: string | null;
+  designation_title?: string | null;
+  employment_type: 'FULL_TIME' | 'PART_TIME' | 'CONTRACT';
+  joining_date: string;
+  status: 'ACTIVE' | 'ON_LEAVE' | 'TERMINATED';
+  bank_name?: string | null;
+  bank_account_number?: string | null;
+  salary_structure?: SalaryStructure | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SalaryStructure {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string;
+  name: string;
+  currency: string;
+  basic_salary: string;
+  house_rent_allowance: string;
+  utility_allowance: string;
+  medical_allowance: string;
+  other_allowances: string;
+  gross_salary: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface EmployeeSalaryAssignment {
+  id: string;
+  employee_id: string;
+  salary_structure_id: string;
+  effective_from: string;
+  is_current: boolean;
+  created_at: string;
+}
+
+export const PayrollRunStatus = {
+  DRAFT: 'DRAFT',
+  APPROVED: 'APPROVED',
+  POSTED: 'POSTED',
+  DISBURSED: 'DISBURSED',
+} as const;
+export type PayrollRunStatus = (typeof PayrollRunStatus)[keyof typeof PayrollRunStatus];
+
+export interface PayrollRunItem {
+  id: string;
+  payroll_run_id: string;
+  employee_id: string;
+  employee_number?: string;
+  employee_name?: string;
+  basic_salary: string;
+  allowances_total: string;
+  gross_salary: string;
+  tax_deduction: string;
+  eobi_deduction: string;
+  provident_fund_deduction: string;
+  other_deductions: string;
+  total_deductions: string;
+  net_salary: string;
+  payment_status: 'PENDING' | 'PAID';
+}
+
+export interface PayrollRun {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string;
+  period_id: string;
+  run_number: string;
+  month_year: string;
+  total_gross: string;
+  total_tax: string;
+  total_eobi: string;
+  total_provident_fund: string;
+  total_other_deductions: string;
+  total_deductions: string;
+  total_net: string;
+  status: PayrollRunStatus;
+  posted_journal_id?: string | null;
+  disbursement_journal_id?: string | null;
+  created_by: string;
+  items?: PayrollRunItem[];
+  created_at: string;
+  updated_at: string;
+}
+
+// ==========================================
 // Organization, Legal Entity, User & Auth
 // ==========================================
 export const UserRole = {
@@ -470,6 +597,7 @@ export const UserRole = {
   ACCOUNTANT: 'ACCOUNTANT',
   SALES_OPERATOR: 'SALES_OPERATOR',
   INVENTORY_MANAGER: 'INVENTORY_MANAGER',
+  HR_MANAGER: 'HR_MANAGER',
   AUDITOR: 'AUDITOR',
   VIEWER: 'VIEWER',
 } as const;
@@ -502,6 +630,12 @@ export const Permission = {
   TREASURY_BANK_RECONCILE: 'treasury.bank.reconcile',
   TREASURY_FX_MANAGE: 'treasury.fx.manage',
   ONBOARDING_MANAGE: 'onboarding.manage',
+  // Workforce & Payroll (M4)
+  HRM_MANAGE: 'hrm.manage',
+  PAYROLL_MANAGE: 'payroll.manage',
+  PAYROLL_APPROVE: 'payroll.approve',
+  PAYROLL_POST: 'payroll.post',
+  PAYROLL_DISBURSE: 'payroll.disburse',
   // Audit
   AUDIT_VIEW: 'audit.view',
 } as const;

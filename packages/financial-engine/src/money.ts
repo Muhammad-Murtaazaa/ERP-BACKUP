@@ -60,9 +60,17 @@ export class Money {
     return new Money(this.val.minus(o));
   }
 
+  subtract(other: Money | string | number): Money {
+    return this.sub(other);
+  }
+
   mul(other: Money | string | number): Money {
     const o = other instanceof Money ? other.val : new Money(other).val;
     return new Money(this.val.times(o));
+  }
+
+  multiply(other: Money | string | number): Money {
+    return this.mul(other);
   }
 
   div(other: Money | string | number): Money {
@@ -134,6 +142,10 @@ export class Money {
    */
   toCurrencyDisplay(currencyScale: number = 2): string {
     return this.val.toFixed(currencyScale);
+  }
+
+  format(scale: number = 2): string {
+    return this.val.toFixed(scale);
   }
 
   toString(): string {

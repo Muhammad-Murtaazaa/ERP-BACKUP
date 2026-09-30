@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { app, db } from '../src/index.js';
 import { DbMigrator, SyntheticSeedRunner } from '@omnysync/platform';
+import { Money } from '@omnysync/financial-engine';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -524,5 +525,138 @@ describe('API Modular Monolith: Financial & Trading Workflows E2E Integration', 
     expect(provRes.body.data.industry_template).toBe('WHOLESALE_DISTRIBUTION');
     expect(provRes.body.data.is_completed).toBe(true);
   });
+
+  it('executes full Milestone 4 Workforce & Payroll lifecycle: Department -> Employee -> Salary Structure -> Calculate -> Approve -> Post GL -> Disburse', async () => {
+    // 1. Create Department
+    const deptRes = await makeRequest(
+      'POST',
+      '/api/hrm/departments',
+      { code: 'ENG', name: 'Software Engineering', cost_center_code: 'CC-ENG-01' },
+      adminToken,
+    );
+    expect(deptRes.status).toBe(201);
+    const deptId = deptRes.body.data.id;
+
+    // 2. Create Designation
+    const desigRes = await makeRequest(
+      'POST',
+      '/api/hrm/designations',
+      { code: 'SSE', title: 'Senior Software Engineer', department_id: deptId },
+      adminToken,
+    );
+    expect(desigRes.status).toBe(201);
+    const desigId = desigRes.body.data.id;
+
+    // 3. Create Salary Structure
+    // Basic: 200,000, HRA: 80,000, Util: 20,000 => Gross: 300,000 / mo (Annual: 3.6M)
+    const structRes = await makeRequest(
+      'POST',
+      '/api/hrm/salary-structures',
+      {
+        name: 'Senior Executive Grade 1',
+        currency: 'PKR',
+        basic_salary: '200000.00',
+        house_rent_allowance: '80000.00',
+        utility_allowance: '20000.00',
+        medical_allowance: '0.00',
+        other_allowances: '0.00',
+      },
+      adminToken,
+    );
+    expect(structRes.status).toBe(201);
+    expect(new Money(structRes.body.data.gross_salary).format()).toBe('300000.00');
+    const structId = structRes.body.data.id;
+
+    // 4. Onboard Employee
+    const empRes = await makeRequest(
+      'POST',
+      '/api/hrm/employees',
+      {
+        employee_number: 'EMP-001',
+        first_name: 'Bilal',
+        last_name: 'Ahmed',
+        email: 'bilal.ahmed@omnysync.internal',
+        phone: '+92 300 1234567',
+        national_id: '42101-1234567-1',
+        department_id: deptId,
+        designation_id: desigId,
+        employment_type: 'FULL_TIME',
+        joining_date: '2026-01-01',
+        salary_structure_id: structId,
+        bank_name: 'Meezan Bank Ltd',
+        bank_account_number: 'PK00MEZN00123456789012',
+      },
+      adminToken,
+    );
+    expect(empRes.status).toBe(201);
+    expect(empRes.body.data.employee_number).toBe('EMP-001');
+
+    // 5. Fetch Open Fiscal Period
+    const periodsRes = await makeRequest('GET', '/api/periods', undefined, accountantToken);
+    expect(periodsRes.status).toBe(200);
+    const openPeriod = periodsRes.body.data.find((p: any) => p.status === 'OPEN');
+    expect(openPeriod).toBeDefined();
+
+    // 6. Preview Payroll Calculation
+    const calcRes = await makeRequest(
+      'POST',
+      '/api/hrm/payroll/calculate',
+      { period_id: openPeriod.id, month_year: '2026-03' },
+      accountantToken,
+    );
+    expect(calcRes.status).toBe(200);
+    expect(calcRes.body.data.totals.total_gross).toBe('300000.00');
+    expect(calcRes.body.data.items).toHaveLength(1);
+
+    // 7. Create Draft Payroll Run
+    const runRes = await makeRequest(
+      'POST',
+      '/api/hrm/payroll-runs',
+      { period_id: openPeriod.id, month_year: '2026-03', run_number: 'PR-2026-03-001' },
+      accountantToken,
+    );
+    expect(runRes.status).toBe(201);
+    expect(runRes.body.data.status).toBe('DRAFT');
+    const runId = runRes.body.data.id;
+
+    // 8. Approve Payroll Run
+    const approveRes = await makeRequest(
+      'POST',
+      `/api/hrm/payroll-runs/${runId}/approve`,
+      {},
+      controllerToken,
+    );
+    expect(approveRes.status).toBe(200);
+    expect(approveRes.body.data.status).toBe('APPROVED');
+
+    // 9. Post Payroll Run to General Ledger
+    const postRes = await makeRequest(
+      'POST',
+      `/api/hrm/payroll-runs/${runId}/post`,
+      {},
+      controllerToken,
+    );
+    expect(postRes.status).toBe(200);
+    expect(postRes.body.data.status).toBe('POSTED');
+    expect(postRes.body.data.posted_journal_id).toBeDefined();
+
+    // 10. Disburse Payroll via Bank
+    const disbRes = await makeRequest(
+      'POST',
+      `/api/hrm/payroll-runs/${runId}/disburse`,
+      {},
+      controllerToken,
+    );
+    expect(disbRes.status).toBe(200);
+    expect(disbRes.body.data.status).toBe('DISBURSED');
+    expect(disbRes.body.data.disbursement_journal_id).toBeDefined();
+
+    // 11. Verify General Ledger Trial Balance remains perfectly balanced
+    const tbRes = await makeRequest('GET', '/api/ledger/trial-balance?as_of_date=2026-03-31', undefined, controllerToken);
+    expect(tbRes.status).toBe(200);
+    expect(tbRes.body.data.is_balanced).toBe(true);
+    expect(tbRes.body.data.net_difference).toBe('0.00');
+  });
 });
+
 

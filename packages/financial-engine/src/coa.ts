@@ -155,10 +155,13 @@ export const STANDARD_COA_TEMPLATE: CoaTemplateItem[] = [
   { code: '211001', name: 'Trade AP Control', level: 4, parentCode: '2110', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.AP_CONTROL },
   { code: '211002', name: 'GRNI (Goods Received Not Invoiced)', level: 4, parentCode: '2110', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GRNI },
   { code: '211003', name: 'Accrued Expenses', level: 4, parentCode: '2110', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '211004', name: 'Salaries Payable', level: 4, parentCode: '2110', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
 
   { code: '2120', name: 'Tax Payable', level: 3, parentCode: '2100', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: false, controlType: AccountControlType.GENERAL },
   { code: '212001', name: 'Output Sales Tax Payable', level: 4, parentCode: '2120', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.TAX_PAYABLE },
   { code: '212002', name: 'Withholding Tax Payable', level: 4, parentCode: '2120', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.TAX_PAYABLE },
+  { code: '212003', name: 'EOBI & Social Security Payable', level: 4, parentCode: '2120', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.TAX_PAYABLE },
+  { code: '212004', name: 'Provident Fund Payable', level: 4, parentCode: '2120', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.TAX_PAYABLE },
 
   // --- 3. EQUITY ---
   { code: '3000', name: 'Equity', level: 1, statementClass: StatementClass.EQUITY, normalBalance: NormalBalance.CREDIT, postingAllowed: false, controlType: AccountControlType.GENERAL },

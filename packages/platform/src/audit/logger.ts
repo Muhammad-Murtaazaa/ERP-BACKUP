@@ -43,6 +43,22 @@ export class AuditLogger {
     return id;
   }
 
+  async log(input: any, client?: DbClient): Promise<string> {
+    return this.record(
+      {
+        organization_id: input.organizationId || input.organization_id,
+        user_id: input.userId || input.user_id,
+        action: input.action,
+        entity_type: input.entityType || input.entity_type,
+        entity_id: input.entityId || input.entity_id,
+        before_state: input.beforeState || input.before_state,
+        after_state: input.afterState || input.after_state,
+        correlation_id: input.correlationId || input.correlation_id,
+      },
+      client,
+    );
+  }
+
   async queryLogs(organization_id: string, entity_type?: string, entity_id?: string, limit: number = 100) {
     let sql = `SELECT * FROM audit_logs WHERE organization_id = $1`;
     const params: any[] = [organization_id];
