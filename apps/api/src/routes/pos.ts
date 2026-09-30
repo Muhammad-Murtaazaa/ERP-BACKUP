@@ -1220,6 +1220,12 @@ export function registerPosRoutes(app: Express): void {
         jl.push({ account_code: '211008', debit: v, description: `${desc} loyalty clawback` });
         jl.push({ account_code: '411004', credit: v, description: `${desc} loyalty clawback` });
       }
+      await tx.query(
+        `INSERT INTO pos_returns (id, organization_id, return_number, session_id, original_order_id, customer_id, with_receipt, net_amount, tax_amount, total_amount,
+           refund_tenders, reason, restock, approval_id, journal_id, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+        [returnId, orgId, number, session.id, original?.id || null, customerId, withReceipt, netT.toFixed(8), taxT.toFixed(8), total.toFixed(8), JSON.stringify(refunds),
+          reason, restock, present(req.body.approval_id) ? req.body.approval_id : null, null, req.session!.user_id],
+      );
       for (const l of rls) {
         await tx.query(`INSERT INTO pos_return_lines (return_id, original_line_id, item_id, quantity, net_amount, tax_amount, unit_cost) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [
           returnId, l.original_line_id, l.item_id, l.quantity, l.net, l.tax, l.unit_cost,
@@ -1241,12 +1247,7 @@ export function registerPosRoutes(app: Express): void {
         purpose: AccountingPurpose.POS_RETURN, description: desc, sourceType: 'POS_RETURN', sourceId: returnId, sourceKey: `POS_RETURN:${returnId}`,
         numberPrefix: 'JV-POS', lines: jl, approvedBy: approver, correlationId: req.correlationId,
       });
-      await tx.query(
-        `INSERT INTO pos_returns (id, organization_id, return_number, session_id, original_order_id, customer_id, with_receipt, net_amount, tax_amount, total_amount,
-           refund_tenders, reason, restock, approval_id, journal_id, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-        [returnId, orgId, number, session.id, original?.id || null, customerId, withReceipt, netT.toFixed(8), taxT.toFixed(8), total.toFixed(8), JSON.stringify(refunds),
-          reason, restock, present(req.body.approval_id) ? req.body.approval_id : null, j?.journalId || null, req.session!.user_id],
-      );
+      await tx.query(`UPDATE pos_returns SET journal_id = $1 WHERE id = $2`, [j?.journalId || null, returnId]);
       if (original) {
         await tx.query(`UPDATE pos_orders SET refunded_amount = refunded_amount + $1 WHERE id = $2`, [total.toFixed(8), original.id]);
         const left = (await tx.query(`SELECT COALESCE(SUM(quantity - returned_quantity),0)::text AS left FROM pos_order_lines WHERE order_id = $1`, [original.id])).rows[0].left;
