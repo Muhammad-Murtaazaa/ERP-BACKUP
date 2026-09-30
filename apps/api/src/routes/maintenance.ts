@@ -45,6 +45,7 @@ import {
 import { db, authService, auditLogger, outboxService, authenticate, requirePermission } from '../context.js';
 import { postJournal } from '../lib/posting.js';
 import { transition } from '../lib/state.js';
+import { nextDocumentNumber } from '../lib/numbering.js';
 import { dateOnly, decimal, todayIso } from '../lib/validate.js';
 import { lockItems, postStockMovement } from '../lib/stock.js';
 import { accountByCode } from '../lib/trading.js';
@@ -224,7 +225,7 @@ export function registerMaintenanceRoutes(app: Express): void {
 
     const costing = MaintenanceEngine.calculateWorkOrderCost(parts || [], labor || []);
     const woId = crypto.randomUUID();
-    const woNum = `WO-${Date.now().toString().slice(-6)}`;
+    const woNum = await nextDocumentNumber(db, req.session!.organization_id, 'WO');
 
     await db.transaction(async (tx) => {
       // 1. Insert Work Order

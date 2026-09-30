@@ -45,6 +45,7 @@ import {
 import { db, authService, auditLogger, outboxService, authenticate, requirePermission } from '../context.js';
 import { ApiError } from '../lib/errors.js';
 import { postJournal } from '../lib/posting.js';
+import { nextDocumentNumber } from '../lib/numbering.js';
 import { dateOnly, todayIso } from '../lib/validate.js';
 import { lockItems, onHand, postStockMovement } from '../lib/stock.js';
 import { accountByCode } from '../lib/trading.js';
@@ -197,7 +198,7 @@ export function registerQualityRoutes(app: Express): void {
     }
 
     const id = crypto.randomUUID();
-    const lotNum = lot_number || `LOT-${Date.now().toString().slice(-6)}`;
+    const lotNum = lot_number || (await nextDocumentNumber(db, req.session!.organization_id, 'LOT'));
     const qtyStr = new Money(quantity).toFixed(8);
 
     await db.query(
@@ -336,7 +337,7 @@ export function registerQualityRoutes(app: Express): void {
     }
 
     const id = crypto.randomUUID();
-    const ncrNum = `NCR-${Date.now().toString().slice(-6)}`;
+    const ncrNum = await nextDocumentNumber(db, req.session!.organization_id, 'NCR');
 
     await db.query(
       `INSERT INTO quality_non_conformance_reports (
@@ -494,7 +495,7 @@ export function registerQualityRoutes(app: Express): void {
     }
 
     const id = crypto.randomUUID();
-    const coaNum = `COA-${Date.now().toString().slice(-6)}`;
+    const coaNum = await nextDocumentNumber(db, req.session!.organization_id, 'QCOA');
     const dateStr = issue_date || new Date().toISOString().slice(0, 10);
 
     await db.query(

@@ -15,6 +15,7 @@ import { registerManufacturingRoutes } from './routes/manufacturing.js';
 import { registerProjectsRoutes } from './routes/projects.js';
 import { registerAssetsRoutes } from './routes/assets.js';
 import { registerPosRoutes } from './routes/pos.js';
+import { registerAutomationRoutes } from './routes/automation.js';
 import { registerQualityRoutes } from './routes/quality.js';
 import { registerMaintenanceRoutes } from './routes/maintenance.js';
 import { registerAdminRoutes } from './routes/admin.js';
@@ -76,6 +77,7 @@ export function createApp() {
   registerProjectsRoutes(app);
   registerAssetsRoutes(app);
   registerPosRoutes(app);
+  registerAutomationRoutes(app);
   registerQualityRoutes(app);
   registerMaintenanceRoutes(app);
   registerAdminRoutes(app);

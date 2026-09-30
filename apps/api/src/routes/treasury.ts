@@ -11,7 +11,7 @@ import { requireOrgRow } from '../lib/scope.js';
 const CCY = /^[A-Z]{3}$/;
 
 /** GL lines on a bank account up to a date (POSTED and REVERSED journals are both in the ledger). */
-async function bankGlLines(q: any, org: string, accountId: string, asOf: string) {
+export async function bankGlLines(q: any, org: string, accountId: string, asOf: string) {
   return (
     await q.query(
       `SELECT jl.id, jl.base_debit, jl.base_credit, jl.description, j.journal_number, j.posting_date, j.description AS journal_description,

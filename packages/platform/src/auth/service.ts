@@ -129,6 +129,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.PAYROLL_APPROVE,
   ],
   [UserRole.ACCOUNTANT]: [
+    Permission.AUTOMATION_VIEW,
     Permission.FINANCE_COA_VIEW,
     Permission.FINANCE_JOURNAL_CREATE,
     Permission.FINANCE_JOURNAL_SUBMIT,
@@ -223,6 +224,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.POS_SESSION_CLOSE,
   ],
   [UserRole.STORE_MANAGER]: [
+    Permission.AUTOMATION_VIEW,
     Permission.POS_TERMINAL,
     Permission.POS_SESSION_CLOSE,
     Permission.POS_REGISTER_MANAGE,
