@@ -3,6 +3,7 @@ import { ApiClient } from '../api/client.js';
 import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import { Plus, RefreshCw, Package, Layers } from 'lucide-react';
 import { ItemType, Account } from '@omnysync/contracts';
+import { fmtMoney, fmtQty } from '../lib/format.js';
 
 export const ItemsView: React.FC = () => {
   const [items, setItems] = useState<any[]>([]);
@@ -10,6 +11,7 @@ export const ItemsView: React.FC = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [viewTab, setViewTab] = useState<'catalog' | 'stock'>('catalog');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Form State
@@ -24,6 +26,7 @@ export const ItemsView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [itemsData, stockData, accData] = await Promise.all([
         ApiClient.get('/items'),
@@ -34,6 +37,7 @@ export const ItemsView: React.FC = () => {
       setStock(stockData);
       setAccounts(accData);
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load items data:', err);
     } finally {
       setLoading(false);
@@ -120,7 +124,7 @@ export const ItemsView: React.FC = () => {
           <Table<any>
             data={items}
             keyExtractor={(i) => i.id}
-            isLoading={loading}
+            isLoading={loading} error={loadError} onRetry={loadData}
             columns={[
               { key: 'code', header: 'Item Code', className: 'font-mono font-semibold text-[#5940B8]' },
               { key: 'name', header: 'Item Description', className: 'font-semibold' },
@@ -134,20 +138,20 @@ export const ItemsView: React.FC = () => {
                 key: 'unit_price',
                 header: 'Selling Price (PKR)',
                 align: 'right',
-                render: (i) => parseFloat(i.unit_price).toLocaleString('en-US', { minimumFractionDigits: 2 }),
+                render: (i) => fmtMoney(i.unit_price),
               },
               {
                 key: 'unit_cost',
                 header: 'Standard Cost (PKR)',
                 align: 'right',
-                render: (i) => parseFloat(i.unit_cost).toLocaleString('en-US', { minimumFractionDigits: 2 }),
+                render: (i) => fmtMoney(i.unit_cost),
               },
               {
                 key: 'on_hand_qty',
                 header: 'On-Hand Quantity',
                 align: 'right',
                 className: 'font-bold font-mono',
-                render: (i) => parseFloat(i.on_hand_qty).toLocaleString('en-US'),
+                render: (i) => fmtQty(i.on_hand_qty),
               },
             ]}
           />
@@ -157,7 +161,7 @@ export const ItemsView: React.FC = () => {
           <Table<any>
             data={stock}
             keyExtractor={(s) => s.item_id}
-            isLoading={loading}
+            isLoading={loading} error={loadError} onRetry={loadData}
             columns={[
               { key: 'item_code', header: 'Item Code', className: 'font-mono font-semibold text-[#5940B8]' },
               { key: 'item_name', header: 'Item Description', className: 'font-semibold' },
@@ -167,20 +171,20 @@ export const ItemsView: React.FC = () => {
                 header: 'Quantity on Hand',
                 align: 'right',
                 className: 'font-bold font-mono',
-                render: (s) => parseFloat(s.on_hand_qty).toLocaleString('en-US'),
+                render: (s) => fmtQty(s.on_hand_qty),
               },
               {
                 key: 'unit_cost',
                 header: 'Unit Valuation Cost (PKR)',
                 align: 'right',
-                render: (s) => parseFloat(s.unit_cost).toLocaleString('en-US', { minimumFractionDigits: 2 }),
+                render: (s) => fmtMoney(s.unit_cost),
               },
               {
                 key: 'total_valuation',
                 header: 'Total Stock Valuation (PKR)',
                 align: 'right',
                 className: 'font-bold font-mono text-[#146341]',
-                render: (s) => parseFloat(s.total_valuation).toLocaleString('en-US', { minimumFractionDigits: 2 }),
+                render: (s) => fmtMoney(s.total_valuation),
               },
             ]}
           />

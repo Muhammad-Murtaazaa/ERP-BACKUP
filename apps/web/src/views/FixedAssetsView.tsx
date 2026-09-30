@@ -11,12 +11,14 @@ import {
   FixedAsset,
   AssetCategory,
 } from '@omnysync/contracts';
+import { fmtMoney, fmtQty } from '../lib/format.js';
 
 export const FixedAssetsView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'ASSETS' | 'CATEGORIES'>('ASSETS');
   const [assets, setAssets] = useState<FixedAsset[]>([]);
   const [categories, setCategories] = useState<AssetCategory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Modals
   const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
@@ -54,6 +56,7 @@ export const FixedAssetsView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [assetsRes, catRes] = await Promise.all([
         ApiClient.get('/assets'),
@@ -65,6 +68,7 @@ export const FixedAssetsView: React.FC = () => {
         setCatId((catRes as any).data[0].id);
       }
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load asset data:', err);
     } finally {
       setLoading(false);
@@ -192,19 +196,19 @@ export const FixedAssetsView: React.FC = () => {
       key: 'cost',
       header: 'Acq Cost',
       align: 'right',
-      render: (a) => <span>PKR {parseFloat(a.acquisition_cost).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>,
+      render: (a) => <span>PKR {fmtMoney(a.acquisition_cost)}</span>,
     },
     {
       key: 'accum',
       header: 'Accum Deprec',
       align: 'right',
-      render: (a) => <span className="text-amber-600 font-medium">PKR {parseFloat(a.accumulated_depreciation).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>,
+      render: (a) => <span className="text-amber-600 font-medium">PKR {fmtMoney(a.accumulated_depreciation)}</span>,
     },
     {
       key: 'book_value',
       header: 'Net Book Value',
       align: 'right',
-      render: (a) => <span className="font-bold text-indigo-700">PKR {parseFloat(a.current_book_value).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>,
+      render: (a) => <span className="font-bold text-indigo-700">PKR {fmtMoney(a.current_book_value)}</span>,
     },
     {
       key: 'status',
@@ -356,7 +360,7 @@ export const FixedAssetsView: React.FC = () => {
             columns={assetColumns}
             data={assets}
             keyExtractor={(a) => a.id}
-            isLoading={loading}
+            isLoading={loading} error={loadError} onRetry={loadData}
             emptyMessage="No fixed assets registered yet."
           />
         </Card>
@@ -368,7 +372,7 @@ export const FixedAssetsView: React.FC = () => {
             columns={categoryColumns}
             data={categories}
             keyExtractor={(c) => c.id}
-            isLoading={loading}
+            isLoading={loading} error={loadError} onRetry={loadData}
             emptyMessage="No asset categories configured."
           />
         </Card>
@@ -460,7 +464,7 @@ export const FixedAssetsView: React.FC = () => {
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1 text-sm">
             <div><span className="text-slate-500">Asset:</span> <span className="font-semibold text-slate-900">{selectedAsset?.name}</span></div>
-            <div><span className="text-slate-500">Current Book Value:</span> <span className="font-bold text-indigo-700">PKR {parseFloat(selectedAsset?.current_book_value || '0').toLocaleString()}</span></div>
+            <div><span className="text-slate-500">Current Book Value:</span> <span className="font-bold text-indigo-700">PKR {fmtQty(selectedAsset?.current_book_value || '0')}</span></div>
             <div><span className="text-slate-500">Method:</span> <span className="font-mono text-slate-700">{selectedAsset?.depreciation_method}</span></div>
           </div>
           <Input label="Number of Months to Depreciate" type="number" min="1" max="12" value={deprecMonths} onChange={(e) => setDeprecMonths(e.target.value)} required />
@@ -477,7 +481,7 @@ export const FixedAssetsView: React.FC = () => {
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1 text-sm">
             <div><span className="text-slate-500">Asset:</span> <span className="font-semibold text-slate-900">{selectedAsset?.name}</span></div>
-            <div><span className="text-slate-500">Net Book Value:</span> <span className="font-bold text-slate-900">PKR {parseFloat(selectedAsset?.current_book_value || '0').toLocaleString()}</span></div>
+            <div><span className="text-slate-500">Net Book Value:</span> <span className="font-bold text-slate-900">PKR {fmtQty(selectedAsset?.current_book_value || '0')}</span></div>
           </div>
           <Input label="Disposal Sale Proceeds (PKR)" value={disposalProceeds} onChange={(e) => setDisposalProceeds(e.target.value)} required />
           <div className="flex justify-end gap-2 pt-4">

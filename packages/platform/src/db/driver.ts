@@ -43,6 +43,8 @@ class Mutex {
  * the transaction client is routed to the same open transaction via
  * AsyncLocalStorage, so it neither deadlocks nor escapes the unit of work.
  */
+const DATE_AS_STRING = { 1082: (v: string) => v };
+
 export class PGliteAdapter implements DbClient {
   private pglite: PGlite;
   private mutex = new Mutex();
@@ -57,7 +59,10 @@ export class PGliteAdapter implements DbClient {
   }
 
   private async rawQuery<T>(sql: string, params: any[]): Promise<QueryResult<T>> {
-    const res = await this.pglite.query(sql, params);
+    // DATE (oid 1082) stays a 'YYYY-MM-DD' string: calendar dates have no time zone, and
+    // parsing them into JS Dates leaked "2026-03-01T00:00:00.000Z" into the UI/API and
+    // risked off-by-one days when formatted in local time.
+    const res = await this.pglite.query(sql, params, { parsers: DATE_AS_STRING });
     const rows = (res.rows || []) as T[];
     return {
       rows,

@@ -3,10 +3,12 @@ import { ApiClient } from '../api/client.js';
 import { Table, Button, Input, Drawer, Card, Combobox } from '@omnysync/ui';
 import { Plus, RefreshCw } from 'lucide-react';
 import { ExchangeRate } from '@omnysync/contracts';
+import { fmtDec, fmtMoney, mulDec } from '../lib/format.js';
 
 export const FxRatesView: React.FC = () => {
   const [rates, setRates] = useState<ExchangeRate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Form State
@@ -25,6 +27,7 @@ export const FxRatesView: React.FC = () => {
 
   const loadRates = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await ApiClient.get('/fx/rates');
       setRates(data);
@@ -33,6 +36,7 @@ export const FxRatesView: React.FC = () => {
         calculateConversion(convertAmount, data[0].rate);
       }
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load FX rates:', err);
     } finally {
       setLoading(false);
@@ -45,9 +49,7 @@ export const FxRatesView: React.FC = () => {
 
   const calculateConversion = (amt: string, r: string) => {
     try {
-      const a = parseFloat(amt || '0');
-      const rateVal = parseFloat(r || '0');
-      setConvertedResult((a * rateVal).toFixed(2));
+      setConvertedResult(mulDec(amt || '0', r || '0', 2));
     } catch {
       setConvertedResult('0.00');
     }
@@ -101,7 +103,7 @@ export const FxRatesView: React.FC = () => {
             <Table<ExchangeRate>
               data={rates}
               keyExtractor={(r) => r.id}
-              isLoading={loading}
+              isLoading={loading} error={loadError} onRetry={loadRates}
               columns={[
                 {
                   key: 'pair',
@@ -114,7 +116,7 @@ export const FxRatesView: React.FC = () => {
                   header: 'Exchange Rate',
                   align: 'right',
                   className: 'font-mono font-bold',
-                  render: (r) => parseFloat(r.rate).toFixed(6),
+                  render: (r) => fmtDec(r.rate, 6),
                 },
                 { key: 'effective_date', header: 'Effective Date', className: 'font-mono text-xs' },
                 { key: 'source', header: 'Rate Source' },
@@ -150,7 +152,7 @@ export const FxRatesView: React.FC = () => {
                 >
                   {rates.map((r) => (
                     <option key={r.id} value={r.rate}>
-                      {r.from_currency}/{r.to_currency} = {parseFloat(r.rate).toFixed(4)} ({r.effective_date})
+                      {r.from_currency}/{r.to_currency} = {fmtDec(r.rate, 4)} ({r.effective_date})
                     </option>
                   ))}
                   {rates.length === 0 && <option value="278.5">USD/PKR = 278.5000</option>}
@@ -160,7 +162,7 @@ export const FxRatesView: React.FC = () => {
               <div className="bg-[#F2EEFF] p-4 rounded-lg border border-[#d2c7fc]/60 text-center">
                 <span className="text-xs font-semibold text-[#5940B8] uppercase block">Base Equivalent (PKR)</span>
                 <span className="text-xl font-bold font-mono text-[#182235] mt-1 block">
-                  PKR {parseFloat(convertedResult).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  PKR {fmtMoney(convertedResult)}
                 </span>
               </div>
             </div>

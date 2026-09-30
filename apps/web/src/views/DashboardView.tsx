@@ -1,15 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { ApiClient } from '../api/client.js';
-import { Card, Badge, Button } from '@omnysync/ui';
+import { Card, Badge, Button, Alert } from '@omnysync/ui';
 import { Building2, ShieldCheck, DollarSign, BookOpen, AlertCircle, RefreshCw, ShoppingCart } from 'lucide-react';
+import { fmtMoney } from '../lib/format.js';
 
 export const DashboardView: React.FC<{ onNavigate: (tab: string) => void }> = ({ onNavigate }) => {
   const [context, setContext] = useState<any>(null);
   const [tb, setTb] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [ctxData, tbData] = await Promise.all([
         ApiClient.get('/orgs/context'),
@@ -18,6 +21,7 @@ export const DashboardView: React.FC<{ onNavigate: (tab: string) => void }> = ({
       setContext(ctxData);
       setTb(tbData);
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load dashboard data:', err);
     } finally {
       setLoading(false);
@@ -30,6 +34,11 @@ export const DashboardView: React.FC<{ onNavigate: (tab: string) => void }> = ({
 
   return (
     <div className="flex flex-col gap-6">
+      {loadError && (
+        <Alert variant="danger" title="Couldn’t load this page" action={<Button variant="secondary" size="sm" onClick={loadData}>Try again</Button>}>
+          {loadError}
+        </Alert>
+      )}
       {/* Top Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-xl border border-[#D9DFEA] shadow-xs">
         <div>
@@ -90,7 +99,7 @@ export const DashboardView: React.FC<{ onNavigate: (tab: string) => void }> = ({
           </div>
           <div className="mt-3">
             <div className="text-lg font-bold text-[#182235] font-mono">
-              {tb ? `PKR ${parseFloat(tb.total_debits).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '0.00'}
+              {tb ? `PKR ${fmtMoney(tb.total_debits)}` : '0.00'}
             </div>
             <div className="text-xs text-[#146341] mt-1 flex items-center gap-1 font-medium">
               <ShieldCheck size={12} /> Double-Entry Balanced

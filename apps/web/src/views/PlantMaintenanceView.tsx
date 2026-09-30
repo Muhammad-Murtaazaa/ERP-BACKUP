@@ -18,6 +18,7 @@ import {
   FixedAsset,
   Item,
 } from '@omnysync/contracts';
+import { fmtMoney, fmtQty } from '../lib/format.js';
 
 export const PlantMaintenanceView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'EQUIPMENT' | 'SCHEDULES' | 'WORK_ORDERS' | 'CALIBRATIONS'>('EQUIPMENT');
@@ -28,6 +29,7 @@ export const PlantMaintenanceView: React.FC = () => {
   const [assets, setAssets] = useState<FixedAsset[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Modals
   const [isEquipModalOpen, setIsEquipModalOpen] = useState(false);
@@ -77,6 +79,7 @@ export const PlantMaintenanceView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [equipRes, schedRes, woRes, calibRes, assetsRes, itemsRes] = await Promise.all([
         ApiClient.get('/maintenance/equipment'),
@@ -105,6 +108,7 @@ export const PlantMaintenanceView: React.FC = () => {
         setPartItemId(itemList[0].id);
       }
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load Maintenance data:', err);
     } finally {
       setLoading(false);
@@ -247,13 +251,13 @@ export const PlantMaintenanceView: React.FC = () => {
         </Badge>
       ),
     },
-    { key: 'hours', header: 'Operating Hours', render: (row) => <span>{parseFloat(row.operating_hours).toLocaleString()} hrs</span> },
+    { key: 'hours', header: 'Operating Hours', render: (row) => <span>{fmtQty(row.operating_hours)} hrs</span> },
   ];
 
   const schedColumns: Column<PMSchedule>[] = [
     { key: 'name', header: 'Schedule Name', render: (row) => <span className="font-semibold text-slate-900">{row.schedule_name}</span> },
     { key: 'equipment', header: 'Equipment', render: (row) => <span>{row.equipment_code} - {row.equipment_name}</span> },
-    { key: 'frequency', header: 'Frequency', render: (row) => <span>Every {parseFloat(row.frequency_interval)} days</span> },
+    { key: 'frequency', header: 'Frequency', render: (row) => <span>Every {fmtQty(row.frequency_interval)} days</span> },
     { key: 'next_due', header: 'Next Due Date', render: (row) => <span className="font-mono font-bold text-amber-700">{row.next_due_date}</span> },
     { key: 'status', header: 'Status', render: (row) => <Badge variant="success">{row.status}</Badge> },
   ];
@@ -271,7 +275,7 @@ export const PlantMaintenanceView: React.FC = () => {
         </Badge>
       ),
     },
-    { key: 'cost', header: 'Total Cost (PKR)', render: (row) => <span>PKR {parseFloat(row.total_cost).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span> },
+    { key: 'cost', header: 'Total Cost (PKR)', render: (row) => <span>PKR {fmtMoney(row.total_cost)}</span> },
     {
       key: 'status',
       header: 'Status',
@@ -405,25 +409,25 @@ export const PlantMaintenanceView: React.FC = () => {
       {/* Tab Contents */}
       {activeTab === 'EQUIPMENT' && (
         <Card>
-          <Table data={equipment} columns={equipColumns} keyExtractor={(r) => r.id} isLoading={loading} emptyMessage="No plant machinery registered." />
+          <Table data={equipment} columns={equipColumns} keyExtractor={(r) => r.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No plant machinery registered." />
         </Card>
       )}
 
       {activeTab === 'SCHEDULES' && (
         <Card>
-          <Table data={schedules} columns={schedColumns} keyExtractor={(r) => r.id} isLoading={loading} emptyMessage="No preventive maintenance schedules configured." />
+          <Table data={schedules} columns={schedColumns} keyExtractor={(r) => r.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No preventive maintenance schedules configured." />
         </Card>
       )}
 
       {activeTab === 'WORK_ORDERS' && (
         <Card>
-          <Table data={workOrders} columns={woColumns} keyExtractor={(r) => r.id} isLoading={loading} emptyMessage="No maintenance work orders on record." />
+          <Table data={workOrders} columns={woColumns} keyExtractor={(r) => r.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No maintenance work orders on record." />
         </Card>
       )}
 
       {activeTab === 'CALIBRATIONS' && (
         <Card>
-          <Table data={calibrations} columns={calibColumns} keyExtractor={(r) => r.id} isLoading={loading} emptyMessage="No equipment calibration records found." />
+          <Table data={calibrations} columns={calibColumns} keyExtractor={(r) => r.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No equipment calibration records found." />
         </Card>
       )}
 
@@ -597,7 +601,7 @@ export const PlantMaintenanceView: React.FC = () => {
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm space-y-1">
             <div><span className="text-slate-500">Machine:</span> <span className="font-semibold text-slate-900">{selectedWo?.equipment_name}</span></div>
-            <div><span className="text-slate-500">Total Settlement Expense:</span> <span className="font-bold text-indigo-700">PKR {parseFloat(selectedWo?.total_cost || '0').toLocaleString()}</span></div>
+            <div><span className="text-slate-500">Total Settlement Expense:</span> <span className="font-bold text-indigo-700">PKR {fmtQty(selectedWo?.total_cost || '0')}</span></div>
           </div>
           <Input label="Actual Equipment Downtime (Hours)" value={downtimeHours} onChange={(e) => setDowntimeHours(e.target.value)} required />
           <div className="flex justify-end gap-2 pt-4">

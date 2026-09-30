@@ -18,6 +18,7 @@ import {
   Item,
   Party,
 } from '@omnysync/contracts';
+import { fmtQty } from '../lib/format.js';
 
 export const QualityManagementView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'LOTS' | 'PLANS' | 'NCR' | 'COA'>('LOTS');
@@ -28,6 +29,7 @@ export const QualityManagementView: React.FC = () => {
   const [items, setItems] = useState<Item[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Modals
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
@@ -73,6 +75,7 @@ export const QualityManagementView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [lotsRes, plansRes, ncrRes, coaRes, itemsRes, partiesRes] = await Promise.all([
         ApiClient.get('/quality/lots'),
@@ -97,6 +100,7 @@ export const QualityManagementView: React.FC = () => {
         if (!lotItemId) setLotItemId(itemList[0].id);
       }
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load Quality Management data:', err);
     } finally {
       setLoading(false);
@@ -244,7 +248,7 @@ export const QualityManagementView: React.FC = () => {
     { key: 'lot_number', header: 'Lot Number', render: (row) => <span className="font-mono font-bold text-indigo-600">{row.lot_number}</span> },
     { key: 'item', header: 'Item / Material', render: (row) => <span>{row.item_code} - {row.item_name}</span> },
     { key: 'batch', header: 'Batch / Heat #', render: (row) => <span>{row.batch_number || 'N/A'}</span> },
-    { key: 'qty', header: 'Quantity', render: (row) => <span>{parseFloat(row.quantity).toLocaleString()}</span> },
+    { key: 'qty', header: 'Quantity', render: (row) => <span>{fmtQty(row.quantity)}</span> },
     {
       key: 'status',
       header: 'Quality Status',
@@ -449,25 +453,25 @@ export const QualityManagementView: React.FC = () => {
       {/* Tab Contents */}
       {activeTab === 'LOTS' && (
         <Card>
-          <Table data={lots} columns={lotColumns} keyExtractor={(r) => r.id} isLoading={loading} emptyMessage="No quality inspection lots found." />
+          <Table data={lots} columns={lotColumns} keyExtractor={(r) => r.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No quality inspection lots found." />
         </Card>
       )}
 
       {activeTab === 'PLANS' && (
         <Card>
-          <Table data={plans} columns={planColumns} keyExtractor={(r) => r.id} isLoading={loading} emptyMessage="No quality inspection plans configured." />
+          <Table data={plans} columns={planColumns} keyExtractor={(r) => r.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No quality inspection plans configured." />
         </Card>
       )}
 
       {activeTab === 'NCR' && (
         <Card>
-          <Table data={ncrs} columns={ncrColumns} keyExtractor={(r) => r.id} isLoading={loading} emptyMessage="No non-conformance reports on record." />
+          <Table data={ncrs} columns={ncrColumns} keyExtractor={(r) => r.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No non-conformance reports on record." />
         </Card>
       )}
 
       {activeTab === 'COA' && (
         <Card>
-          <Table data={coas} columns={coaColumns} keyExtractor={(r) => r.id} isLoading={loading} emptyMessage="No Certificates of Analysis issued yet." />
+          <Table data={coas} columns={coaColumns} keyExtractor={(r) => r.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No Certificates of Analysis issued yet." />
         </Card>
       )}
 

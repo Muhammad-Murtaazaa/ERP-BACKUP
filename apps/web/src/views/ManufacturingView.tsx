@@ -17,6 +17,7 @@ import {
   Item,
   Warehouse,
 } from '@omnysync/contracts';
+import { fmtDec, fmtMoney, fmtQty } from '../lib/format.js';
 
 export const ManufacturingView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'WORK_ORDERS' | 'BOM'>('WORK_ORDERS');
@@ -25,6 +26,7 @@ export const ManufacturingView: React.FC = () => {
   const [items, setItems] = useState<Item[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeWO, setActiveWO] = useState<WorkOrder | null>(null);
 
   // Modals
@@ -61,6 +63,7 @@ export const ManufacturingView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [woData, bomData, itmData, whData] = await Promise.all([
         ApiClient.get('/manufacturing/work-orders'),
@@ -84,6 +87,7 @@ export const ManufacturingView: React.FC = () => {
         setActiveWO(woData[0]);
       }
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load manufacturing data:', err);
     } finally {
       setLoading(false);
@@ -225,13 +229,13 @@ export const ManufacturingView: React.FC = () => {
         </div>
       ),
     },
-    { key: 'target', header: 'Target Qty', accessor: (w: WorkOrder) => <span className="font-mono font-bold text-blue-600">{parseFloat(w.target_qty).toFixed(0)} units</span> },
+    { key: 'target', header: 'Target Qty', accessor: (w: WorkOrder) => <span className="font-mono font-bold text-blue-600">{fmtDec(w.target_qty, 0)} units</span> },
     {
       key: 'cost',
       header: 'Actual Mat. Cost',
       accessor: (w: WorkOrder) => (
         <span className="font-mono text-gray-900">
-          PKR {parseFloat(w.total_material_cost).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          PKR {fmtMoney(w.total_material_cost)}
         </span>
       ),
     },
@@ -251,13 +255,13 @@ export const ManufacturingView: React.FC = () => {
     { key: 'num', header: 'BOM #', accessor: (b: BillOfMaterials) => <span className="font-mono font-bold text-blue-600">{b.bom_number}</span> },
     { key: 'name', header: 'Assembly Name', accessor: (b: BillOfMaterials) => <span className="font-semibold text-gray-900">{b.name}</span> },
     { key: 'fg', header: 'Finished Item', accessor: (b: BillOfMaterials) => <span className="text-sm text-gray-800">{b.finished_item_name} ({b.finished_item_code})</span> },
-    { key: 'yield', header: 'Batch Yield', accessor: (b: BillOfMaterials) => <span className="font-mono font-medium text-gray-700">{parseFloat(b.yield_quantity).toFixed(0)} units</span> },
+    { key: 'yield', header: 'Batch Yield', accessor: (b: BillOfMaterials) => <span className="font-mono font-medium text-gray-700">{fmtDec(b.yield_quantity, 0)} units</span> },
     {
       key: 'components',
       header: 'Components',
       accessor: (b: BillOfMaterials) => (
         <div className="text-xs font-mono text-gray-600">
-          {b.items?.map((it) => `${it.component_code} (${parseFloat(it.quantity).toFixed(0)})`).join(', ')}
+          {b.items?.map((it) => `${it.component_code} (${fmtDec(it.quantity, 0)})`).join(', ')}
         </div>
       ),
     },
@@ -317,7 +321,7 @@ export const ManufacturingView: React.FC = () => {
         <div className="grid grid-cols-12 gap-6">
           <div className="col-span-12 lg:col-span-7 space-y-4">
             <Card title="Active Work Orders">
-              <Table columns={woColumns} data={workOrders} keyExtractor={(w) => w.id} isLoading={loading} emptyMessage="No work orders created yet." />
+              <Table columns={woColumns} data={workOrders} keyExtractor={(w) => w.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No work orders created yet." />
             </Card>
           </div>
 
@@ -337,12 +341,12 @@ export const ManufacturingView: React.FC = () => {
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600">Target Production Qty:</span>
-                      <span className="text-sm font-mono font-bold text-blue-600">{parseFloat(activeWO.target_qty).toFixed(0)} units</span>
+                      <span className="text-sm font-mono font-bold text-blue-600">{fmtDec(activeWO.target_qty, 0)} units</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600">Total Material Cost:</span>
                       <span className="text-sm font-mono font-bold text-gray-900">
-                        PKR {parseFloat(activeWO.total_material_cost).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        PKR {fmtMoney(activeWO.total_material_cost)}
                       </span>
                     </div>
                   </div>
@@ -382,10 +386,10 @@ export const ManufacturingView: React.FC = () => {
                         <div key={c.id} className="p-3 bg-white border border-gray-200 rounded text-sm space-y-1">
                           <div className="flex justify-between items-center">
                             <span className="font-semibold text-gray-900">{c.component_name}</span>
-                            <span className="font-mono text-xs font-bold text-gray-600">{parseFloat(c.consumed_qty).toFixed(0)} units</span>
+                            <span className="font-mono text-xs font-bold text-gray-600">{fmtDec(c.consumed_qty, 0)} units</span>
                           </div>
                           <div className="flex justify-between text-xs text-gray-500">
-                            <span>Cost: PKR {parseFloat(c.total_cost).toLocaleString()}</span>
+                            <span>Cost: PKR {fmtQty(c.total_cost)}</span>
                           </div>
                         </div>
                       ))}
@@ -406,7 +410,7 @@ export const ManufacturingView: React.FC = () => {
 
       {activeTab === 'BOM' && (
         <Card title="Bills of Materials (BOM) Specifications">
-          <Table columns={bomColumns} data={boms} keyExtractor={(b) => b.id} isLoading={loading} emptyMessage="No BOMs created yet." />
+          <Table columns={bomColumns} data={boms} keyExtractor={(b) => b.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No BOMs created yet." />
         </Card>
       )}
 
@@ -520,7 +524,7 @@ export const ManufacturingView: React.FC = () => {
                 required
               >
                 {items.map((i) => (
-                  <option key={i.id} value={i.id}>{i.name} ({i.code}) - Cost: PKR {parseFloat(i.unit_cost).toLocaleString()}</option>
+                  <option key={i.id} value={i.id}>{i.name} ({i.code}) - Cost: PKR {fmtQty(i.unit_cost)}</option>
                 ))}
               </Combobox>
             </div>

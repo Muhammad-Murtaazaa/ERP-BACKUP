@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { Button, Card, Badge } from '@omnysync/ui';
+import { Button, Card, Badge, Alert } from '@omnysync/ui';
 import { CheckCircle2, RefreshCw, Sparkles, Check } from 'lucide-react';
 import { IndustryTemplate } from '@omnysync/contracts';
 
 export const OnboardingWizardView: React.FC = () => {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<IndustryTemplate>('WHOLESALE_DISTRIBUTION');
   const [provisioning, setProvisioning] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -34,6 +35,7 @@ export const OnboardingWizardView: React.FC = () => {
 
   const loadProfile = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await ApiClient.get('/onboarding/profile');
       setProfile(data);
@@ -41,6 +43,7 @@ export const OnboardingWizardView: React.FC = () => {
         setSelectedTemplate(data.industry_template);
       }
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load onboarding profile:', err);
     } finally {
       setLoading(false);
@@ -69,6 +72,11 @@ export const OnboardingWizardView: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 text-left">
+      {loadError && (
+        <Alert variant="danger" title="Couldn’t load this page" action={<Button variant="secondary" size="sm" onClick={loadProfile}>Try again</Button>}>
+          {loadError}
+        </Alert>
+      )}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-[#182235]">Tenant Onboarding & Industry Packs</h1>

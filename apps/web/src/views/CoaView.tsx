@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { CoaTree, Button, Input, Drawer, Badge, Card, Table, Combobox } from '@omnysync/ui';
+import { CoaTree, Button, Input, Drawer, Badge, Card, Table, Combobox, Alert } from '@omnysync/ui';
 import { Plus, RefreshCw, Layers, List } from 'lucide-react';
 import { Account, StatementClass, NormalBalance, AccountControlType } from '@omnysync/contracts';
 import { CoaNode } from '@omnysync/financial-engine';
@@ -11,6 +11,7 @@ export const CoaView: React.FC = () => {
   const [viewMode, setViewMode] = useState<'tree' | 'table'>('tree');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
 
@@ -27,6 +28,7 @@ export const CoaView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [treeRes, accsRes] = await Promise.all([
         ApiClient.get('/coa/tree'),
@@ -35,6 +37,7 @@ export const CoaView: React.FC = () => {
       setTreeData(treeRes);
       setAccounts(accsRes);
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load COA data:', err);
     } finally {
       setLoading(false);
@@ -87,6 +90,11 @@ export const CoaView: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 text-left">
+      {loadError && (
+        <Alert variant="danger" title="Couldn’t load this page" action={<Button variant="secondary" size="sm" onClick={loadData}>Try again</Button>}>
+          {loadError}
+        </Alert>
+      )}
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>

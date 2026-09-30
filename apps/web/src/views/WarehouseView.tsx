@@ -19,6 +19,7 @@ import {
   InventoryCount,
   Item,
 } from '@omnysync/contracts';
+import { fmtDec, fmtMoney, isNegative, isPositive } from '../lib/format.js';
 
 export const WarehouseView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'WAREHOUSES' | 'TRANSFERS' | 'COUNTS' | 'LOTS'>('WAREHOUSES');
@@ -29,6 +30,7 @@ export const WarehouseView: React.FC = () => {
   const [items, setItems] = useState<Item[]>([]);
   const [periods, setPeriods] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Modals
   const [isWarehouseModalOpen, setIsWarehouseModalOpen] = useState(false);
@@ -58,6 +60,7 @@ export const WarehouseView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [whData, trfData, cntData, lotData, itmData, prdData] = await Promise.all([
         ApiClient.get('/inventory/warehouses'),
@@ -86,6 +89,7 @@ export const WarehouseView: React.FC = () => {
         setTransferItemId(itmData[0].id);
       }
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load warehouse data:', err);
     } finally {
       setLoading(false);
@@ -256,7 +260,7 @@ export const WarehouseView: React.FC = () => {
       header: 'Items',
       accessor: (t: StockTransfer) => (
         <div className="text-xs font-mono text-gray-700">
-          {t.items?.map((it) => `${it.item_code} (Req: ${parseFloat(it.requested_qty).toFixed(0)})`).join(', ')}
+          {t.items?.map((it) => `${it.item_code} (Req: ${fmtDec(it.requested_qty, 0)})`).join(', ')}
         </div>
       ),
     },
@@ -297,10 +301,10 @@ export const WarehouseView: React.FC = () => {
       key: 'variance',
       header: 'Net Variance Value',
       accessor: (c: InventoryCount) => {
-        const val = parseFloat(c.total_variance_value);
+        const val = c.total_variance_value;
         return (
-          <span className={`font-mono font-bold ${val < 0 ? 'text-red-600' : val > 0 ? 'text-emerald-700' : 'text-gray-600'}`}>
-            PKR {val.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          <span className={`font-mono font-bold ${isNegative(val) ? 'text-[#A82430]' : isPositive(val) ? 'text-[#146341]' : 'text-[#46536B]'}`}>
+            PKR {fmtMoney(val)}
           </span>
         );
       },
@@ -425,25 +429,25 @@ export const WarehouseView: React.FC = () => {
       {/* Content */}
       {activeTab === 'WAREHOUSES' && (
         <Card>
-          <Table columns={warehouseColumns} data={warehouses} keyExtractor={(w) => w.id} isLoading={loading} emptyMessage="No warehouses created yet." />
+          <Table columns={warehouseColumns} data={warehouses} keyExtractor={(w) => w.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No warehouses created yet." />
         </Card>
       )}
 
       {activeTab === 'TRANSFERS' && (
         <Card>
-          <Table columns={transferColumns} data={transfers} keyExtractor={(t) => t.id} isLoading={loading} emptyMessage="No stock transfers created yet." />
+          <Table columns={transferColumns} data={transfers} keyExtractor={(t) => t.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No stock transfers created yet." />
         </Card>
       )}
 
       {activeTab === 'COUNTS' && (
         <Card>
-          <Table columns={countColumns} data={counts} keyExtractor={(c) => c.id} isLoading={loading} emptyMessage="No physical counts initiated yet." />
+          <Table columns={countColumns} data={counts} keyExtractor={(c) => c.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No physical counts initiated yet." />
         </Card>
       )}
 
       {activeTab === 'LOTS' && (
         <Card>
-          <Table columns={lotColumns} data={lots} keyExtractor={(l) => l.id} isLoading={loading} emptyMessage="No lot batches tracked yet." />
+          <Table columns={lotColumns} data={lots} keyExtractor={(l) => l.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No lot batches tracked yet." />
         </Card>
       )}
 
@@ -569,7 +573,7 @@ export const WarehouseView: React.FC = () => {
               <div key={it.id} className="p-3 bg-gray-50 rounded border border-gray-200 flex items-center justify-between">
                 <div>
                   <div className="font-semibold text-gray-900 text-sm">{it.item_name}</div>
-                  <div className="text-xs font-mono text-gray-500">{it.item_code} • System Stock: {parseFloat(it.system_qty).toFixed(0)}</div>
+                  <div className="text-xs font-mono text-gray-500">{it.item_code} • System Stock: {fmtDec(it.system_qty, 0)}</div>
                 </div>
                 <div className="w-32">
                   <Input

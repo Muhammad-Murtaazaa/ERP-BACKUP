@@ -3,12 +3,14 @@ import { ApiClient } from '../api/client.js';
 import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import { Plus, RefreshCw, Send, Eye } from 'lucide-react';
 import { Party, Item } from '@omnysync/contracts';
+import { fmtDec, fmtMoney, isPositive } from '../lib/format.js';
 
 export const ArInvoicesView: React.FC = () => {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null);
 
@@ -25,6 +27,7 @@ export const ArInvoicesView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [invData, partiesData, itemsData] = await Promise.all([
         ApiClient.get('/ar/invoices'),
@@ -35,6 +38,7 @@ export const ArInvoicesView: React.FC = () => {
       setParties(partiesData);
       setItems(itemsData);
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load AR invoices:', err);
     } finally {
       setLoading(false);
@@ -79,7 +83,7 @@ export const ArInvoicesView: React.FC = () => {
         invoice_date: invoiceDate,
         due_date: dueDate,
         notes,
-        lines: lines.filter((l) => l.item_id && parseFloat(l.quantity) > 0),
+        lines: lines.filter((l) => l.item_id && isPositive(l.quantity)),
       });
 
       setIsModalOpen(false);
@@ -150,7 +154,7 @@ export const ArInvoicesView: React.FC = () => {
         <Table<any>
           data={invoices}
           keyExtractor={(inv) => inv.id}
-          isLoading={loading}
+          isLoading={loading} error={loadError} onRetry={loadData}
           columns={[
             { key: 'invoice_number', header: 'Invoice #', className: 'font-mono font-semibold text-[#5940B8]' },
             { key: 'party_name', header: 'Customer', className: 'font-semibold' },
@@ -161,14 +165,14 @@ export const ArInvoicesView: React.FC = () => {
               header: 'Total Amount (PKR)',
               align: 'right',
               className: 'font-mono font-semibold',
-              render: (inv) => parseFloat(inv.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 }),
+              render: (inv) => fmtMoney(inv.total_amount),
             },
             {
               key: 'outstanding_amount',
               header: 'Outstanding (PKR)',
               align: 'right',
               className: 'font-mono font-bold text-[#D93848]',
-              render: (inv) => parseFloat(inv.outstanding_amount).toLocaleString('en-US', { minimumFractionDigits: 2 }),
+              render: (inv) => fmtMoney(inv.outstanding_amount),
             },
             {
               key: 'status',
@@ -214,7 +218,7 @@ export const ArInvoicesView: React.FC = () => {
               <div className="text-right">
                 <span className="text-xs text-[#5E6A7D] block">Outstanding Balance:</span>
                 <span className="font-mono font-bold text-sm text-[#D93848]">
-                  PKR {parseFloat(selectedInvoice.outstanding_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  PKR {fmtMoney(selectedInvoice.outstanding_amount)}
                 </span>
               </div>
             </div>
@@ -238,8 +242,8 @@ export const ArInvoicesView: React.FC = () => {
                         <span className="text-[#5E6A7D]">{line.item_name}</span>
                       </td>
                       <td className="p-2.5 text-right font-mono">{line.quantity}</td>
-                      <td className="p-2.5 text-right font-mono">{parseFloat(line.unit_price).toFixed(2)}</td>
-                      <td className="p-2.5 text-right font-mono font-semibold">{parseFloat(line.line_total).toFixed(2)}</td>
+                      <td className="p-2.5 text-right font-mono">{fmtDec(line.unit_price, 2)}</td>
+                      <td className="p-2.5 text-right font-mono font-semibold">{fmtDec(line.line_total, 2)}</td>
                     </tr>
                   ))}
                 </tbody>

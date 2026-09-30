@@ -3,6 +3,7 @@ import { ApiClient } from '../api/client.js';
 import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import { Plus, RefreshCw, CheckCircle2, DollarSign, Send, CheckCheck, FileText, ChevronRight } from 'lucide-react';
 import { PayrollRun } from '@omnysync/contracts';
+import { fmtMoney, fmtQty } from '../lib/format.js';
 
 interface FiscalPeriod {
   id: string;
@@ -16,6 +17,7 @@ export const PayrollView: React.FC = () => {
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [periods, setPeriods] = useState<FiscalPeriod[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeRun, setActiveRun] = useState<PayrollRun | null>(null);
 
   // New Payroll Run Modal State
@@ -31,6 +33,7 @@ export const PayrollView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [runsData, periodsData] = await Promise.all([
         ApiClient.get('/hrm/payroll-runs'),
@@ -46,6 +49,7 @@ export const PayrollView: React.FC = () => {
         setActiveRun(runsData[0]);
       }
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load payroll data:', err);
     } finally {
       setLoading(false);
@@ -164,7 +168,7 @@ export const PayrollView: React.FC = () => {
       header: 'Gross Total',
       accessor: (r: PayrollRun) => (
         <span className="font-mono text-gray-900">
-          PKR {parseFloat(r.total_gross).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          PKR {fmtMoney(r.total_gross)}
         </span>
       ),
     },
@@ -173,7 +177,7 @@ export const PayrollView: React.FC = () => {
       header: 'Tax Withheld',
       accessor: (r: PayrollRun) => (
         <span className="font-mono text-red-600">
-          PKR {parseFloat(r.total_tax).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          PKR {fmtMoney(r.total_tax)}
         </span>
       ),
     },
@@ -182,7 +186,7 @@ export const PayrollView: React.FC = () => {
       header: 'Net Payable',
       accessor: (r: PayrollRun) => (
         <span className="font-mono font-bold text-emerald-700">
-          PKR {parseFloat(r.total_net).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          PKR {fmtMoney(r.total_net)}
         </span>
       ),
     },
@@ -223,7 +227,7 @@ export const PayrollView: React.FC = () => {
         {/* Runs List */}
         <div className="col-span-12 lg:col-span-7 space-y-4">
           <Card title="Monthly Payroll Batches">
-            <Table columns={runColumns} data={runs} keyExtractor={(r) => r.id} isLoading={loading} emptyMessage="No payroll runs processed yet." />
+            <Table columns={runColumns} data={runs} keyExtractor={(r) => r.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No payroll runs processed yet." />
           </Card>
         </div>
 
@@ -245,25 +249,25 @@ export const PayrollView: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Total Gross Salary:</span>
                     <span className="text-sm font-mono font-bold text-gray-900">
-                      PKR {parseFloat(activeRun.total_gross).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      PKR {fmtMoney(activeRun.total_gross)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Withholding Tax (Income Tax):</span>
                     <span className="text-sm font-mono text-red-600">
-                      - PKR {parseFloat(activeRun.total_tax).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      - PKR {fmtMoney(activeRun.total_tax)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Statutory EOBI Pension:</span>
                     <span className="text-sm font-mono text-red-600">
-                      - PKR {parseFloat(activeRun.total_eobi).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      - PKR {fmtMoney(activeRun.total_eobi)}
                     </span>
                   </div>
                   <div className="pt-2 border-t flex items-center justify-between">
                     <span className="text-sm font-bold text-gray-900">Total Net Disbursement:</span>
                     <span className="text-base font-mono font-bold text-emerald-700">
-                      PKR {parseFloat(activeRun.total_net).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      PKR {fmtMoney(activeRun.total_net)}
                     </span>
                   </div>
                 </div>
@@ -306,9 +310,9 @@ export const PayrollView: React.FC = () => {
                           <span className="font-mono text-xs font-bold text-blue-600">{item.employee_number}</span>
                         </div>
                         <div className="flex justify-between text-xs text-gray-600">
-                          <span>Gross: PKR {parseFloat(item.gross_salary).toLocaleString()}</span>
-                          <span>Tax: PKR {parseFloat(item.tax_deduction).toLocaleString()}</span>
-                          <span className="font-bold text-emerald-700">Net: PKR {parseFloat(item.net_salary).toLocaleString()}</span>
+                          <span>Gross: PKR {fmtQty(item.gross_salary)}</span>
+                          <span>Tax: PKR {fmtQty(item.tax_deduction)}</span>
+                          <span className="font-bold text-emerald-700">Net: PKR {fmtQty(item.net_salary)}</span>
                         </div>
                       </div>
                     ))}
@@ -359,9 +363,9 @@ export const PayrollView: React.FC = () => {
             <div className="p-4 bg-emerald-50 border border-emerald-200 rounded space-y-3">
               <div className="font-semibold text-emerald-900 text-sm">Gross-to-Net Summary Preview:</div>
               <div className="grid grid-cols-3 gap-2 text-xs">
-                <div>Total Gross: <span className="font-mono font-bold">PKR {parseFloat(calculationPreview.totals.total_gross).toLocaleString()}</span></div>
-                <div>Income Tax: <span className="font-mono font-bold text-red-600">PKR {parseFloat(calculationPreview.totals.total_tax).toLocaleString()}</span></div>
-                <div>Net Payable: <span className="font-mono font-bold text-emerald-700">PKR {parseFloat(calculationPreview.totals.total_net).toLocaleString()}</span></div>
+                <div>Total Gross: <span className="font-mono font-bold">PKR {fmtQty(calculationPreview.totals.total_gross)}</span></div>
+                <div>Income Tax: <span className="font-mono font-bold text-red-600">PKR {fmtQty(calculationPreview.totals.total_tax)}</span></div>
+                <div>Net Payable: <span className="font-mono font-bold text-emerald-700">PKR {fmtQty(calculationPreview.totals.total_net)}</span></div>
               </div>
               <div className="text-xs text-gray-600">
                 Ready to generate payslips for {calculationPreview.items.length} active employees.

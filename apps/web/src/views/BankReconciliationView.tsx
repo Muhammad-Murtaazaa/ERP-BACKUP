@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
+import { Table, Button, Input, Drawer, Badge, Card, Combobox, Alert } from '@omnysync/ui';
 import { RefreshCw, CheckCircle2, UploadCloud, CheckCheck, FileText } from 'lucide-react';
 import { Account } from '@omnysync/contracts';
+import { fmtMoney, isPositive } from '../lib/format.js';
 
 export const BankReconciliationView: React.FC = () => {
   const [statements, setStatements] = useState<any[]>([]);
   const [bankAccounts, setBankAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeStatement, setActiveStatement] = useState<any | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
 
@@ -25,6 +27,7 @@ export const BankReconciliationView: React.FC = () => {
 
   const loadStatements = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [stmtsData, accData] = await Promise.all([
         ApiClient.get('/treasury/statements'),
@@ -37,6 +40,7 @@ export const BankReconciliationView: React.FC = () => {
         setBankAccountId(banks[0].id);
       }
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load statements:', err);
     } finally {
       setLoading(false);
@@ -128,6 +132,11 @@ export const BankReconciliationView: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 text-left">
+      {loadError && (
+        <Alert variant="danger" title="Couldn’t load this page" action={<Button variant="secondary" size="sm" onClick={loadStatements}>Try again</Button>}>
+          {loadError}
+        </Alert>
+      )}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-[#182235]">Treasury & Bank Reconciliation</h1>
@@ -177,7 +186,7 @@ export const BankReconciliationView: React.FC = () => {
                     <div className="flex justify-between items-center text-[11px] text-[#5E6A7D] mt-2">
                       <span>Date: {stmt.statement_date}</span>
                       <span className="font-mono font-bold text-[#182235]">
-                        PKR {parseFloat(stmt.closing_balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        PKR {fmtMoney(stmt.closing_balance)}
                       </span>
                     </div>
                   </div>
@@ -196,13 +205,13 @@ export const BankReconciliationView: React.FC = () => {
                 <div>
                   <span className="text-[10px] uppercase font-bold text-[#5E6A7D] block">Statement Closing</span>
                   <span className="font-mono font-bold text-sm text-[#182235]">
-                    PKR {parseFloat(activeStatement.closing_balance).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    PKR {fmtMoney(activeStatement.closing_balance)}
                   </span>
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-bold text-[#5E6A7D] block">GL Calculated Balance</span>
                   <span className="font-mono font-bold text-sm text-[#234FA3]">
-                    PKR {parseFloat(activeStatement.summary?.glCalculatedBalance || '0').toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    PKR {fmtMoney(activeStatement.summary?.glCalculatedBalance || '0')}
                   </span>
                 </div>
                 <div>
@@ -261,8 +270,8 @@ export const BankReconciliationView: React.FC = () => {
                       align: 'right',
                       className: 'font-mono font-bold',
                       render: (l) => (
-                        <span className={parseFloat(l.amount) > 0 ? 'text-[#146341]' : 'text-[#D93848]'}>
-                          {parseFloat(l.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        <span className={isPositive(l.amount) ? 'text-[#146341]' : 'text-[#D93848]'}>
+                          {fmtMoney(l.amount)}
                         </span>
                       ),
                     },

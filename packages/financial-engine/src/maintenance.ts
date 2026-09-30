@@ -71,15 +71,17 @@ export class MaintenanceEngine {
    * Calculates next maintenance schedule due date based on last performed date and frequency interval in days.
    */
   static calculateNextDueDate(lastDateStr: string, intervalDays: number): string {
-    const baseDate = new Date(lastDateStr);
-    if (isNaN(baseDate.getTime())) {
+    // Pure calendar arithmetic in UTC (DST / host time zone can't shift the day).
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(lastDateStr ?? ''));
+    const base = m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : new Date(NaN);
+    if (isNaN(base.getTime())) {
       const now = new Date();
-      now.setDate(now.getDate() + intervalDays);
-      return now.toISOString().slice(0, 10);
+      const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+      today.setUTCDate(today.getUTCDate() + intervalDays);
+      return today.toISOString().slice(0, 10);
     }
-
-    baseDate.setDate(baseDate.getDate() + intervalDays);
-    return baseDate.toISOString().slice(0, 10);
+    base.setUTCDate(base.getUTCDate() + intervalDays);
+    return base.toISOString().slice(0, 10);
   }
 
   /**

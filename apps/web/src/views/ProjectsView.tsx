@@ -17,6 +17,7 @@ import {
   ProgressCertificate,
   Party,
 } from '@omnysync/contracts';
+import { fmtDec, fmtMoney, fmtQty } from '../lib/format.js';
 
 interface SimpleFiscalPeriod {
   id: string;
@@ -34,6 +35,7 @@ export const ProjectsView: React.FC = () => {
   const [boqs, setBoqs] = useState<BillOfQuantities[]>([]);
   const [certificates, setCertificates] = useState<ProgressCertificate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Modals
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
@@ -80,6 +82,7 @@ export const ProjectsView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [prjRes, ccRes, partiesRes, perRes] = await Promise.all([
         ApiClient.get('/projects'),
@@ -98,6 +101,7 @@ export const ProjectsView: React.FC = () => {
         setSelectedProjectId(prjList[0].id);
       }
     } catch (err: any) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load project data:', err);
     } finally {
       setLoading(false);
@@ -290,19 +294,19 @@ export const ProjectsView: React.FC = () => {
       key: 'contract_value',
       header: 'Contract Value',
       align: 'right',
-      render: (p) => <span>PKR {parseFloat(p.contract_value).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>,
+      render: (p) => <span>PKR {fmtMoney(p.contract_value)}</span>,
     },
     {
       key: 'budgeted_cost',
       header: 'Budget Cost',
       align: 'right',
-      render: (p) => <span>PKR {parseFloat(p.budgeted_cost).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>,
+      render: (p) => <span>PKR {fmtMoney(p.budgeted_cost)}</span>,
     },
     {
       key: 'retention',
       header: 'Retention %',
       align: 'center',
-      render: (p) => <span>{parseFloat(p.retention_percentage).toFixed(1)}%</span>,
+      render: (p) => <span>{fmtDec(p.retention_percentage, 1)}%</span>,
     },
     {
       key: 'status',
@@ -358,25 +362,25 @@ export const ProjectsView: React.FC = () => {
       key: 'qty',
       header: 'Contract Qty',
       align: 'right',
-      render: (bi) => <span>{parseFloat(bi.contract_quantity).toFixed(2)}</span>,
+      render: (bi) => <span>{fmtDec(bi.contract_quantity, 2)}</span>,
     },
     {
       key: 'rate',
       header: 'Unit Rate (PKR)',
       align: 'right',
-      render: (bi) => <span>{parseFloat(bi.unit_rate).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>,
+      render: (bi) => <span>{fmtMoney(bi.unit_rate)}</span>,
     },
     {
       key: 'total',
       header: 'Total Amount (PKR)',
       align: 'right',
-      render: (bi) => <span>{parseFloat(bi.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>,
+      render: (bi) => <span>{fmtMoney(bi.total_amount)}</span>,
     },
     {
       key: 'certified_qty',
       header: 'Certified Qty',
       align: 'right',
-      render: (bi) => <span className="font-semibold text-emerald-600">{parseFloat(bi.certified_quantity).toFixed(2)}</span>,
+      render: (bi) => <span className="font-semibold text-emerald-600">{fmtDec(bi.certified_quantity, 2)}</span>,
     },
   ];
 
@@ -395,7 +399,7 @@ export const ProjectsView: React.FC = () => {
       key: 'gross',
       header: 'Gross Certified',
       align: 'right',
-      render: (cert) => <span>PKR {parseFloat(cert.gross_certified_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>,
+      render: (cert) => <span>PKR {fmtMoney(cert.gross_certified_amount)}</span>,
     },
     {
       key: 'retention',
@@ -403,7 +407,7 @@ export const ProjectsView: React.FC = () => {
       align: 'right',
       render: (cert) => (
         <span className="text-amber-600 font-medium">
-          PKR {parseFloat(cert.retention_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          PKR {fmtMoney(cert.retention_amount)}
         </span>
       ),
     },
@@ -413,7 +417,7 @@ export const ProjectsView: React.FC = () => {
       align: 'right',
       render: (cert) => (
         <span className="text-emerald-700 font-bold">
-          PKR {parseFloat(cert.net_certified_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          PKR {fmtMoney(cert.net_certified_amount)}
         </span>
       ),
     },
@@ -561,7 +565,7 @@ export const ProjectsView: React.FC = () => {
             columns={projectColumns}
             data={projects}
             keyExtractor={(p) => p.id}
-            isLoading={loading}
+            isLoading={loading} error={loadError} onRetry={loadData}
             emptyMessage="No projects created yet."
           />
         </Card>
@@ -573,7 +577,7 @@ export const ProjectsView: React.FC = () => {
             columns={costCenterColumns}
             data={costCenters}
             keyExtractor={(cc) => cc.id}
-            isLoading={loading}
+            isLoading={loading} error={loadError} onRetry={loadData}
             emptyMessage="No cost centers created yet."
           />
         </Card>
@@ -601,7 +605,7 @@ export const ProjectsView: React.FC = () => {
                 <div>
                   <span className="text-slate-500">Contract Value:</span>{' '}
                   <span className="font-semibold text-slate-900">
-                    PKR {parseFloat(selectedProject.contract_value).toLocaleString()}
+                    PKR {fmtQty(selectedProject.contract_value)}
                   </span>
                 </div>
                 <div>
@@ -621,7 +625,7 @@ export const ProjectsView: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-sm font-medium text-slate-700">
-                    Total Amount: PKR {parseFloat(boq.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    Total Amount: PKR {fmtMoney(boq.total_amount)}
                   </span>
                   <Badge variant="success">{boq.status}</Badge>
                 </div>

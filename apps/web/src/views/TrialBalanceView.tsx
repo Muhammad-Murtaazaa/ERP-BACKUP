@@ -3,20 +3,24 @@ import { ApiClient } from '../api/client.js';
 import { Table, Button, Input, Badge, Card } from '@omnysync/ui';
 import { RefreshCw, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { AccountLedgerSummary, TrialBalanceReport } from '@omnysync/financial-engine';
+import { fmtMoney } from '../lib/format.js';
 
 export const TrialBalanceView: React.FC = () => {
   const [report, setReport] = useState<TrialBalanceReport | null>(null);
   const [asOfDate, setAsOfDate] = useState('2026-03-31');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [hideZeroBalances, setHideZeroBalances] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await ApiClient.get(`/ledger/trial-balance?as_of_date=${asOfDate}`);
       setReport(data);
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load trial balance:', err);
     } finally {
       setLoading(false);
@@ -69,14 +73,14 @@ export const TrialBalanceView: React.FC = () => {
           <Card className="p-4">
             <span className="text-xs text-[#5E6A7D] uppercase font-semibold block">Total Debits (PKR)</span>
             <span className="text-lg font-bold font-mono text-[#182235] mt-1 block">
-              PKR {parseFloat(report.total_debits).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              PKR {fmtMoney(report.total_debits)}
             </span>
           </Card>
 
           <Card className="p-4">
             <span className="text-xs text-[#5E6A7D] uppercase font-semibold block">Total Credits (PKR)</span>
             <span className="text-lg font-bold font-mono text-[#182235] mt-1 block">
-              PKR {parseFloat(report.total_credits).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              PKR {fmtMoney(report.total_credits)}
             </span>
           </Card>
 
@@ -123,7 +127,7 @@ export const TrialBalanceView: React.FC = () => {
         <Table<AccountLedgerSummary>
           data={filteredAccounts}
           keyExtractor={(a) => a.account_id}
-          isLoading={loading}
+          isLoading={loading} error={loadError} onRetry={loadData}
           columns={[
             { key: 'account_code', header: 'Code', className: 'font-mono font-semibold text-[#5940B8]' },
             { key: 'account_name', header: 'Account Name' },
@@ -140,7 +144,7 @@ export const TrialBalanceView: React.FC = () => {
               align: 'right',
               render: (a) =>
                 a.level === 4
-                  ? parseFloat(a.total_debit).toLocaleString('en-US', { minimumFractionDigits: 2 })
+                  ? fmtMoney(a.total_debit)
                   : '---',
             },
             {
@@ -149,7 +153,7 @@ export const TrialBalanceView: React.FC = () => {
               align: 'right',
               render: (a) =>
                 a.level === 4
-                  ? parseFloat(a.total_credit).toLocaleString('en-US', { minimumFractionDigits: 2 })
+                  ? fmtMoney(a.total_credit)
                   : '---',
             },
             {
@@ -158,7 +162,7 @@ export const TrialBalanceView: React.FC = () => {
               align: 'right',
               className: 'font-bold',
               render: (a) =>
-                parseFloat(a.net_balance).toLocaleString('en-US', { minimumFractionDigits: 2 }),
+                fmtMoney(a.net_balance),
             },
           ]}
         />

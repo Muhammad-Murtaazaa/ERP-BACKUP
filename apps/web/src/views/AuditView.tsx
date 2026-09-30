@@ -17,13 +17,16 @@ export interface AuditLogItem {
 export const AuditView: React.FC = () => {
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await ApiClient.get('/audit/logs');
       setLogs(data);
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load audit logs:', err);
     } finally {
       setLoading(false);
@@ -53,7 +56,7 @@ export const AuditView: React.FC = () => {
         <Table<AuditLogItem>
           data={logs}
           keyExtractor={(l) => l.id}
-          isLoading={loading}
+          isLoading={loading} error={loadError} onRetry={loadData}
           columns={[
             {
               key: 'created_at',

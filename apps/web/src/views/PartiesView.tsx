@@ -3,10 +3,12 @@ import { ApiClient } from '../api/client.js';
 import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import { Plus, RefreshCw } from 'lucide-react';
 import { Party, PartyType } from '@omnysync/contracts';
+import { fmtMoney } from '../lib/format.js';
 
 export const PartiesView: React.FC = () => {
   const [parties, setParties] = useState<Party[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -24,10 +26,12 @@ export const PartiesView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await ApiClient.get(`/parties?type=${typeFilter}&search=${search}`);
       setParties(data);
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load parties:', err);
     } finally {
       setLoading(false);
@@ -124,7 +128,7 @@ export const PartiesView: React.FC = () => {
         <Table<Party>
           data={parties}
           keyExtractor={(p) => p.id}
-          isLoading={loading}
+          isLoading={loading} error={loadError} onRetry={loadData}
           columns={[
             { key: 'code', header: 'Party Code', className: 'font-mono font-semibold text-[#5940B8]' },
             { key: 'name', header: 'Party Name', className: 'font-semibold' },
@@ -143,7 +147,7 @@ export const PartiesView: React.FC = () => {
               key: 'credit_limit',
               header: 'Credit Limit (PKR)',
               align: 'right',
-              render: (p) => parseFloat(p.credit_limit).toLocaleString('en-US', { minimumFractionDigits: 2 }),
+              render: (p) => fmtMoney(p.credit_limit),
             },
           ]}
         />

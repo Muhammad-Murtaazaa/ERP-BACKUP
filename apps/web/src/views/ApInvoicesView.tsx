@@ -3,12 +3,14 @@ import { ApiClient } from '../api/client.js';
 import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import { Plus, RefreshCw, Send } from 'lucide-react';
 import { Party, Item } from '@omnysync/contracts';
+import { fmtMoney, isPositive } from '../lib/format.js';
 
 export const ApInvoicesView: React.FC = () => {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Form State
@@ -25,6 +27,7 @@ export const ApInvoicesView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [invData, partiesData, itemsData] = await Promise.all([
         ApiClient.get('/ap/invoices'),
@@ -35,6 +38,7 @@ export const ApInvoicesView: React.FC = () => {
       setParties(partiesData);
       setItems(itemsData);
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load AP bills:', err);
     } finally {
       setLoading(false);
@@ -80,7 +84,7 @@ export const ApInvoicesView: React.FC = () => {
         invoice_date: invoiceDate,
         due_date: dueDate,
         notes,
-        lines: lines.filter((l) => l.item_id && parseFloat(l.quantity) > 0),
+        lines: lines.filter((l) => l.item_id && isPositive(l.quantity)),
       });
 
       setIsModalOpen(false);
@@ -143,7 +147,7 @@ export const ApInvoicesView: React.FC = () => {
         <Table<any>
           data={invoices}
           keyExtractor={(inv) => inv.id}
-          isLoading={loading}
+          isLoading={loading} error={loadError} onRetry={loadData}
           columns={[
             { key: 'invoice_number', header: 'Bill / Inv #', className: 'font-mono font-semibold text-[#5940B8]' },
             { key: 'party_name', header: 'Vendor', className: 'font-semibold' },
@@ -154,14 +158,14 @@ export const ApInvoicesView: React.FC = () => {
               header: 'Total Value (PKR)',
               align: 'right',
               className: 'font-mono font-semibold',
-              render: (inv) => parseFloat(inv.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 }),
+              render: (inv) => fmtMoney(inv.total_amount),
             },
             {
               key: 'outstanding_amount',
               header: 'Payable Balance (PKR)',
               align: 'right',
               className: 'font-mono font-bold text-[#D93848]',
-              render: (inv) => parseFloat(inv.outstanding_amount).toLocaleString('en-US', { minimumFractionDigits: 2 }),
+              render: (inv) => fmtMoney(inv.outstanding_amount),
             },
             {
               key: 'status',

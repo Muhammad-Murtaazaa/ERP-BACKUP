@@ -3,6 +3,7 @@ import { ApiClient } from '../api/client.js';
 import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import { RefreshCw, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { Party, Account } from '@omnysync/contracts';
+import { fmtDec, fmtMoney, isPositive, sumDec } from '../lib/format.js';
 
 export const PaymentsView: React.FC = () => {
   const [payments, setPayments] = useState<any[]>([]);
@@ -10,6 +11,7 @@ export const PaymentsView: React.FC = () => {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [openInvoices, setOpenInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [paymentType, setPaymentType] = useState<'RECEIPT' | 'DISBURSEMENT'>('RECEIPT');
 
@@ -25,6 +27,7 @@ export const PaymentsView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [pmtData, partiesData, accData] = await Promise.all([
         ApiClient.get('/payments'),
@@ -40,6 +43,7 @@ export const PaymentsView: React.FC = () => {
         setBankAccountId(bankAccs[0].id);
       }
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load payments data:', err);
     } finally {
       setLoading(false);
@@ -56,11 +60,11 @@ export const PaymentsView: React.FC = () => {
     try {
       if (type === 'RECEIPT') {
         const invs = await ApiClient.get('/ar/invoices');
-        const partyInvs = invs.filter((i: any) => i.party_id === pId && parseFloat(i.outstanding_amount) > 0 && i.status !== 'DRAFT');
+        const partyInvs = invs.filter((i: any) => i.party_id === pId && isPositive(i.outstanding_amount) && i.status !== 'DRAFT');
         setOpenInvoices(partyInvs);
       } else {
         const bills = await ApiClient.get('/ap/invoices');
-        const partyBills = bills.filter((b: any) => b.party_id === pId && parseFloat(b.outstanding_amount) > 0 && b.status !== 'DRAFT');
+        const partyBills = bills.filter((b: any) => b.party_id === pId && isPositive(b.outstanding_amount) && b.status !== 'DRAFT');
         setOpenInvoices(partyBills);
       }
     } catch (err) {
@@ -93,15 +97,13 @@ export const PaymentsView: React.FC = () => {
     setAllocations(next);
 
     // Auto update total amount
-    const sum = next.reduce((acc, curr) => acc + parseFloat(curr.amount || '0'), 0);
-    setAmount(sum.toFixed(2));
+    setAmount(sumDec(next.map((a) => a.amount)));
   };
 
   const removeAllocation = (index: number) => {
     const next = allocations.filter((_, i) => i !== index);
     setAllocations(next);
-    const sum = next.reduce((acc, curr) => acc + parseFloat(curr.amount || '0'), 0);
-    setAmount(sum.toFixed(2));
+    setAmount(sumDec(next.map((a) => a.amount)));
   };
 
   const handleCreatePayment = async (e: React.FormEvent) => {
@@ -175,7 +177,7 @@ export const PaymentsView: React.FC = () => {
         <Table<any>
           data={payments}
           keyExtractor={(p) => p.id}
-          isLoading={loading}
+          isLoading={loading} error={loadError} onRetry={loadData}
           columns={[
             { key: 'payment_number', header: 'Payment #', className: 'font-mono font-semibold text-[#5940B8]' },
             {
@@ -197,7 +199,7 @@ export const PaymentsView: React.FC = () => {
               className: 'font-mono font-bold',
               render: (p) => (
                 <span className={p.payment_type === 'RECEIPT' ? 'text-[#146341]' : 'text-[#D93848]'}>
-                  {parseFloat(p.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  {fmtMoney(p.amount)}
                 </span>
               ),
             },
@@ -313,7 +315,7 @@ export const PaymentsView: React.FC = () => {
                     >
                       <span className="font-mono font-semibold text-[#5940B8]">{inv.invoice_number}</span>
                       <span className="text-[#D93848] font-mono">
-                        (PKR {parseFloat(inv.outstanding_amount).toFixed(2)})
+                        (PKR {fmtDec(inv.outstanding_amount, 2)})
                       </span>
                     </button>
                   ))}
@@ -329,7 +331,7 @@ export const PaymentsView: React.FC = () => {
                         {alloc.invoice_number}
                       </div>
                       <div className="col-span-3 text-xs text-[#5E6A7D]">
-                        Outstanding: {parseFloat(alloc.outstanding).toFixed(2)}
+                        Outstanding: {fmtDec(alloc.outstanding, 2)}
                       </div>
                       <div className="col-span-3">
                         <Input

@@ -4,11 +4,13 @@ import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/u
 import { Plus, RefreshCw, Eye, CheckCircle2, RotateCcw, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { Journal, Account } from '@omnysync/contracts';
 import { Money, sumMoney } from '@omnysync/financial-engine';
+import { fmtMoney } from '../lib/format.js';
 
 export const JournalsView: React.FC = () => {
   const [journals, setJournals] = useState<Journal[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
 
@@ -39,6 +41,7 @@ export const JournalsView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [jRes, accRes] = await Promise.all([
         ApiClient.get(`/journals?status=${statusFilter}&search=${search}`),
@@ -47,6 +50,7 @@ export const JournalsView: React.FC = () => {
       setJournals(jRes);
       setAccounts(accRes);
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load journals:', err);
     } finally {
       setLoading(false);
@@ -278,7 +282,7 @@ export const JournalsView: React.FC = () => {
         <Table<Journal>
           data={journals}
           keyExtractor={(j) => j.id}
-          isLoading={loading}
+          isLoading={loading} error={loadError} onRetry={loadData}
           columns={[
             { key: 'journal_number', header: 'Voucher Number', className: 'font-mono font-semibold text-[#5940B8]' },
             { key: 'posting_date', header: 'Posting Date' },
@@ -288,13 +292,13 @@ export const JournalsView: React.FC = () => {
               key: 'total_base_debit',
               header: 'Total Debit (PKR)',
               align: 'right',
-              render: (j) => parseFloat(j.total_base_debit).toLocaleString('en-US', { minimumFractionDigits: 2 }),
+              render: (j) => fmtMoney(j.total_base_debit),
             },
             {
               key: 'total_base_credit',
               header: 'Total Credit (PKR)',
               align: 'right',
-              render: (j) => parseFloat(j.total_base_credit).toLocaleString('en-US', { minimumFractionDigits: 2 }),
+              render: (j) => fmtMoney(j.total_base_credit),
             },
             {
               key: 'status',
@@ -538,10 +542,10 @@ export const JournalsView: React.FC = () => {
                       </td>
                       <td className="py-2 px-3 text-[#5E6A7D]">{line.description || '---'}</td>
                       <td className="py-2 px-3 text-right font-mono font-medium">
-                        {parseFloat(line.base_debit).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        {fmtMoney(line.base_debit)}
                       </td>
                       <td className="py-2 px-3 text-right font-mono font-medium">
-                        {parseFloat(line.base_credit).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        {fmtMoney(line.base_credit)}
                       </td>
                     </tr>
                   ))}
@@ -550,10 +554,10 @@ export const JournalsView: React.FC = () => {
                   <tr>
                     <td colSpan={3} className="py-2.5 px-3 text-right">Total:</td>
                     <td className="py-2.5 px-3 text-right font-mono">
-                      PKR {parseFloat(selectedJournal.total_base_debit).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      PKR {fmtMoney(selectedJournal.total_base_debit)}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono">
-                      PKR {parseFloat(selectedJournal.total_base_credit).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      PKR {fmtMoney(selectedJournal.total_base_credit)}
                     </td>
                   </tr>
                 </tfoot>
@@ -622,7 +626,7 @@ export const JournalsView: React.FC = () => {
           <div className="p-3 bg-[#F7F8FC] border border-[#D9DFEA] rounded text-xs text-[#46536B]">
             Reversing voucher: <strong className="font-mono text-[#182235]">{selectedJournal?.journal_number}</strong>
             <br />
-            Amount: <strong>PKR {selectedJournal ? parseFloat(selectedJournal.total_base_debit).toLocaleString('en-US', { minimumFractionDigits: 2 }) : ''}</strong>
+            Amount: <strong>PKR {selectedJournal ? fmtMoney(selectedJournal.total_base_debit) : ''}</strong>
           </div>
 
           <Input

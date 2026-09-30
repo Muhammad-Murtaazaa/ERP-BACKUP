@@ -3,12 +3,14 @@ import { ApiClient } from '../api/client.js';
 import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import { Plus, RefreshCw, CheckCircle2, Download } from 'lucide-react';
 import { Party, Item } from '@omnysync/contracts';
+import { fmtMoney, isPositive } from '../lib/format.js';
 
 export const ProcurementOrdersView: React.FC = () => {
   const [orders, setOrders] = useState<any[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Form State
@@ -24,6 +26,7 @@ export const ProcurementOrdersView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [poData, partiesData, itemsData] = await Promise.all([
         ApiClient.get('/procurement/orders'),
@@ -34,6 +37,7 @@ export const ProcurementOrdersView: React.FC = () => {
       setParties(partiesData);
       setItems(itemsData);
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load POs:', err);
     } finally {
       setLoading(false);
@@ -78,7 +82,7 @@ export const ProcurementOrdersView: React.FC = () => {
         po_date: poDate,
         expected_date: expectedDate || null,
         notes,
-        lines: lines.filter((l) => l.item_id && parseFloat(l.quantity) > 0),
+        lines: lines.filter((l) => l.item_id && isPositive(l.quantity)),
       });
 
       setIsModalOpen(false);
@@ -149,7 +153,7 @@ export const ProcurementOrdersView: React.FC = () => {
         <Table<any>
           data={orders}
           keyExtractor={(o) => o.id}
-          isLoading={loading}
+          isLoading={loading} error={loadError} onRetry={loadData}
           columns={[
             { key: 'po_number', header: 'PO #', className: 'font-mono font-semibold text-[#5940B8]' },
             { key: 'party_name', header: 'Supplier / Vendor', className: 'font-semibold' },
@@ -159,7 +163,7 @@ export const ProcurementOrdersView: React.FC = () => {
               header: 'Total Value (PKR)',
               align: 'right',
               className: 'font-mono font-semibold',
-              render: (o) => parseFloat(o.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 }),
+              render: (o) => fmtMoney(o.total_amount),
             },
             {
               key: 'status',

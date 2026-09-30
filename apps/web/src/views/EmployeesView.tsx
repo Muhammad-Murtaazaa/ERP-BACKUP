@@ -3,6 +3,7 @@ import { ApiClient } from '../api/client.js';
 import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import { Plus, RefreshCw, UserCheck, Briefcase, Building } from 'lucide-react';
 import { Employee, Department, Designation, SalaryStructure } from '@omnysync/contracts';
+import { fmtMoney, fmtQty, sumDec } from '../lib/format.js';
 
 export const EmployeesView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'EMPLOYEES' | 'STRUCTURES' | 'DEPARTMENTS'>('EMPLOYEES');
@@ -11,6 +12,7 @@ export const EmployeesView: React.FC = () => {
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [structures, setStructures] = useState<SalaryStructure[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Modals
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
@@ -48,6 +50,7 @@ export const EmployeesView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [empData, deptData, desigData, structData] = await Promise.all([
         ApiClient.get('/hrm/employees'),
@@ -60,6 +63,7 @@ export const EmployeesView: React.FC = () => {
       setDesignations(desigData);
       setStructures(structData);
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load HRM data:', err);
     } finally {
       setLoading(false);
@@ -180,7 +184,7 @@ export const EmployeesView: React.FC = () => {
         e.salary_structure ? (
           <div>
             <div className="font-medium text-gray-900">{e.salary_structure.name}</div>
-            <div className="text-xs font-mono text-emerald-700">Gross: PKR {parseFloat(e.salary_structure.gross_salary).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+            <div className="text-xs font-mono text-emerald-700">Gross: PKR {fmtMoney(e.salary_structure.gross_salary)}</div>
           </div>
         ) : (
           <span className="text-xs text-gray-400 italic">No structure</span>
@@ -199,15 +203,15 @@ export const EmployeesView: React.FC = () => {
 
   const structureColumns = [
     { key: 'name', header: 'Structure Name', accessor: (s: SalaryStructure) => <span className="font-semibold text-gray-900">{s.name}</span> },
-    { key: 'basic', header: 'Basic Pay', accessor: (s: SalaryStructure) => <span className="font-mono text-gray-700">PKR {parseFloat(s.basic_salary).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span> },
-    { key: 'hra', header: 'House Rent', accessor: (s: SalaryStructure) => <span className="font-mono text-gray-700">PKR {parseFloat(s.house_rent_allowance).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span> },
-    { key: 'utility', header: 'Utility', accessor: (s: SalaryStructure) => <span className="font-mono text-gray-700">PKR {parseFloat(s.utility_allowance).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span> },
+    { key: 'basic', header: 'Basic Pay', accessor: (s: SalaryStructure) => <span className="font-mono text-gray-700">PKR {fmtMoney(s.basic_salary)}</span> },
+    { key: 'hra', header: 'House Rent', accessor: (s: SalaryStructure) => <span className="font-mono text-gray-700">PKR {fmtMoney(s.house_rent_allowance)}</span> },
+    { key: 'utility', header: 'Utility', accessor: (s: SalaryStructure) => <span className="font-mono text-gray-700">PKR {fmtMoney(s.utility_allowance)}</span> },
     {
       key: 'gross',
       header: 'Total Gross Pay',
       accessor: (s: SalaryStructure) => (
         <span className="font-mono font-bold text-emerald-700">
-          PKR {parseFloat(s.gross_salary).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          PKR {fmtMoney(s.gross_salary)}
         </span>
       ),
     },
@@ -291,19 +295,19 @@ export const EmployeesView: React.FC = () => {
       {/* Content */}
       {activeTab === 'EMPLOYEES' && (
         <Card>
-          <Table columns={employeeColumns} data={employees} keyExtractor={(e) => e.id} isLoading={loading} emptyMessage="No employees onboarded yet." />
+          <Table columns={employeeColumns} data={employees} keyExtractor={(e) => e.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No employees onboarded yet." />
         </Card>
       )}
 
       {activeTab === 'STRUCTURES' && (
         <Card>
-          <Table columns={structureColumns} data={structures} keyExtractor={(s) => s.id} isLoading={loading} emptyMessage="No salary structures defined yet." />
+          <Table columns={structureColumns} data={structures} keyExtractor={(s) => s.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No salary structures defined yet." />
         </Card>
       )}
 
       {activeTab === 'DEPARTMENTS' && (
         <Card>
-          <Table columns={deptColumns} data={departments} keyExtractor={(d) => d.id} isLoading={loading} emptyMessage="No departments created yet." />
+          <Table columns={deptColumns} data={departments} keyExtractor={(d) => d.id} isLoading={loading} error={loadError} onRetry={loadData} emptyMessage="No departments created yet." />
         </Card>
       )}
 
@@ -360,7 +364,7 @@ export const EmployeesView: React.FC = () => {
               >
                 <option value="">Select Grade...</option>
                 {structures.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name} (PKR {parseFloat(s.gross_salary).toLocaleString()})</option>
+                  <option key={s.id} value={s.id}>{s.name} (PKR {fmtQty(s.gross_salary)})</option>
                 ))}
               </Combobox>
             </div>
@@ -392,7 +396,7 @@ export const EmployeesView: React.FC = () => {
           <div className="p-3 bg-emerald-50 border border-emerald-200 rounded flex justify-between items-center">
             <span className="text-sm font-semibold text-emerald-900">Total Monthly Gross:</span>
             <span className="text-base font-bold font-mono text-emerald-800">
-              PKR {(parseFloat(basicSalary || '0') + parseFloat(houseRent || '0') + parseFloat(utility || '0') + parseFloat(medical || '0')).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              PKR {fmtMoney(sumDec([basicSalary, houseRent, utility, medical]))}
             </span>
           </div>
           <div className="flex justify-end space-x-3 pt-4 border-t">

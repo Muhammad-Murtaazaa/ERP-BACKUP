@@ -16,13 +16,16 @@ export interface FiscalPeriodItem {
 export const FiscalPeriodsView: React.FC = () => {
   const [periods, setPeriods] = useState<FiscalPeriodItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await ApiClient.get('/periods');
       setPeriods(data);
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load fiscal periods:', err);
     } finally {
       setLoading(false);
@@ -81,7 +84,7 @@ export const FiscalPeriodsView: React.FC = () => {
         <Table<FiscalPeriodItem>
           data={periods}
           keyExtractor={(p) => p.id}
-          isLoading={loading}
+          isLoading={loading} error={loadError} onRetry={loadData}
           columns={[
             { key: 'fiscal_year', header: 'Year', className: 'font-mono' },
             { key: 'period_number', header: 'Period #' },

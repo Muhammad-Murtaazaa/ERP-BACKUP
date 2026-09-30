@@ -3,12 +3,14 @@ import { ApiClient } from '../api/client.js';
 import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import { Plus, RefreshCw, CheckCircle2, Truck, Eye } from 'lucide-react';
 import { Party, Item } from '@omnysync/contracts';
+import { fmtDec, fmtMoney, isPositive } from '../lib/format.js';
 
 export const SalesOrdersView: React.FC = () => {
   const [orders, setOrders] = useState<any[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
 
@@ -25,6 +27,7 @@ export const SalesOrdersView: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [ordersData, partiesData, itemsData] = await Promise.all([
         ApiClient.get('/sales/orders'),
@@ -35,6 +38,7 @@ export const SalesOrdersView: React.FC = () => {
       setParties(partiesData);
       setItems(itemsData);
     } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
       console.error('Failed to load sales orders data:', err);
     } finally {
       setLoading(false);
@@ -79,7 +83,7 @@ export const SalesOrdersView: React.FC = () => {
         order_date: orderDate,
         delivery_date: deliveryDate || null,
         notes,
-        lines: lines.filter((l) => l.item_id && parseFloat(l.quantity) > 0),
+        lines: lines.filter((l) => l.item_id && isPositive(l.quantity)),
       });
 
       setIsModalOpen(false);
@@ -159,7 +163,7 @@ export const SalesOrdersView: React.FC = () => {
         <Table<any>
           data={orders}
           keyExtractor={(o) => o.id}
-          isLoading={loading}
+          isLoading={loading} error={loadError} onRetry={loadData}
           columns={[
             { key: 'order_number', header: 'Order #', className: 'font-mono font-semibold text-[#5940B8]' },
             { key: 'party_name', header: 'Customer', className: 'font-semibold' },
@@ -169,7 +173,7 @@ export const SalesOrdersView: React.FC = () => {
               header: 'Total Value (PKR)',
               align: 'right',
               className: 'font-mono font-semibold',
-              render: (o) => parseFloat(o.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 }),
+              render: (o) => fmtMoney(o.total_amount),
             },
             {
               key: 'status',
@@ -220,7 +224,7 @@ export const SalesOrdersView: React.FC = () => {
               <div className="text-right">
                 <span className="text-xs text-[#5E6A7D] block">Total Amount:</span>
                 <span className="font-mono font-bold text-sm text-[#182235]">
-                  PKR {parseFloat(selectedOrder.total_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  PKR {fmtMoney(selectedOrder.total_amount)}
                 </span>
               </div>
             </div>
@@ -246,8 +250,8 @@ export const SalesOrdersView: React.FC = () => {
                       </td>
                       <td className="p-2.5 text-right font-mono">{line.quantity}</td>
                       <td className="p-2.5 text-right font-mono text-[#146341] font-semibold">{line.fulfilled_quantity || '0'}</td>
-                      <td className="p-2.5 text-right font-mono">{parseFloat(line.unit_price).toFixed(2)}</td>
-                      <td className="p-2.5 text-right font-mono font-semibold">{parseFloat(line.line_total).toFixed(2)}</td>
+                      <td className="p-2.5 text-right font-mono">{fmtDec(line.unit_price, 2)}</td>
+                      <td className="p-2.5 text-right font-mono font-semibold">{fmtDec(line.line_total, 2)}</td>
                     </tr>
                   ))}
                 </tbody>
