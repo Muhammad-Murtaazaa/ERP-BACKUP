@@ -453,6 +453,11 @@ export class SyntheticSeedRunner {
       ['00000000-0000-0000-0000-000000000030', mainWhId, zoneId],
     );
 
+    // 11. Retail (POS) catalogue, promotions, manager PINs and opening stock.
+    // Retail items carry EAN-13 barcodes (GS1 Pakistan prefix 896) or scale PLUs
+    // and their own opening journal so the stock subledger keeps agreeing with 113001.
+    await this.seedRetail(orgId, legalEntityId, branchId, mainWhId, codeToIdMap, personas);
+
     return {
       organizationId: orgId,
       legalEntityId: legalEntityId,
@@ -462,5 +467,119 @@ export class SyntheticSeedRunner {
       periodsCreated: periodsCount,
       openingJournalId,
     };
+  }
+
+  private async seedRetail(
+    orgId: string,
+    legalEntityId: string,
+    branchId: string,
+    mainWhId: string,
+    codeToIdMap: Map<string, string>,
+    personas: { id: string; email: string; role: string }[],
+  ): Promise<void> {
+    const salesAcc = codeToIdMap.get('411001')!;
+    const cogsAcc = codeToIdMap.get('511001')!;
+    const invAcc = codeToIdMap.get('113001')!;
+    const retail = [
+      { n: 1, code: 'RTL-BREAD-L', name: 'Dawn Bread Large', price: '220', cost: '170', qty: '60', tax: '0', cat: 'BAKERY', barcode: '8961000000013' },
+      { n: 2, code: 'RTL-LAYS-70', name: 'Lays Masala Chips 70g', price: '100', cost: '70', qty: '200', tax: '18', cat: 'SNACK', barcode: '8961000000020' },
+      { n: 3, code: 'RTL-KURK-90', name: 'Kurkure Chutney Chaska 90g', price: '90', cost: '60', qty: '200', tax: '18', cat: 'SNACK', barcode: '8961000000037' },
+      { n: 4, code: 'RTL-PEPSI-15', name: 'Pepsi 1.5L', price: '230', cost: '170', qty: '150', tax: '18', cat: 'BEVERAGE', barcode: '8961000000044' },
+      { n: 5, code: 'RTL-WATER-15', name: 'Nestle Mineral Water 1.5L', price: '120', cost: '80', qty: '200', tax: '18', cat: 'BEVERAGE', barcode: '8961000000051' },
+      { n: 6, code: 'RTL-TEA-950', name: 'Tapal Danedar Tea 950g', price: '1650', cost: '1350', qty: '50', tax: '18', cat: 'GROCERY', barcode: '8961000000068' },
+      { n: 7, code: 'RTL-SHAN-BIR', name: 'Shan Biryani Masala 50g', price: '150', cost: '110', qty: '120', tax: '18', cat: 'GROCERY', barcode: '8961000000075' },
+      { n: 8, code: 'RTL-OIL-5L', name: 'Sufi Cooking Oil 5L', price: '3200', cost: '2800', qty: '40', tax: '18', cat: 'GROCERY', barcode: '8961000000082' },
+      { n: 9, code: 'RTL-SURF-1K', name: 'Surf Excel 1kg', price: '750', cost: '600', qty: '80', tax: '18', cat: 'HOUSEHOLD', barcode: '8961000000099' },
+      { n: 10, code: 'RTL-BANANA-KG', name: 'Fresh Bananas (per kg)', price: '280', cost: '200', qty: '100', tax: '0', cat: 'PRODUCE', plu: '00042', weighed: true },
+      { n: 11, code: 'RTL-TOMATO-KG', name: 'Tomatoes (per kg)', price: '180', cost: '120', qty: '80', tax: '0', cat: 'PRODUCE', plu: '00043', weighed: true },
+      { n: 12, code: 'RTL-BEEF-KG', name: 'Minced Beef (per kg)', price: '1400', cost: '1100', qty: '30', tax: '0', cat: 'MEAT', plu: '00050', weighed: true },
+    ] as { n: number; code: string; name: string; price: string; cost: string; qty: string; tax: string; cat: string; barcode?: string; plu?: string; weighed?: boolean }[];
+
+    let openingValue = new Money('0');
+    const itemIds = new Map<string, string>();
+    for (const r of retail) {
+      const id = `71000000-0000-0000-0000-${String(r.n).padStart(12, '0')}`;
+      itemIds.set(r.code, id);
+      await this.db.query(
+        `INSERT INTO items (id, organization_id, legal_entity_id, code, name, item_type, uom, unit_price, unit_cost,
+           sales_account_id, cogs_account_id, inventory_account_id, is_active, barcode, plu_code, tax_rate, is_weighed, category, reorder_point, reorder_qty)
+         VALUES ($1,$2,$3,$4,$5,'INVENTORY',$6,$7,$8,$9,$10,$11,true,$12,$13,$14,$15,$16,$17,$18)
+         ON CONFLICT (organization_id, code) DO UPDATE SET name = EXCLUDED.name, unit_price = EXCLUDED.unit_price,
+           barcode = EXCLUDED.barcode, plu_code = EXCLUDED.plu_code, tax_rate = EXCLUDED.tax_rate, is_weighed = EXCLUDED.is_weighed, category = EXCLUDED.category`,
+        [id, orgId, legalEntityId, r.code, r.name, r.weighed ? 'KG' : 'UNIT', r.price, r.cost, salesAcc, cogsAcc, invAcc,
+          r.barcode ?? null, r.plu ?? null, r.tax, !!r.weighed, r.cat, r.weighed ? '10' : '20', r.weighed ? '50' : '100'],
+      );
+      const value = new Money(r.cost).mul(r.qty);
+      openingValue = openingValue.add(value);
+      await this.db.query(
+        `INSERT INTO stock_movements (id, organization_id, legal_entity_id, item_id, warehouse_id, location_id,
+           movement_type, movement_date, quantity, unit_cost, total_value, description)
+         VALUES ($1,$2,$3,$4,$5,$6,'OPENING','2026-03-01',$7,$8,$9,'Retail opening stock')
+         ON CONFLICT (id) DO NOTHING`,
+        [`7b000000-0000-0000-0000-${String(r.n).padStart(12, '0')}`, orgId, legalEntityId, id, branchId, mainWhId, r.qty, r.cost, value.toFixed(8)],
+      );
+    }
+
+    const jId = '50000000-0000-0000-0000-000000000002';
+    const amt = openingValue.toFixed(8);
+    await this.db.transaction(async (tx) => {
+      const ins = await tx.query(
+        `INSERT INTO journals (id, organization_id, legal_entity_id, journal_number, posting_date, document_date, accounting_purpose, status,
+           base_currency, total_base_debit, total_base_credit, description, created_by, approved_by, posted_by, posted_at, revision)
+         VALUES ($1,$2,$3,'JV-2026-0002-RETAIL-OPENING','2026-03-01','2026-03-01',$4,$5,'PKR',$6,$6,'Retail store opening stock (capital contribution in kind)',$7,$8,$8,CURRENT_TIMESTAMP,1)
+         ON CONFLICT (legal_entity_id, journal_number) DO NOTHING RETURNING id`,
+        [jId, orgId, legalEntityId, AccountingPurpose.OPENING_BALANCE, JournalStatus.POSTED, amt, personas[0].id, personas[1].id],
+      );
+      if (ins.rows.length === 0) return;
+      const lines = [
+        { num: 1, acc: invAcc, dr: amt, cr: '0' },
+        { num: 2, acc: codeToIdMap.get('311001')!, dr: '0', cr: amt },
+      ];
+      for (const l of lines) {
+        await tx.query(
+          `INSERT INTO journal_lines (id, journal_id, line_number, account_id, debit_amount, credit_amount, currency, fx_rate, base_debit, base_credit, description)
+           VALUES ($1,$2,$3,$4,$5,$6,'PKR',1.0,$5,$6,'Retail opening stock')`,
+          [crypto.randomUUID(), jId, l.num, l.acc, l.dr, l.cr],
+        );
+      }
+    });
+
+    // Manager PINs (demo): store manager 2468, administrator 1357.
+    const pins: [string, string][] = [
+      ['40000000-0000-0000-0000-000000000007', '2468'],
+      ['40000000-0000-0000-0000-000000000001', '1357'],
+    ];
+    for (const [userId, pin] of pins) {
+      await this.db.query(
+        `INSERT INTO pos_manager_pins (user_id, organization_id, pin_hash) VALUES ($1,$2,$3)
+         ON CONFLICT (organization_id, user_id) DO NOTHING`,
+        [userId, orgId, AuthService.hashPassword(pin)],
+      );
+    }
+
+    await this.db.query(
+      `INSERT INTO pos_registers (id, register_code, name, warehouse_id, is_active, organization_id, default_tax_rate, max_cashier_discount_percent,
+         receipt_header, receipt_footer)
+       VALUES ('72000000-0000-0000-0000-000000000001','POS-01','Front Counter 1',$1,true,$2,'18','10',
+         $3,$4)
+       ON CONFLICT (organization_id, register_code) DO NOTHING`,
+      [mainWhId, orgId, 'OMNYSYNC MART\nPlot 45, Korangi, Karachi\nNTN 1234567-8', 'Thank you for shopping!\nReturns within 14 days with receipt.'],
+    );
+
+    const I = (c: string) => itemIds.get(c)!;
+    const promos = [
+      { code: 'LAYS-2ND-HALF', name: 'Lays: 2nd pack half price', type: 'BOGO', priority: 10, rule: { item_ids: [I('RTL-LAYS-70')], buy_qty: '1', get_qty: '1', get_discount_percent: '50' } },
+      { code: 'DRINKS-3-550', name: 'Any 3 drinks for Rs 550', type: 'MIX_MATCH', priority: 5, rule: { categories: ['BEVERAGE'], group_qty: '3', group_price: '550' } },
+      { code: 'BIRYANI-DEAL', name: 'Biryani deal: Oil 5L + Shan masala Rs 3250', type: 'BUNDLE', priority: 8, rule: { components: [{ item_id: I('RTL-OIL-5L'), qty: '1' }, { item_id: I('RTL-SHAN-BIR'), qty: '1' }], bundle_price: '3250' } },
+      { code: 'TEA-VOLUME', name: 'Tapal tea volume pricing', type: 'TIERED', priority: 9, rule: { item_ids: [I('RTL-TEA-950')], tiers: [{ min_qty: '3', unit_price: '1600' }, { min_qty: '6', unit_price: '1550' }] } },
+      { code: 'SAVE10', name: 'Coupon SAVE10: 10% off Rs 2000+ (max Rs 500)', type: 'COUPON', priority: 1, rule: { coupon_code: 'SAVE10', percent_off: '10', min_subtotal: '2000', max_discount: '500' } },
+    ];
+    for (const p of promos) {
+      await this.db.query(
+        `INSERT INTO pos_promotions (organization_id, code, name, promo_type, rule, priority, is_active)
+         VALUES ($1,$2,$3,$4,$5,$6,true) ON CONFLICT (organization_id, code) DO NOTHING`,
+        [orgId, p.code, p.name, p.type, JSON.stringify(p.rule), p.priority],
+      );
+    }
   }
 }

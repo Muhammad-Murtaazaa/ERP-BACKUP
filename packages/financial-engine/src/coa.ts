@@ -210,6 +210,7 @@ export const STANDARD_COA_TEMPLATE: CoaTemplateItem[] = [
   { code: '521007', name: 'FX Losses & Asset Disposal Losses', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '521008', name: 'Cash Short & Over', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '521009', name: 'Bad Debt Expense', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '521010', name: 'Store Petty Cash Expenses', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
 
   // --- 9. TECHNICAL ACCOUNTS ---
   { code: '9000', name: 'Technical Accounts', level: 1, statementClass: StatementClass.EQUITY, normalBalance: NormalBalance.CREDIT, postingAllowed: false, controlType: AccountControlType.GENERAL },
