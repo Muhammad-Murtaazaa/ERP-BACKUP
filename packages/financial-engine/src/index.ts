@@ -15,3 +15,4 @@ export * from './pos.js';
 export * from './quality.js';
 export * from './maintenance.js';
 export * from './posting.js';
+export * from './retail.js';
