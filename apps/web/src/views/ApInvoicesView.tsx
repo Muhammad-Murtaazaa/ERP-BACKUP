@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { Table, Button, Input, Modal, Badge, Card } from '@omnysync/ui';
+import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import { Plus, RefreshCw, Send } from 'lucide-react';
 import { Party, Item } from '@omnysync/contracts';
 
@@ -187,7 +187,7 @@ export const ApInvoicesView: React.FC = () => {
       </Card>
 
       {/* Create Modal */}
-      <Modal
+      <Drawer
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title="Enter Supplier Bill (AP)"
@@ -202,11 +202,11 @@ export const ApInvoicesView: React.FC = () => {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-[#182235] block mb-1">Vendor *</label>
-              <select
+              <Combobox aria-label="Vendor"
                 value={partyId}
                 onChange={(e) => setPartyId(e.target.value)}
                 required
-                className="w-full px-3 py-2 text-sm bg-white border border-[#7D8799] rounded focus:ring-1 focus:ring-[#5B3CC4]"
+                className="w-full"
               >
                 <option value="">-- Select Vendor --</option>
                 {parties.map((p) => (
@@ -214,7 +214,7 @@ export const ApInvoicesView: React.FC = () => {
                     {p.code} - {p.name}
                   </option>
                 ))}
-              </select>
+              </Combobox>
             </div>
             <Input
               label="Supplier Invoice Reference #"
@@ -260,11 +260,12 @@ export const ApInvoicesView: React.FC = () => {
               {lines.map((l, index) => (
                 <div key={index} className="grid grid-cols-12 gap-2 items-center bg-[#F7F8FC] p-2.5 rounded border border-[#E7ECF3]">
                   <div className="col-span-5">
-                    <select
+                    <Combobox
+                      aria-label={`Line ${index + 1} item`}
                       value={l.item_id}
                       onChange={(e) => handleLineChange(index, 'item_id', e.target.value)}
                       required
-                      className="w-full px-2 py-1.5 text-xs bg-white border border-[#7D8799] rounded"
+                      className="w-full"
                     >
                       <option value="">-- Select Item --</option>
                       {items.map((it) => (
@@ -272,7 +273,7 @@ export const ApInvoicesView: React.FC = () => {
                           {it.code} - {it.name}
                         </option>
                       ))}
-                    </select>
+                    </Combobox>
                   </div>
                   <div className="col-span-2">
                     <Input
@@ -317,7 +318,7 @@ export const ApInvoicesView: React.FC = () => {
             </Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

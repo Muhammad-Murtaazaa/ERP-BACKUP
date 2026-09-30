@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { Table, Button, Input, Modal, Badge, Card, Column } from '@omnysync/ui';
+import { Table, Button, Input, Drawer, Badge, Card, Column, Combobox } from '@omnysync/ui';
 import {
   Landmark,
   Plus,
@@ -375,7 +375,7 @@ export const FixedAssetsView: React.FC = () => {
       )}
 
       {/* Register Asset Modal */}
-      <Modal isOpen={isAssetModalOpen} onClose={() => setIsAssetModalOpen(false)} title="Register Fixed Asset">
+      <Drawer isOpen={isAssetModalOpen} onClose={() => setIsAssetModalOpen(false)} title="Register Fixed Asset">
         <form onSubmit={handleCreateAsset} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div className="grid grid-cols-2 gap-4">
@@ -385,8 +385,8 @@ export const FixedAssetsView: React.FC = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Asset Category</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+              <Combobox aria-label="Asset Category"
+                className="w-full"
                 value={catId}
                 onChange={(e) => setCatId(e.target.value)}
                 required
@@ -394,18 +394,18 @@ export const FixedAssetsView: React.FC = () => {
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>{c.code} - {c.name}</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Depreciation Method</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+              <Combobox aria-label="Depreciation Method"
+                className="w-full"
                 value={deprecMethod}
                 onChange={(e: any) => setDeprecMethod(e.target.value)}
               >
                 <option value="STRAIGHT_LINE">STRAIGHT_LINE</option>
                 <option value="DECLINING_BALANCE">DECLINING_BALANCE</option>
-              </select>
+              </Combobox>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-4">
@@ -423,10 +423,10 @@ export const FixedAssetsView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Capitalize Asset'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Create Category Modal */}
-      <Modal isOpen={isCategoryModalOpen} onClose={() => setIsCategoryModalOpen(false)} title="Create Asset Category">
+      <Drawer isOpen={isCategoryModalOpen} onClose={() => setIsCategoryModalOpen(false)} title="Create Asset Category">
         <form onSubmit={handleCreateCategory} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div className="grid grid-cols-2 gap-4">
@@ -436,14 +436,14 @@ export const FixedAssetsView: React.FC = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Depreciation Method</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+              <Combobox aria-label="Depreciation Method"
+                className="w-full"
                 value={catMethod}
                 onChange={(e: any) => setCatMethod(e.target.value)}
               >
                 <option value="STRAIGHT_LINE">STRAIGHT_LINE</option>
                 <option value="DECLINING_BALANCE">DECLINING_BALANCE</option>
-              </select>
+              </Combobox>
             </div>
             <Input label="Default Useful Life (Months)" value={catUsefulLife} onChange={(e) => setCatUsefulLife(e.target.value)} required />
           </div>
@@ -452,10 +452,10 @@ export const FixedAssetsView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Create Category'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Run Depreciation Modal */}
-      <Modal isOpen={isDepreciateModalOpen} onClose={() => setIsDepreciateModalOpen(false)} title={`Run Depreciation: ${selectedAsset?.asset_number}`}>
+      <Drawer isOpen={isDepreciateModalOpen} onClose={() => setIsDepreciateModalOpen(false)} title={`Run Depreciation: ${selectedAsset?.asset_number}`}>
         <form onSubmit={handleRunDepreciation} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1 text-sm">
@@ -469,10 +469,10 @@ export const FixedAssetsView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Posting GL...' : 'Post Depreciation Voucher'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Dispose Asset Modal */}
-      <Modal isOpen={isDisposeModalOpen} onClose={() => setIsDisposeModalOpen(false)} title={`Dispose Asset: ${selectedAsset?.asset_number}`}>
+      <Drawer isOpen={isDisposeModalOpen} onClose={() => setIsDisposeModalOpen(false)} title={`Dispose Asset: ${selectedAsset?.asset_number}`}>
         <form onSubmit={handleDisposeAsset} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1 text-sm">
@@ -485,7 +485,7 @@ export const FixedAssetsView: React.FC = () => {
             <Button variant="destructive" type="submit" disabled={saving}>{saving ? 'Settling...' : 'Dispose & Derecognize'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

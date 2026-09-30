@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { Table, Button, Input, Modal, Badge, Card } from '@omnysync/ui';
+import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import {
   Factory,
   Plus,
@@ -411,7 +411,7 @@ export const ManufacturingView: React.FC = () => {
       )}
 
       {/* New BOM Modal */}
-      <Modal isOpen={isBOMModalOpen} onClose={() => setIsBOMModalOpen(false)} title="Create Bill of Materials (BOM)">
+      <Drawer isOpen={isBOMModalOpen} onClose={() => setIsBOMModalOpen(false)} title="Create Bill of Materials (BOM)">
         <form onSubmit={handleCreateBOM} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
           <div className="grid grid-cols-2 gap-3">
@@ -421,16 +421,16 @@ export const ManufacturingView: React.FC = () => {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Finished Catalog Item</label>
-              <select
+              <Combobox aria-label="Finished Catalog Item"
                 value={bomFinishedItemId}
                 onChange={(e) => setBomFinishedItemId(e.target.value)}
-                className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:ring-1 focus:ring-[#008060]"
+                className="w-full"
                 required
               >
                 {items.filter((i) => i.item_type === 'INVENTORY').map((i) => (
                   <option key={i.id} value={i.id}>{i.name} ({i.code})</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
             <Input label="Batch Yield Quantity" value={bomYieldQty} onChange={(e) => setBomYieldQty(e.target.value)} required />
           </div>
@@ -440,16 +440,16 @@ export const ManufacturingView: React.FC = () => {
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="block text-xs text-gray-600 mb-1">Component</label>
-                <select
+                <Combobox aria-label="Component"
                   value={bomComponentId}
                   onChange={(e) => setBomComponentId(e.target.value)}
-                  className="w-full h-8 px-2 rounded border border-gray-300 text-xs focus:outline-none focus:ring-1 focus:ring-[#008060]"
+                  className="w-full"
                   required
                 >
                   {items.map((i) => (
                     <option key={i.id} value={i.id}>{i.name} ({i.code})</option>
                   ))}
-                </select>
+                </Combobox>
               </div>
               <Input label="Quantity" value={bomComponentQty} onChange={(e) => setBomComponentQty(e.target.value)} required />
               <Input label="Scrap %" value={bomScrapPct} onChange={(e) => setBomScrapPct(e.target.value)} />
@@ -461,10 +461,10 @@ export const ManufacturingView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Create BOM'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* New Work Order Modal */}
-      <Modal isOpen={isWOModalOpen} onClose={() => setIsWOModalOpen(false)} title="Create Production Work Order">
+      <Drawer isOpen={isWOModalOpen} onClose={() => setIsWOModalOpen(false)} title="Create Production Work Order">
         <form onSubmit={handleCreateWO} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
           <div className="grid grid-cols-2 gap-3">
@@ -474,29 +474,29 @@ export const ManufacturingView: React.FC = () => {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Bill of Materials (BOM)</label>
-              <select
+              <Combobox aria-label="Bill of Materials (BOM)"
                 value={selectedBomId}
                 onChange={(e) => setSelectedBomId(e.target.value)}
-                className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:ring-1 focus:ring-[#008060]"
+                className="w-full"
                 required
               >
                 {boms.map((b) => (
                   <option key={b.id} value={b.id}>{b.name} ({b.bom_number})</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Production Warehouse</label>
-              <select
+              <Combobox aria-label="Production Warehouse"
                 value={selectedWarehouseId}
                 onChange={(e) => setSelectedWarehouseId(e.target.value)}
-                className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:ring-1 focus:ring-[#008060]"
+                className="w-full"
                 required
               >
                 {warehouses.map((w) => (
                   <option key={w.id} value={w.id}>{w.name} ({w.code})</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
           </div>
           <div className="flex justify-end space-x-3 pt-4 border-t">
@@ -504,25 +504,25 @@ export const ManufacturingView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Creating...' : 'Create Work Order'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Issue Materials Modal */}
-      <Modal isOpen={isConsumeModalOpen} onClose={() => setIsConsumeModalOpen(false)} title="Issue Raw Materials to WIP">
+      <Drawer isOpen={isConsumeModalOpen} onClose={() => setIsConsumeModalOpen(false)} title="Issue Raw Materials to WIP">
         <form onSubmit={handleRecordConsumption} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Component Raw Material</label>
-              <select
+              <Combobox aria-label="Component Raw Material"
                 value={consumeItemId}
                 onChange={(e) => setConsumeItemId(e.target.value)}
-                className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:ring-1 focus:ring-[#008060]"
+                className="w-full"
                 required
               >
                 {items.map((i) => (
                   <option key={i.id} value={i.id}>{i.name} ({i.code}) - Cost: PKR {parseFloat(i.unit_cost).toLocaleString()}</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
             <Input label="Quantity to Issue" value={consumeQty} onChange={(e) => setConsumeQty(e.target.value)} required />
           </div>
@@ -531,10 +531,10 @@ export const ManufacturingView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Issuing...' : 'Issue to Production'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Complete Work Order Modal */}
-      <Modal isOpen={isCompleteModalOpen} onClose={() => setIsCompleteModalOpen(false)} title="Complete Assembly & Settle WIP to Finished Goods">
+      <Drawer isOpen={isCompleteModalOpen} onClose={() => setIsCompleteModalOpen(false)} title="Complete Assembly & Settle WIP to Finished Goods">
         <form onSubmit={handleCompleteWO} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
           <p className="text-sm text-gray-600">
@@ -550,7 +550,7 @@ export const ManufacturingView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Completing...' : 'Complete & Post to GL'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { Table, Button, Input, Modal, Badge, Card } from '@omnysync/ui';
+import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import { RefreshCw, CheckCircle2, UploadCloud, CheckCheck, FileText } from 'lucide-react';
 import { Account } from '@omnysync/contracts';
 
@@ -283,7 +283,7 @@ export const BankReconciliationView: React.FC = () => {
       </div>
 
       {/* Upload Statement Modal */}
-      <Modal
+      <Drawer
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}
         title="Import Bank Statement"
@@ -298,18 +298,18 @@ export const BankReconciliationView: React.FC = () => {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-[#182235] block mb-1">Bank Account *</label>
-              <select
+              <Combobox aria-label="Bank Account"
                 value={bankAccountId}
                 onChange={(e) => setBankAccountId(e.target.value)}
                 required
-                className="w-full px-3 py-2 text-sm bg-white border border-[#7D8799] rounded focus:ring-1 focus:ring-[#5B3CC4]"
+                className="w-full"
               >
                 {bankAccounts.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.code} - {a.name}
                   </option>
                 ))}
-              </select>
+              </Combobox>
             </div>
             <Input
               label="Statement Reference #"
@@ -363,7 +363,7 @@ export const BankReconciliationView: React.FC = () => {
             </Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

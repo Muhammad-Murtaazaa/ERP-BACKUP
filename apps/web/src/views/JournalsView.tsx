@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { Table, Button, Input, Modal, Badge, Card } from '@omnysync/ui';
+import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import { Plus, RefreshCw, Eye, CheckCircle2, RotateCcw, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { Journal, Account } from '@omnysync/contracts';
 import { Money, sumMoney } from '@omnysync/financial-engine';
@@ -316,7 +316,7 @@ export const JournalsView: React.FC = () => {
       </Card>
 
       {/* Create Journal Draft Modal */}
-      <Modal
+      <Drawer
         isOpen={isCreateOpen}
         onClose={() => setIsCreateOpen(false)}
         title="Create Journal Entry (Draft)"
@@ -370,11 +370,12 @@ export const JournalsView: React.FC = () => {
                   <div className="col-span-1 text-xs font-mono text-center text-[#5E6A7D]">#{idx + 1}</div>
 
                   <div className="col-span-4">
-                    <select
+                    <Combobox
+                      aria-label={`Line ${idx + 1} account`}
                       value={line.account_id}
                       onChange={(e) => handleLineChange(idx, 'account_id', e.target.value)}
                       required
-                      className="w-full px-2 py-1.5 text-xs bg-white border border-[#7D8799] rounded focus:ring-1 focus:ring-[#5B3CC4]"
+                      className="w-full"
                     >
                       <option value="">-- Select L4 Account --</option>
                       {leafAccounts.map((a) => (
@@ -382,7 +383,7 @@ export const JournalsView: React.FC = () => {
                           {a.code} - {a.name} ({a.statement_class})
                         </option>
                       ))}
-                    </select>
+                    </Combobox>
                   </div>
 
                   <div className="col-span-3">
@@ -467,10 +468,10 @@ export const JournalsView: React.FC = () => {
             </Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Journal Detail Modal */}
-      <Modal
+      <Drawer
         isOpen={isDetailOpen}
         onClose={() => setIsDetailOpen(false)}
         title={`Voucher Detail: ${selectedJournal?.journal_number || ''}`}
@@ -603,10 +604,10 @@ export const JournalsView: React.FC = () => {
             </div>
           </div>
         )}
-      </Modal>
+      </Drawer>
 
       {/* Linked Reversal Confirmation Modal */}
-      <Modal
+      <Drawer
         isOpen={isReverseOpen}
         onClose={() => setIsReverseOpen(false)}
         title="Execute Linked Journal Reversal"
@@ -649,7 +650,7 @@ export const JournalsView: React.FC = () => {
             </Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

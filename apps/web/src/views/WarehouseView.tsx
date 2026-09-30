@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { Table, Button, Input, Modal, Badge, Card } from '@omnysync/ui';
+import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import {
   Warehouse as WarehouseIcon,
   Plus,
@@ -448,7 +448,7 @@ export const WarehouseView: React.FC = () => {
       )}
 
       {/* New Warehouse Modal */}
-      <Modal isOpen={isWarehouseModalOpen} onClose={() => setIsWarehouseModalOpen(false)} title="Create New Warehouse / Storage Facility">
+      <Drawer isOpen={isWarehouseModalOpen} onClose={() => setIsWarehouseModalOpen(false)} title="Create New Warehouse / Storage Facility">
         <form onSubmit={handleCreateWarehouse} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
           <div className="grid grid-cols-2 gap-3">
@@ -461,53 +461,53 @@ export const WarehouseView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Create Warehouse'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* New Stock Transfer Modal */}
-      <Modal isOpen={isTransferModalOpen} onClose={() => setIsTransferModalOpen(false)} title="Initiate Inter-Facility Stock Transfer">
+      <Drawer isOpen={isTransferModalOpen} onClose={() => setIsTransferModalOpen(false)} title="Initiate Inter-Facility Stock Transfer">
         <form onSubmit={handleCreateTransfer} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Source Facility (Dispatch)</label>
-              <select
+              <Combobox aria-label="Source Facility (Dispatch)"
                 value={sourceWhId}
                 onChange={(e) => setSourceWhId(e.target.value)}
-                className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:ring-1 focus:ring-[#008060]"
+                className="w-full"
                 required
               >
                 {warehouses.map((w) => (
                   <option key={w.id} value={w.id}>{w.name} ({w.code})</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Destination Facility (Receive)</label>
-              <select
+              <Combobox aria-label="Destination Facility (Receive)"
                 value={destWhId}
                 onChange={(e) => setDestWhId(e.target.value)}
-                className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:ring-1 focus:ring-[#008060]"
+                className="w-full"
                 required
               >
                 {warehouses.map((w) => (
                   <option key={w.id} value={w.id}>{w.name} ({w.code})</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Item to Transfer</label>
-              <select
+              <Combobox aria-label="Item to Transfer"
                 value={transferItemId}
                 onChange={(e) => setTransferItemId(e.target.value)}
-                className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:ring-1 focus:ring-[#008060]"
+                className="w-full"
                 required
               >
                 {items.filter((i) => i.item_type === 'INVENTORY').map((i) => (
                   <option key={i.id} value={i.id}>{i.name} ({i.code})</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
             <Input label="Transfer Quantity" value={transferQty} onChange={(e) => setTransferQty(e.target.value)} required />
           </div>
@@ -516,38 +516,38 @@ export const WarehouseView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Initiating...' : 'Create Transfer'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Start Cycle Count Modal */}
-      <Modal isOpen={isCountModalOpen} onClose={() => setIsCountModalOpen(false)} title="Initialize Physical Inventory Count">
+      <Drawer isOpen={isCountModalOpen} onClose={() => setIsCountModalOpen(false)} title="Initialize Physical Inventory Count">
         <form onSubmit={handleCreateCount} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Target Warehouse</label>
-              <select
+              <Combobox aria-label="Target Warehouse"
                 value={countWhId}
                 onChange={(e) => setCountWhId(e.target.value)}
-                className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:ring-1 focus:ring-[#008060]"
+                className="w-full"
                 required
               >
                 {warehouses.map((w) => (
                   <option key={w.id} value={w.id}>{w.name} ({w.code})</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Fiscal Period</label>
-              <select
+              <Combobox aria-label="Fiscal Period"
                 value={countPeriodId}
                 onChange={(e) => setCountPeriodId(e.target.value)}
-                className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:ring-1 focus:ring-[#008060]"
+                className="w-full"
                 required
               >
                 {periods.map((p) => (
                   <option key={p.id} value={p.id}>{p.name} ({p.status})</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
           </div>
           <p className="text-xs text-gray-500">
@@ -558,10 +558,10 @@ export const WarehouseView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Starting...' : 'Create Count Sheet'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Record / Audit Counts Modal */}
-      <Modal isOpen={isRecordCountModalOpen} onClose={() => setIsRecordCountModalOpen(false)} title={`Record Physical Counts: ${activeCount?.count_number}`}>
+      <Drawer isOpen={isRecordCountModalOpen} onClose={() => setIsRecordCountModalOpen(false)} title={`Record Physical Counts: ${activeCount?.count_number}`}>
         <form onSubmit={handleSaveCounted} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
           <div className="max-h-72 overflow-y-auto space-y-3 pr-1">
@@ -592,7 +592,7 @@ export const WarehouseView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Compute Variances & Reconcile'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

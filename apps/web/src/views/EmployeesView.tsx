@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { Table, Button, Input, Modal, Badge, Card } from '@omnysync/ui';
+import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import { Plus, RefreshCw, UserCheck, Briefcase, Building } from 'lucide-react';
 import { Employee, Department, Designation, SalaryStructure } from '@omnysync/contracts';
 
@@ -308,7 +308,7 @@ export const EmployeesView: React.FC = () => {
       )}
 
       {/* Onboard Employee Modal */}
-      <Modal isOpen={isEmployeeModalOpen} onClose={() => setIsEmployeeModalOpen(false)} title="Onboard New Employee">
+      <Drawer isOpen={isEmployeeModalOpen} onClose={() => setIsEmployeeModalOpen(false)} title="Onboard New Employee">
         <form onSubmit={handleCreateEmployee} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
           <div className="grid grid-cols-3 gap-3">
@@ -327,42 +327,42 @@ export const EmployeesView: React.FC = () => {
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Department</label>
-              <select
+              <Combobox aria-label="Department"
                 value={selectedDeptId}
                 onChange={(e) => setSelectedDeptId(e.target.value)}
-                className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:ring-1 focus:ring-[#008060]"
+                className="w-full"
               >
                 <option value="">Select Department...</option>
                 {departments.map((d) => (
                   <option key={d.id} value={d.id}>{d.name} ({d.code})</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Designation</label>
-              <select
+              <Combobox aria-label="Designation"
                 value={selectedDesigId}
                 onChange={(e) => setSelectedDesigId(e.target.value)}
-                className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:ring-1 focus:ring-[#008060]"
+                className="w-full"
               >
                 <option value="">Select Role...</option>
                 {designations.map((d) => (
                   <option key={d.id} value={d.id}>{d.title}</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Salary Structure</label>
-              <select
+              <Combobox aria-label="Salary Structure"
                 value={selectedStructureId}
                 onChange={(e) => setSelectedStructureId(e.target.value)}
-                className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:ring-1 focus:ring-[#008060]"
+                className="w-full"
               >
                 <option value="">Select Grade...</option>
                 {structures.map((s) => (
                   <option key={s.id} value={s.id}>{s.name} (PKR {parseFloat(s.gross_salary).toLocaleString()})</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -374,10 +374,10 @@ export const EmployeesView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Onboard Employee'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Salary Structure Modal */}
-      <Modal isOpen={isStructureModalOpen} onClose={() => setIsStructureModalOpen(false)} title="Create Salary Structure">
+      <Drawer isOpen={isStructureModalOpen} onClose={() => setIsStructureModalOpen(false)} title="Create Salary Structure">
         <form onSubmit={handleCreateStructure} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
           <Input label="Structure Grade Name" value={structName} onChange={(e) => setStructName(e.target.value)} placeholder="Executive Grade M-2" required />
@@ -400,10 +400,10 @@ export const EmployeesView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Creating...' : 'Save Structure'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Department Modal */}
-      <Modal isOpen={isDeptModalOpen} onClose={() => setIsDeptModalOpen(false)} title="Create Department">
+      <Drawer isOpen={isDeptModalOpen} onClose={() => setIsDeptModalOpen(false)} title="Create Department">
         <form onSubmit={handleCreateDepartment} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
           <div className="grid grid-cols-2 gap-3">
@@ -416,7 +416,7 @@ export const EmployeesView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Creating...' : 'Save Department'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

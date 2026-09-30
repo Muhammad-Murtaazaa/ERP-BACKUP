@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { CoaTree, Button, Input, Modal, Badge, Card, Table } from '@omnysync/ui';
+import { CoaTree, Button, Input, Drawer, Badge, Card, Table, Combobox } from '@omnysync/ui';
 import { Plus, RefreshCw, Layers, List } from 'lucide-react';
 import { Account, StatementClass, NormalBalance, AccountControlType } from '@omnysync/contracts';
 import { CoaNode } from '@omnysync/financial-engine';
@@ -221,7 +221,7 @@ export const CoaView: React.FC = () => {
       )}
 
       {/* Add Account Modal */}
-      <Modal
+      <Drawer
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title="Add Account to Chart of Accounts"
@@ -238,35 +238,35 @@ export const CoaView: React.FC = () => {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-[#182235] block mb-1">Hierarchy Level</label>
-              <select
+              <Combobox aria-label="Hierarchy Level"
                 value={level}
                 onChange={(e) => {
                   const val = parseInt(e.target.value, 10) as 1 | 2 | 3 | 4;
                   setLevel(val);
                   setParentId('');
                 }}
-                className="w-full px-3 py-2 text-sm bg-white border border-[#7D8799] rounded focus:ring-1 focus:ring-[#5B3CC4]"
+                className="w-full"
               >
                 <option value={1}>Level 1 - Statement Class (Heading)</option>
                 <option value={2}>Level 2 - Group (Heading)</option>
                 <option value={3}>Level 3 - Subgroup (Heading)</option>
                 <option value={4}>Level 4 - Leaf Account (Posting Allowed)</option>
-              </select>
+              </Combobox>
             </div>
 
             <div>
               <label className="text-xs font-semibold text-[#182235] block mb-1">Statement Class</label>
-              <select
+              <Combobox aria-label="Statement Class"
                 value={statementClass}
                 onChange={(e) => setStatementClass(e.target.value as StatementClass)}
-                className="w-full px-3 py-2 text-sm bg-white border border-[#7D8799] rounded focus:ring-1 focus:ring-[#5B3CC4]"
+                className="w-full"
               >
                 <option value={StatementClass.ASSET}>ASSET</option>
                 <option value={StatementClass.LIABILITY}>LIABILITY</option>
                 <option value={StatementClass.EQUITY}>EQUITY</option>
                 <option value={StatementClass.REVENUE}>REVENUE</option>
                 <option value={StatementClass.EXPENSE}>EXPENSE</option>
-              </select>
+              </Combobox>
             </div>
           </div>
 
@@ -275,7 +275,7 @@ export const CoaView: React.FC = () => {
               <label className="text-xs font-semibold text-[#182235] block mb-1">
                 Parent Account (Level {level - 1} required) *
               </label>
-              <select
+              <Combobox aria-label="Parent Account (Level"
                 value={parentId}
                 onChange={(e) => {
                   setParentId(e.target.value);
@@ -283,7 +283,7 @@ export const CoaView: React.FC = () => {
                   if (p) setStatementClass(p.statement_class);
                 }}
                 required
-                className="w-full px-3 py-2 text-sm bg-white border border-[#7D8799] rounded focus:ring-1 focus:ring-[#5B3CC4]"
+                className="w-full"
               >
                 <option value="">-- Select Level {level - 1} Parent --</option>
                 {potentialParents.map((p) => (
@@ -291,7 +291,7 @@ export const CoaView: React.FC = () => {
                     {p.code} - {p.name} ({p.statement_class})
                   </option>
                 ))}
-              </select>
+              </Combobox>
             </div>
           )}
 
@@ -315,22 +315,22 @@ export const CoaView: React.FC = () => {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs font-semibold text-[#182235] block mb-1">Normal Balance</label>
-              <select
+              <Combobox aria-label="Normal Balance"
                 value={normalBalance}
                 onChange={(e) => setNormalBalance(e.target.value as NormalBalance)}
-                className="w-full px-3 py-2 text-sm bg-white border border-[#7D8799] rounded focus:ring-1 focus:ring-[#5B3CC4]"
+                className="w-full"
               >
                 <option value={NormalBalance.DEBIT}>DEBIT</option>
                 <option value={NormalBalance.CREDIT}>CREDIT</option>
-              </select>
+              </Combobox>
             </div>
 
             <div>
               <label className="text-xs font-semibold text-[#182235] block mb-1">Control Classification</label>
-              <select
+              <Combobox aria-label="Control Classification"
                 value={controlType}
                 onChange={(e) => setControlType(e.target.value as AccountControlType)}
-                className="w-full px-3 py-2 text-sm bg-white border border-[#7D8799] rounded focus:ring-1 focus:ring-[#5B3CC4]"
+                className="w-full"
               >
                 <option value={AccountControlType.GENERAL}>GENERAL</option>
                 <option value={AccountControlType.BANK}>BANK</option>
@@ -340,7 +340,7 @@ export const CoaView: React.FC = () => {
                 <option value={AccountControlType.TAX_PAYABLE}>TAX_PAYABLE</option>
                 <option value={AccountControlType.TAX_RECEIVABLE}>TAX_RECEIVABLE</option>
                 <option value={AccountControlType.GRNI}>GRNI</option>
-              </select>
+              </Combobox>
             </div>
           </div>
 
@@ -357,7 +357,7 @@ export const CoaView: React.FC = () => {
             </Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

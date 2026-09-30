@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { Table, Button, Input, Modal, Badge, Card } from '@omnysync/ui';
+import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import { Plus, RefreshCw, CheckCircle2, DollarSign, Send, CheckCheck, FileText, ChevronRight } from 'lucide-react';
 import { PayrollRun } from '@omnysync/contracts';
 
@@ -327,23 +327,23 @@ export const PayrollView: React.FC = () => {
       </div>
 
       {/* Process Monthly Payroll Modal */}
-      <Modal isOpen={isNewRunModalOpen} onClose={() => setIsNewRunModalOpen(false)} title="Process Monthly Payroll Batch">
+      <Drawer isOpen={isNewRunModalOpen} onClose={() => setIsNewRunModalOpen(false)} title="Process Monthly Payroll Batch">
         <form onSubmit={handleCreateRun} className="space-y-4">
           {errorMsg && <div className="p-3 text-sm text-red-700 bg-red-50 rounded border border-red-200">{errorMsg}</div>}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Fiscal Period</label>
-              <select
+              <Combobox aria-label="Fiscal Period"
                 value={selectedPeriodId}
                 onChange={(e) => setSelectedPeriodId(e.target.value)}
-                className="w-full h-9 px-3 rounded border border-gray-300 text-sm focus:outline-none focus:ring-1 focus:ring-[#008060]"
+                className="w-full"
                 required
               >
                 <option value="">Select Period...</option>
                 {periods.map((p) => (
                   <option key={p.id} value={p.id}>{p.name} ({p.status})</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
             <Input label="Payroll Month/Year" value={monthYear} onChange={(e) => setMonthYear(e.target.value)} placeholder="2026-03" required />
           </div>
@@ -376,7 +376,7 @@ export const PayrollView: React.FC = () => {
             </Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

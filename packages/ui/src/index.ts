@@ -4,5 +4,6 @@ export * from './components/Badge.js';
 export * from './components/Input.js';
 export * from './components/Table.js';
 export * from './components/Card.js';
-export * from './components/Modal.js';
+export * from './components/Drawer.js';
+export * from './components/Combobox.js';
 export * from './components/CoaTree.js';

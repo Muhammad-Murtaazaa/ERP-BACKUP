@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { Table, Button, Input, Modal, Badge, Card, Column } from '@omnysync/ui';
+import { Table, Button, Input, Drawer, Badge, Card, Column, Combobox } from '@omnysync/ui';
 import {
   Wrench,
   Plus,
@@ -428,7 +428,7 @@ export const PlantMaintenanceView: React.FC = () => {
       )}
 
       {/* Register Equipment Modal */}
-      <Modal isOpen={isEquipModalOpen} onClose={() => setIsEquipModalOpen(false)} title="Register Machinery / Equipment">
+      <Drawer isOpen={isEquipModalOpen} onClose={() => setIsEquipModalOpen(false)} title="Register Machinery / Equipment">
         <form onSubmit={handleCreateEquip} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div className="grid grid-cols-2 gap-4">
@@ -438,8 +438,8 @@ export const PlantMaintenanceView: React.FC = () => {
           <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+              <Combobox aria-label="Category"
+                className="w-full"
                 value={equipCategory}
                 onChange={(e: any) => setEquipCategory(e.target.value)}
               >
@@ -447,12 +447,12 @@ export const PlantMaintenanceView: React.FC = () => {
                 <option value="VEHICLE">VEHICLE</option>
                 <option value="ELECTRICAL">ELECTRICAL</option>
                 <option value="HVAC">HVAC</option>
-              </select>
+              </Combobox>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Criticality</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+              <Combobox aria-label="Criticality"
+                className="w-full"
                 value={equipCriticality}
                 onChange={(e: any) => setEquipCriticality(e.target.value)}
               >
@@ -460,12 +460,12 @@ export const PlantMaintenanceView: React.FC = () => {
                 <option value="MEDIUM">MEDIUM</option>
                 <option value="HIGH">HIGH</option>
                 <option value="CRITICAL">CRITICAL</option>
-              </select>
+              </Combobox>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Fixed Asset Link</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+              <Combobox aria-label="Fixed Asset Link"
+                className="w-full"
                 value={equipAssetId}
                 onChange={(e) => setEquipAssetId(e.target.value)}
               >
@@ -473,7 +473,7 @@ export const PlantMaintenanceView: React.FC = () => {
                 {assets.map((a) => (
                   <option key={a.id} value={a.id}>{a.asset_number} - {a.name}</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -485,16 +485,16 @@ export const PlantMaintenanceView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Register Equipment'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Add PM Schedule Modal */}
-      <Modal isOpen={isScheduleModalOpen} onClose={() => setIsScheduleModalOpen(false)} title="Create Preventive Maintenance Schedule">
+      <Drawer isOpen={isScheduleModalOpen} onClose={() => setIsScheduleModalOpen(false)} title="Create Preventive Maintenance Schedule">
         <form onSubmit={handleCreateSchedule} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Target Equipment</label>
-            <select
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+            <Combobox aria-label="Target Equipment"
+              className="w-full"
               value={schedEquipId}
               onChange={(e) => setSchedEquipId(e.target.value)}
               required
@@ -502,7 +502,7 @@ export const PlantMaintenanceView: React.FC = () => {
               {equipment.map((eq) => (
                 <option key={eq.id} value={eq.id}>{eq.equipment_code} - {eq.name}</option>
               ))}
-            </select>
+            </Combobox>
           </div>
           <Input label="Maintenance Schedule Title" value={schedName} onChange={(e) => setSchedName(e.target.value)} required />
           <Input label="Frequency Interval (Days)" type="number" min="1" value={schedInterval} onChange={(e) => setSchedInterval(e.target.value)} required />
@@ -511,17 +511,17 @@ export const PlantMaintenanceView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save PM Schedule'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Create Work Order Modal */}
-      <Modal isOpen={isWoModalOpen} onClose={() => setIsWoModalOpen(false)} title="Create Maintenance Work Order">
+      <Drawer isOpen={isWoModalOpen} onClose={() => setIsWoModalOpen(false)} title="Create Maintenance Work Order">
         <form onSubmit={handleCreateWo} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Equipment</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+              <Combobox aria-label="Equipment"
+                className="w-full"
                 value={woEquipId}
                 onChange={(e) => setWoEquipId(e.target.value)}
                 required
@@ -529,12 +529,12 @@ export const PlantMaintenanceView: React.FC = () => {
                 {equipment.map((eq) => (
                   <option key={eq.id} value={eq.id}>{eq.equipment_code} - {eq.name}</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Order Type</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+              <Combobox aria-label="Order Type"
+                className="w-full"
                 value={woType}
                 onChange={(e: any) => setWoType(e.target.value)}
               >
@@ -542,12 +542,12 @@ export const PlantMaintenanceView: React.FC = () => {
                 <option value="CORRECTIVE">CORRECTIVE</option>
                 <option value="BREAKDOWN">BREAKDOWN</option>
                 <option value="CALIBRATION">CALIBRATION</option>
-              </select>
+              </Combobox>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Priority</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+              <Combobox aria-label="Priority"
+                className="w-full"
                 value={woPriority}
                 onChange={(e: any) => setWoPriority(e.target.value)}
               >
@@ -555,7 +555,7 @@ export const PlantMaintenanceView: React.FC = () => {
                 <option value="MEDIUM">MEDIUM</option>
                 <option value="HIGH">HIGH</option>
                 <option value="EMERGENCY">EMERGENCY</option>
-              </select>
+              </Combobox>
             </div>
           </div>
           <Input label="Work Order Description" value={woDesc} onChange={(e) => setWoDesc(e.target.value)} placeholder="Spindle bearing replacement and balance alignment" required />
@@ -564,8 +564,8 @@ export const PlantMaintenanceView: React.FC = () => {
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Spare Part Item</label>
-                <select
-                  className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs bg-white"
+                <Combobox aria-label="Spare Part Item"
+                  className="w-full"
                   value={partItemId}
                   onChange={(e) => setPartItemId(e.target.value)}
                 >
@@ -573,7 +573,7 @@ export const PlantMaintenanceView: React.FC = () => {
                   {items.map((it) => (
                     <option key={it.id} value={it.id}>{it.code} - {it.name}</option>
                   ))}
-                </select>
+                </Combobox>
               </div>
               <Input label="Part Quantity" value={partQty} onChange={(e) => setPartQty(e.target.value)} />
               <Input label="Unit Cost (PKR)" value={partCost} onChange={(e) => setPartCost(e.target.value)} />
@@ -589,10 +589,10 @@ export const PlantMaintenanceView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Creating...' : 'Create Work Order'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Complete Work Order Modal */}
-      <Modal isOpen={isCompleteModalOpen} onClose={() => setIsCompleteModalOpen(false)} title={`Complete Work Order: ${selectedWo?.work_order_number}`}>
+      <Drawer isOpen={isCompleteModalOpen} onClose={() => setIsCompleteModalOpen(false)} title={`Complete Work Order: ${selectedWo?.work_order_number}`}>
         <form onSubmit={handleCompleteWo} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm space-y-1">
@@ -605,16 +605,16 @@ export const PlantMaintenanceView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Posting GL...' : 'Complete & Post Settlement Voucher'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Log Calibration Modal */}
-      <Modal isOpen={isCalibModalOpen} onClose={() => setIsCalibModalOpen(false)} title="Log Equipment Calibration">
+      <Drawer isOpen={isCalibModalOpen} onClose={() => setIsCalibModalOpen(false)} title="Log Equipment Calibration">
         <form onSubmit={handleCreateCalib} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Equipment</label>
-            <select
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+            <Combobox aria-label="Equipment"
+              className="w-full"
               value={calibEquipId}
               onChange={(e) => setCalibEquipId(e.target.value)}
               required
@@ -622,7 +622,7 @@ export const PlantMaintenanceView: React.FC = () => {
               {equipment.map((eq) => (
                 <option key={eq.id} value={eq.id}>{eq.equipment_code} - {eq.name}</option>
               ))}
-            </select>
+            </Combobox>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Calibration Certificate #" value={calibCertNo} onChange={(e) => setCalibCertNo(e.target.value)} placeholder="CAL-2026-9901" required />
@@ -630,21 +630,21 @@ export const PlantMaintenanceView: React.FC = () => {
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Calibration Result</label>
-            <select
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+            <Combobox aria-label="Calibration Result"
+              className="w-full"
               value={calibResult}
               onChange={(e: any) => setCalibResult(e.target.value)}
             >
               <option value="PASS">PASS (Certified Operational)</option>
               <option value="FAIL">FAIL (Recalibration Required)</option>
-            </select>
+            </Combobox>
           </div>
           <div className="flex justify-end gap-2 pt-4">
             <Button variant="secondary" type="button" onClick={() => setIsCalibModalOpen(false)}>Cancel</Button>
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Log Calibration'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

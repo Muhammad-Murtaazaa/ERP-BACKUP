@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { Table, Button, Input, Modal, Badge, Card } from '@omnysync/ui';
+import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import { RefreshCw, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { Party, Account } from '@omnysync/contracts';
 
@@ -211,7 +211,7 @@ export const PaymentsView: React.FC = () => {
       </Card>
 
       {/* Payment Entry Modal */}
-      <Modal
+      <Drawer
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title={paymentType === 'RECEIPT' ? 'Record Customer Receipt' : 'Record Supplier Payment'}
@@ -228,11 +228,11 @@ export const PaymentsView: React.FC = () => {
               <label className="text-xs font-semibold text-[#182235] block mb-1">
                 {paymentType === 'RECEIPT' ? 'Customer *' : 'Vendor *'}
               </label>
-              <select
+              <Combobox aria-label=""
                 value={partyId}
                 onChange={(e) => handlePartySelect(e.target.value)}
                 required
-                className="w-full px-3 py-2 text-sm bg-white border border-[#7D8799] rounded focus:ring-1 focus:ring-[#5B3CC4]"
+                className="w-full"
               >
                 <option value="">-- Select Party --</option>
                 {parties
@@ -246,23 +246,23 @@ export const PaymentsView: React.FC = () => {
                       {p.code} - {p.name}
                     </option>
                   ))}
-              </select>
+              </Combobox>
             </div>
 
             <div>
               <label className="text-xs font-semibold text-[#182235] block mb-1">Bank / Cash Account *</label>
-              <select
+              <Combobox aria-label="Bank / Cash Account"
                 value={bankAccountId}
                 onChange={(e) => setBankAccountId(e.target.value)}
                 required
-                className="w-full px-3 py-2 text-sm bg-white border border-[#7D8799] rounded focus:ring-1 focus:ring-[#5B3CC4]"
+                className="w-full"
               >
                 {accounts.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.code} - {a.name}
                   </option>
                 ))}
-              </select>
+              </Combobox>
             </div>
           </div>
 
@@ -365,7 +365,7 @@ export const PaymentsView: React.FC = () => {
             </Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

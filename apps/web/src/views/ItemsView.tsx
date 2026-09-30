@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { Table, Button, Input, Modal, Badge, Card } from '@omnysync/ui';
+import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
 import { Plus, RefreshCw, Package, Layers } from 'lucide-react';
 import { ItemType, Account } from '@omnysync/contracts';
 
@@ -187,7 +187,7 @@ export const ItemsView: React.FC = () => {
         </Card>
       )}
 
-      <Modal
+      <Drawer
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title="Add Catalog Item"
@@ -209,15 +209,15 @@ export const ItemsView: React.FC = () => {
             />
             <div>
               <label className="text-xs font-semibold text-[#182235] block mb-1">Item Type *</label>
-              <select
+              <Combobox aria-label="Item Type"
                 value={itemType}
                 onChange={(e) => setItemType(e.target.value as ItemType)}
-                className="w-full px-3 py-2 text-sm bg-white border border-[#7D8799] rounded focus:ring-1 focus:ring-[#5B3CC4]"
+                className="w-full"
               >
                 <option value={ItemType.INVENTORY}>INVENTORY (Tracked Stock)</option>
                 <option value={ItemType.SERVICE}>SERVICE (Non-Stock)</option>
                 <option value={ItemType.NON_INVENTORY}>NON_INVENTORY (Expense on receipt)</option>
-              </select>
+              </Combobox>
             </div>
           </div>
 
@@ -259,7 +259,7 @@ export const ItemsView: React.FC = () => {
             </Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

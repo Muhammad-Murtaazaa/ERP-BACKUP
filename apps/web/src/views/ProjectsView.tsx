@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { Table, Button, Input, Modal, Badge, Card, Column } from '@omnysync/ui';
+import { Table, Button, Input, Drawer, Badge, Card, Column, Combobox } from '@omnysync/ui';
 import {
   Briefcase,
   Plus,
@@ -584,8 +584,8 @@ export const ProjectsView: React.FC = () => {
           <div className="bg-white p-4 rounded-xl border border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <label className="text-sm font-medium text-slate-700">Select Project:</label>
-              <select
-                className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white font-medium"
+              <Combobox aria-label="Select Project"
+                
                 value={selectedProjectId}
                 onChange={(e) => setSelectedProjectId(e.target.value)}
               >
@@ -594,7 +594,7 @@ export const ProjectsView: React.FC = () => {
                     {p.code} - {p.name}
                   </option>
                 ))}
-              </select>
+              </Combobox>
             </div>
             {selectedProject && (
               <div className="flex items-center gap-6 text-sm">
@@ -647,8 +647,8 @@ export const ProjectsView: React.FC = () => {
           <div className="bg-white p-4 rounded-xl border border-slate-200 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <label className="text-sm font-medium text-slate-700">Select Project:</label>
-              <select
-                className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white font-medium"
+              <Combobox aria-label="Select Project"
+                
                 value={selectedProjectId}
                 onChange={(e) => setSelectedProjectId(e.target.value)}
               >
@@ -657,7 +657,7 @@ export const ProjectsView: React.FC = () => {
                     {p.code} - {p.name}
                   </option>
                 ))}
-              </select>
+              </Combobox>
             </div>
           </div>
 
@@ -673,7 +673,7 @@ export const ProjectsView: React.FC = () => {
       )}
 
       {/* New Project Modal */}
-      <Modal isOpen={isProjectModalOpen} onClose={() => setIsProjectModalOpen(false)} title="Create New Project">
+      <Drawer isOpen={isProjectModalOpen} onClose={() => setIsProjectModalOpen(false)} title="Create New Project">
         <form onSubmit={handleCreateProject} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div className="grid grid-cols-2 gap-4">
@@ -683,8 +683,8 @@ export const ProjectsView: React.FC = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Customer / Client</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              <Combobox aria-label="Customer / Client"
+                className="w-full"
                 value={projectCustomerId}
                 onChange={(e) => setProjectCustomerId(e.target.value)}
               >
@@ -692,12 +692,12 @@ export const ProjectsView: React.FC = () => {
                 {parties.filter((p) => p.party_type === 'CUSTOMER').map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Cost Center</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              <Combobox aria-label="Cost Center"
+                className="w-full"
                 value={selectedCostCenterId}
                 onChange={(e) => setSelectedCostCenterId(e.target.value)}
               >
@@ -705,7 +705,7 @@ export const ProjectsView: React.FC = () => {
                 {costCenters.map((cc) => (
                   <option key={cc.id} value={cc.id}>{cc.code} - {cc.name}</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-4">
@@ -722,10 +722,10 @@ export const ProjectsView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Creating...' : 'Create Project'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* New Cost Center Modal */}
-      <Modal isOpen={isCostCenterModalOpen} onClose={() => setIsCostCenterModalOpen(false)} title="Create Cost Center">
+      <Drawer isOpen={isCostCenterModalOpen} onClose={() => setIsCostCenterModalOpen(false)} title="Create Cost Center">
         <form onSubmit={handleCreateCostCenter} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div className="grid grid-cols-2 gap-4">
@@ -735,15 +735,15 @@ export const ProjectsView: React.FC = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Cost Center Type</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              <Combobox aria-label="Cost Center Type"
+                className="w-full"
                 value={ccType}
                 onChange={(e: any) => setCcType(e.target.value)}
               >
                 <option value="PROJECT">PROJECT</option>
                 <option value="OPERATIONAL">OPERATIONAL</option>
                 <option value="OVERHEAD">OVERHEAD</option>
-              </select>
+              </Combobox>
             </div>
             <Input label="Manager Name" value={ccManager} onChange={(e) => setCcManager(e.target.value)} placeholder="Manager Name" />
           </div>
@@ -752,10 +752,10 @@ export const ProjectsView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Creating...' : 'Create Cost Center'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* New BOQ Modal */}
-      <Modal isOpen={isBoqModalOpen} onClose={() => setIsBoqModalOpen(false)} title="Create Bill of Quantities (BOQ)">
+      <Drawer isOpen={isBoqModalOpen} onClose={() => setIsBoqModalOpen(false)} title="Create Bill of Quantities (BOQ)">
         <form onSubmit={handleCreateBOQ} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div className="grid grid-cols-2 gap-4">
@@ -779,18 +779,18 @@ export const ProjectsView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save BOQ'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* New Progress Certificate Modal */}
-      <Modal isOpen={isCertModalOpen} onClose={() => setIsCertModalOpen(false)} title="Create Interim Payment Certificate (IPC)">
+      <Drawer isOpen={isCertModalOpen} onClose={() => setIsCertModalOpen(false)} title="Create Interim Payment Certificate (IPC)">
         <form onSubmit={handleCreateCertificate} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div className="grid grid-cols-3 gap-4">
             <Input label="Certificate Number" value={certNumber} onChange={(e) => setCertNumber(e.target.value)} placeholder="IPC-001" required />
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">BOQ</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              <Combobox aria-label="BOQ"
+                className="w-full"
                 value={certBoqId}
                 onChange={(e) => {
                   setCertBoqId(e.target.value);
@@ -805,12 +805,12 @@ export const ProjectsView: React.FC = () => {
                 {boqs.map((b) => (
                   <option key={b.id} value={b.id}>{b.boq_number} - {b.title}</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Fiscal Period</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              <Combobox aria-label="Fiscal Period"
+                className="w-full"
                 value={certPeriodId}
                 onChange={(e) => setCertPeriodId(e.target.value)}
                 required
@@ -819,7 +819,7 @@ export const ProjectsView: React.FC = () => {
                 {periods.map((p) => (
                   <option key={p.id} value={p.id}>{p.name} ({p.status})</option>
                 ))}
-              </select>
+              </Combobox>
             </div>
           </div>
           {certBoqId && (
@@ -828,8 +828,8 @@ export const ProjectsView: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">BOQ Item to Certify</label>
-                  <select
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                  <Combobox aria-label="BOQ Item to Certify"
+                    className="w-full"
                     value={certBoqItemId}
                     onChange={(e) => setCertBoqItemId(e.target.value)}
                     required
@@ -839,7 +839,7 @@ export const ProjectsView: React.FC = () => {
                         {item.item_code} - {item.description} (Contract: {item.contract_quantity} {item.uom}, Rate: PKR {item.unit_rate})
                       </option>
                     ))}
-                  </select>
+                  </Combobox>
                 </div>
                 <Input label="Current Measured Qty" value={certCurrentQty} onChange={(e) => setCertCurrentQty(e.target.value)} required />
               </div>
@@ -850,7 +850,7 @@ export const ProjectsView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Creating...' : 'Create Certificate Draft'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

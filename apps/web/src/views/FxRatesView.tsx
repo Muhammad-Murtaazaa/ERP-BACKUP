@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { Table, Button, Input, Modal, Card } from '@omnysync/ui';
+import { Table, Button, Input, Drawer, Card, Combobox } from '@omnysync/ui';
 import { Plus, RefreshCw } from 'lucide-react';
 import { ExchangeRate } from '@omnysync/contracts';
 
@@ -140,13 +140,13 @@ export const FxRatesView: React.FC = () => {
 
               <div>
                 <label className="text-xs font-semibold text-[#182235] block mb-1">Select Rate</label>
-                <select
+                <Combobox aria-label="Select Rate"
                   value={selectedRate}
                   onChange={(e) => {
                     setSelectedRate(e.target.value);
                     calculateConversion(convertAmount, e.target.value);
                   }}
-                  className="w-full px-3 py-2 text-sm bg-white border border-[#7D8799] rounded focus:ring-1 focus:ring-[#5B3CC4]"
+                  className="w-full"
                 >
                   {rates.map((r) => (
                     <option key={r.id} value={r.rate}>
@@ -154,7 +154,7 @@ export const FxRatesView: React.FC = () => {
                     </option>
                   ))}
                   {rates.length === 0 && <option value="278.5">USD/PKR = 278.5000</option>}
-                </select>
+                </Combobox>
               </div>
 
               <div className="bg-[#F2EEFF] p-4 rounded-lg border border-[#d2c7fc]/60 text-center">
@@ -169,7 +169,7 @@ export const FxRatesView: React.FC = () => {
       </div>
 
       {/* Add Rate Modal */}
-      <Modal
+      <Drawer
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         title="Add Exchange Rate"
@@ -229,7 +229,7 @@ export const FxRatesView: React.FC = () => {
             </Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };

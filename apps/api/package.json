@@ -5,7 +5,7 @@
   "main": "./dist/index.js",
   "scripts": {
     "build": "tsc",
-    "dev": "node --loader ts-node/esm src/index.ts",
+    "dev": "vite-node --config ../../vitest.config.ts src/index.ts",
     "start": "node dist/index.js"
   },
   "dependencies": {

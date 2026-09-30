@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
-import { Table, Button, Input, Modal, Badge, Card, Column } from '@omnysync/ui';
+import { Table, Button, Input, Drawer, Badge, Card, Column, Combobox } from '@omnysync/ui';
 import {
   ShieldCheck,
   Plus,
@@ -472,7 +472,7 @@ export const QualityManagementView: React.FC = () => {
       )}
 
       {/* Create Inspection Plan Modal */}
-      <Modal isOpen={isPlanModalOpen} onClose={() => setIsPlanModalOpen(false)} title="Create Quality Inspection Plan">
+      <Drawer isOpen={isPlanModalOpen} onClose={() => setIsPlanModalOpen(false)} title="Create Quality Inspection Plan">
         <form onSubmit={handleCreatePlan} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div className="grid grid-cols-2 gap-4">
@@ -481,8 +481,8 @@ export const QualityManagementView: React.FC = () => {
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Catalog Item / Material</label>
-            <select
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+            <Combobox aria-label="Catalog Item / Material"
+              className="w-full"
               value={planItemId}
               onChange={(e) => setPlanItemId(e.target.value)}
               required
@@ -490,7 +490,7 @@ export const QualityManagementView: React.FC = () => {
               {items.map((it) => (
                 <option key={it.id} value={it.id}>{it.code} - {it.name}</option>
               ))}
-            </select>
+            </Combobox>
           </div>
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
             <h4 className="text-xs font-bold text-slate-700 uppercase">Primary Test Parameter</h4>
@@ -506,16 +506,16 @@ export const QualityManagementView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Saving...' : 'Create Inspection Plan'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Create Inspection Lot Modal */}
-      <Modal isOpen={isLotModalOpen} onClose={() => setIsLotModalOpen(false)} title="Create Quality Inspection Lot">
+      <Drawer isOpen={isLotModalOpen} onClose={() => setIsLotModalOpen(false)} title="Create Quality Inspection Lot">
         <form onSubmit={handleCreateLot} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Material / Item to Inspect</label>
-            <select
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+            <Combobox aria-label="Material / Item to Inspect"
+              className="w-full"
               value={lotItemId}
               onChange={(e) => setLotItemId(e.target.value)}
               required
@@ -523,7 +523,7 @@ export const QualityManagementView: React.FC = () => {
               {items.map((it) => (
                 <option key={it.id} value={it.id}>{it.code} - {it.name}</option>
               ))}
-            </select>
+            </Combobox>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Quantity" value={lotQty} onChange={(e) => setLotQty(e.target.value)} required />
@@ -534,10 +534,10 @@ export const QualityManagementView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Creating...' : 'Create Lot'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Perform QA Inspection Modal */}
-      <Modal isOpen={isInspectModalOpen} onClose={() => setIsInspectModalOpen(false)} title={`Perform QA: ${selectedLot?.lot_number}`}>
+      <Drawer isOpen={isInspectModalOpen} onClose={() => setIsInspectModalOpen(false)} title={`Perform QA: ${selectedLot?.lot_number}`}>
         <form onSubmit={handleInspectLot} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm space-y-1">
@@ -554,29 +554,29 @@ export const QualityManagementView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Evaluating...' : 'Submit QA Decision'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* File NCR Modal */}
-      <Modal isOpen={isNcrModalOpen} onClose={() => setIsNcrModalOpen(false)} title="Raise Non-Conformance Report (NCR)">
+      <Drawer isOpen={isNcrModalOpen} onClose={() => setIsNcrModalOpen(false)} title="Raise Non-Conformance Report (NCR)">
         <form onSubmit={handleCreateNcr} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Defect Severity</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+              <Combobox aria-label="Defect Severity"
+                className="w-full"
                 value={defectSeverity}
                 onChange={(e: any) => setDefectSeverity(e.target.value)}
               >
                 <option value="MINOR">MINOR</option>
                 <option value="MAJOR">MAJOR</option>
                 <option value="CRITICAL">CRITICAL</option>
-              </select>
+              </Combobox>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Recommended Disposition</label>
-              <select
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+              <Combobox aria-label="Recommended Disposition"
+                className="w-full"
                 value={ncrDisposition}
                 onChange={(e: any) => setNcrDisposition(e.target.value)}
               >
@@ -584,7 +584,7 @@ export const QualityManagementView: React.FC = () => {
                 <option value="REWORK">REWORK</option>
                 <option value="RETURN_TO_VENDOR">RETURN_TO_VENDOR</option>
                 <option value="USE_AS_IS">USE_AS_IS</option>
-              </select>
+              </Combobox>
             </div>
           </div>
           <Input label="Root Cause Analysis" value={rootCause} onChange={(e) => setRootCause(e.target.value)} placeholder="Supplier raw material impurity" required />
@@ -594,16 +594,16 @@ export const QualityManagementView: React.FC = () => {
             <Button variant="destructive" type="submit" disabled={saving}>{saving ? 'Filing NCR...' : 'Submit NCR'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
 
       {/* Issue CoA Modal */}
-      <Modal isOpen={isCoaModalOpen} onClose={() => setIsCoaModalOpen(false)} title="Issue Certificate of Analysis (CoA)">
+      <Drawer isOpen={isCoaModalOpen} onClose={() => setIsCoaModalOpen(false)} title="Issue Certificate of Analysis (CoA)">
         <form onSubmit={handleIssueCoA} className="space-y-4">
           {errorMsg && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm rounded-lg">{errorMsg}</div>}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Customer (Optional)</label>
-            <select
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+            <Combobox aria-label="Customer (Optional)"
+              className="w-full"
               value={coaCustomerId}
               onChange={(e) => setCoaCustomerId(e.target.value)}
             >
@@ -611,7 +611,7 @@ export const QualityManagementView: React.FC = () => {
               {parties.map((p) => (
                 <option key={p.id} value={p.id}>{p.code} - {p.name}</option>
               ))}
-            </select>
+            </Combobox>
           </div>
           <Input label="Certified Quality Officer" value={certifiedBy} onChange={(e) => setCertifiedBy(e.target.value)} required />
           <div className="flex justify-end gap-2 pt-4">
@@ -619,7 +619,7 @@ export const QualityManagementView: React.FC = () => {
             <Button variant="primary" type="submit" disabled={saving}>{saving ? 'Issuing...' : 'Issue Verified CoA'}</Button>
           </div>
         </form>
-      </Modal>
+      </Drawer>
     </div>
   );
 };
