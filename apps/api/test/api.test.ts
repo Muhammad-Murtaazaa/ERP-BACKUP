@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { app, db } from '../src/index.js';
 import { DbMigrator, SyntheticSeedRunner } from '@omnysync/platform';
 import { Money } from '@omnysync/financial-engine';
+import { ErrorCode } from '@omnysync/contracts';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -838,6 +839,177 @@ describe('API Modular Monolith: Financial & Trading Workflows E2E Integration', 
     expect(finalTbRes.status).toBe(200);
     expect(finalTbRes.body.data.is_balanced).toBe(true);
     expect(finalTbRes.body.data.net_difference).toBe('0.00');
+  });
+
+  it('executes full Milestone 6 Projects & Contracts lifecycle: Cost Center -> Project -> WBS -> BOQ -> IPC Measurement -> Certify -> Post GL Progress Invoice', async () => {
+    // 1. Create Cost Center
+    const ccRes = await makeRequest(
+      'POST',
+      '/api/projects/cost-centers',
+      {
+        code: 'CC-PRJ-GULBERG',
+        name: 'Gulberg Commercial Site Cost Center',
+        cost_center_type: 'PROJECT',
+        manager_name: 'Engr. Bilal Khan',
+      },
+      adminToken,
+    );
+    expect(ccRes.status).toBe(201);
+    expect(ccRes.body.data.code).toBe('CC-PRJ-GULBERG');
+    const ccId = ccRes.body.data.id;
+
+    // 2. Create Project
+    const prjRes = await makeRequest(
+      'POST',
+      '/api/projects',
+      {
+        code: 'PRJ-2026-001',
+        name: 'Gulberg Heights Commercial Tower',
+        manager_name: 'Engr. Bilal Khan',
+        project_type: 'CONSTRUCTION',
+        contract_value: '10000000.00',
+        budgeted_cost: '7500000.00',
+        retention_percentage: '5.00',
+        start_date: '2026-03-01',
+        cost_center_id: ccId,
+      },
+      adminToken,
+    );
+    expect(prjRes.status).toBe(201);
+    expect(prjRes.body.data.status).toBe('APPROVED');
+    const prjId = prjRes.body.data.id;
+
+    // 3. Create WBS Node
+    const wbsRes = await makeRequest(
+      'POST',
+      `/api/projects/${prjId}/wbs`,
+      {
+        wbs_code: 'WBS-01-CIVIL',
+        name: 'Civil & Foundation Works',
+        budget_cost: '3000000.00',
+        status: 'IN_PROGRESS',
+      },
+      adminToken,
+    );
+    expect(wbsRes.status).toBe(201);
+    const wbsId = wbsRes.body.data.id;
+
+    // 4. Create Bill of Quantities (BOQ)
+    const boqRes = await makeRequest(
+      'POST',
+      `/api/projects/${prjId}/boq`,
+      {
+        boq_number: 'BOQ-GULBERG-01',
+        title: 'Main Foundation & Structural BOQ',
+        version: '1.0',
+        items: [
+          {
+            wbs_node_id: wbsId,
+            item_code: 'BOQ-CONC-C30',
+            description: 'Ready-Mix Concrete Grade C30/37 in Substructure',
+            uom: 'M3',
+            contract_quantity: '200.00000000',
+            unit_rate: '15000.00000000', // Total 3,000,000
+          },
+          {
+            wbs_node_id: wbsId,
+            item_code: 'BOQ-STEEL-G60',
+            description: 'High Tensile Deformed Steel Rebar Grade 60',
+            uom: 'TON',
+            contract_quantity: '20.00000000',
+            unit_rate: '250000.00000000', // Total 5,000,000
+          },
+        ],
+      },
+      adminToken,
+    );
+    expect(boqRes.status).toBe(201);
+    expect(new Money(boqRes.body.data.total_amount).format()).toBe('8000000.00');
+    const boqId = boqRes.body.data.id;
+
+    // Fetch BOQ with items
+    const getBoqRes = await makeRequest('GET', `/api/projects/${prjId}/boq`, undefined, adminToken);
+    expect(getBoqRes.status).toBe(200);
+    const boqItems = getBoqRes.body.data[0].items;
+    expect(boqItems).toHaveLength(2);
+    const concreteBoqItem = boqItems.find((b: any) => b.item_code === 'BOQ-CONC-C30');
+
+    // 5. Test Over-Certification Rejection
+    const periodsRes = await makeRequest('GET', '/api/periods', undefined, adminToken);
+    const openPeriod = periodsRes.body.data.find((p: any) => p.status === 'OPEN');
+
+    const overCertRes = await makeRequest(
+      'POST',
+      `/api/projects/${prjId}/certificates`,
+      {
+        certificate_number: 'IPC-INVALID-01',
+        boq_id: boqId,
+        period_id: openPeriod.id,
+        items: [
+          {
+            boq_item_id: concreteBoqItem.id,
+            current_quantity: '250.00000000', // Exceeds contract quantity of 200!
+          },
+        ],
+      },
+      adminToken,
+    );
+    expect(overCertRes.status).toBe(422);
+    expect(overCertRes.body.error.code).toBe(ErrorCode.OVER_CERTIFICATION);
+
+    // 6. Create Valid Interim Payment Certificate (IPC-001)
+    // Measure 50 M3 Concrete @ 15,000 = 750,000 Gross
+    // 5% Retention = 37,500
+    // Net Billable = 712,500
+    const validCertRes = await makeRequest(
+      'POST',
+      `/api/projects/${prjId}/certificates`,
+      {
+        certificate_number: 'IPC-2026-001',
+        boq_id: boqId,
+        period_id: openPeriod.id,
+        certificate_date: '2026-03-31',
+        items: [
+          {
+            boq_item_id: concreteBoqItem.id,
+            current_quantity: '50.00000000',
+          },
+        ],
+      },
+      adminToken,
+    );
+    expect(validCertRes.status).toBe(201);
+    expect(new Money(validCertRes.body.data.gross_certified_amount).format()).toBe('750000.00');
+    expect(new Money(validCertRes.body.data.retention_amount).format()).toBe('37500.00');
+    expect(new Money(validCertRes.body.data.net_certified_amount).format()).toBe('712500.00');
+    const certId = validCertRes.body.data.id;
+
+    // 7. Certify Progress Certificate (IPC)
+    const certifyRes = await makeRequest(
+      'POST',
+      `/api/projects/${prjId}/certificates/${certId}/certify`,
+      {},
+      adminToken,
+    );
+    expect(certifyRes.status).toBe(200);
+    expect(certifyRes.body.data.status).toBe('CERTIFIED');
+
+    // 8. Generate & Post Balanced GL Progress Invoice
+    const invoiceRes = await makeRequest(
+      'POST',
+      `/api/projects/${prjId}/certificates/${certId}/generate-invoice`,
+      {},
+      adminToken,
+    );
+    expect(invoiceRes.status).toBe(200);
+    expect(invoiceRes.body.data.status).toBe('INVOICED');
+    expect(invoiceRes.body.data.journal_id).toBeDefined();
+
+    // 9. Verify General Ledger & Trial Balance
+    const tbRes = await makeRequest('GET', '/api/ledger/trial-balance?as_of_date=2026-03-31', undefined, controllerToken);
+    expect(tbRes.status).toBe(200);
+    expect(tbRes.body.data.is_balanced).toBe(true);
+    expect(tbRes.body.data.net_difference).toBe('0.00');
   });
 });
 

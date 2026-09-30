@@ -39,6 +39,10 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.WORK_ORDER_RELEASE,
     Permission.WORK_ORDER_CONSUME,
     Permission.WORK_ORDER_COMPLETE,
+    Permission.PROJECT_MANAGE,
+    Permission.BOQ_MANAGE,
+    Permission.PROGRESS_CERTIFY,
+    Permission.PROGRESS_INVOICE,
     Permission.AUDIT_VIEW,
   ],
   [UserRole.CONTROLLER]: [
@@ -76,6 +80,10 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.WORK_ORDER_RELEASE,
     Permission.WORK_ORDER_CONSUME,
     Permission.WORK_ORDER_COMPLETE,
+    Permission.PROJECT_MANAGE,
+    Permission.BOQ_MANAGE,
+    Permission.PROGRESS_CERTIFY,
+    Permission.PROGRESS_INVOICE,
     Permission.AUDIT_VIEW,
   ],
   [UserRole.HR_MANAGER]: [
@@ -97,6 +105,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.PAYMENT_MANAGE,
     Permission.TREASURY_BANK_RECONCILE,
     Permission.PAYROLL_MANAGE,
+    Permission.PROGRESS_INVOICE,
   ],
   [UserRole.SALES_OPERATOR]: [
     Permission.FINANCE_COA_VIEW,
@@ -133,6 +142,15 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.WAREHOUSE_MANAGE,
     Permission.INVENTORY_TRANSFER,
     Permission.INVENTORY_COUNT,
+  ],
+  [UserRole.PROJECT_MANAGER]: [
+    Permission.FINANCE_COA_VIEW,
+    Permission.FINANCE_REPORTS_VIEW,
+    Permission.ITEMS_MANAGE,
+    Permission.PARTIES_MANAGE,
+    Permission.PROJECT_MANAGE,
+    Permission.BOQ_MANAGE,
+    Permission.PROGRESS_CERTIFY,
   ],
   [UserRole.AUDITOR]: [
     Permission.FINANCE_COA_VIEW,

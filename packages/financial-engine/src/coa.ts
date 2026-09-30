@@ -129,6 +129,7 @@ export const STANDARD_COA_TEMPLATE: CoaTemplateItem[] = [
   { code: '1120', name: 'Receivables', level: 3, parentCode: '1100', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: false, controlType: AccountControlType.GENERAL },
   { code: '112001', name: 'Trade AR Control', level: 4, parentCode: '1120', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.AR_CONTROL },
   { code: '112002', name: 'Allowance for Doubtful Debts', level: 4, parentCode: '1120', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '112003', name: 'Project Retention Receivable', level: 4, parentCode: '1120', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.AR_CONTROL },
 
   { code: '1130', name: 'Inventory', level: 3, parentCode: '1100', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: false, controlType: AccountControlType.GENERAL },
   { code: '113001', name: 'Trading Inventory', level: 4, parentCode: '1130', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.INVENTORY_CONTROL },
@@ -156,6 +157,7 @@ export const STANDARD_COA_TEMPLATE: CoaTemplateItem[] = [
   { code: '211002', name: 'GRNI (Goods Received Not Invoiced)', level: 4, parentCode: '2110', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GRNI },
   { code: '211003', name: 'Accrued Expenses', level: 4, parentCode: '2110', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '211004', name: 'Salaries Payable', level: 4, parentCode: '2110', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '211005', name: 'Subcontractor Retention Payable', level: 4, parentCode: '2110', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.AP_CONTROL },
 
   { code: '2120', name: 'Tax Payable', level: 3, parentCode: '2100', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: false, controlType: AccountControlType.GENERAL },
   { code: '212001', name: 'Output Sales Tax Payable', level: 4, parentCode: '2120', statementClass: StatementClass.LIABILITY, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.TAX_PAYABLE },
@@ -179,6 +181,7 @@ export const STANDARD_COA_TEMPLATE: CoaTemplateItem[] = [
   { code: '4110', name: 'Goods and Services Sales', level: 3, parentCode: '4100', statementClass: StatementClass.REVENUE, normalBalance: NormalBalance.CREDIT, postingAllowed: false, controlType: AccountControlType.GENERAL },
   { code: '411001', name: 'Product Sales', level: 4, parentCode: '4110', statementClass: StatementClass.REVENUE, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '411002', name: 'Service Income', level: 4, parentCode: '4110', statementClass: StatementClass.REVENUE, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '411003', name: 'Project Milestone & Contract Revenue', level: 4, parentCode: '4110', statementClass: StatementClass.REVENUE, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
 
   // --- 5. EXPENSES ---
   { code: '5000', name: 'Expenses', level: 1, statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: false, controlType: AccountControlType.GENERAL },
@@ -187,6 +190,7 @@ export const STANDARD_COA_TEMPLATE: CoaTemplateItem[] = [
   { code: '511001', name: 'Product COGS', level: 4, parentCode: '5110', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '511002', name: 'Inventory Adjustments & Shrinkage', level: 4, parentCode: '5110', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '511003', name: 'Manufacturing Scrap & Variance', level: 4, parentCode: '5110', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '511004', name: 'Project Direct Material & Labor Cost', level: 4, parentCode: '5110', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
 
   { code: '5200', name: 'Operating Expenses', level: 2, parentCode: '5000', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: false, controlType: AccountControlType.GENERAL },
   { code: '5210', name: 'General & Administrative', level: 3, parentCode: '5200', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: false, controlType: AccountControlType.GENERAL },

@@ -20,6 +20,7 @@ import { EmployeesView } from './views/EmployeesView.js';
 import { PayrollView } from './views/PayrollView.js';
 import { WarehouseView } from './views/WarehouseView.js';
 import { ManufacturingView } from './views/ManufacturingView.js';
+import { ProjectsView } from './views/ProjectsView.js';
 import { Badge } from '@omnysync/ui';
 import {
   LayoutDashboard,
@@ -43,6 +44,7 @@ import {
   Wallet,
   Warehouse as WarehouseIcon,
   Factory,
+  Briefcase,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -111,6 +113,12 @@ export const App: React.FC = () => {
       items: [
         { id: 'warehouses', label: 'Warehouses & Logistics', icon: WarehouseIcon },
         { id: 'manufacturing', label: 'Manufacturing & Assembly', icon: Factory },
+      ],
+    },
+    {
+      title: 'Projects & Contracts',
+      items: [
+        { id: 'projects', label: 'Projects, BOQ & IPC', icon: Briefcase },
       ],
     },
     {
@@ -263,6 +271,7 @@ export const App: React.FC = () => {
               {currentTab === 'ap-invoices' && <ApInvoicesView />}
               {currentTab === 'warehouses' && <WarehouseView />}
               {currentTab === 'manufacturing' && <ManufacturingView />}
+              {currentTab === 'projects' && <ProjectsView />}
               {currentTab === 'employees' && <EmployeesView />}
               {currentTab === 'payroll' && <PayrollView />}
               {currentTab === 'payments' && <PaymentsView />}

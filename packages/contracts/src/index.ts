@@ -66,6 +66,7 @@ export const AccountingPurpose = {
   INVENTORY_ADJUSTMENT: 'INVENTORY_ADJUSTMENT',
   MANUFACTURING_WIP_ISSUE: 'MANUFACTURING_WIP_ISSUE',
   MANUFACTURING_ASSEMBLY_RECEIPT: 'MANUFACTURING_ASSEMBLY_RECEIPT',
+  PROJECT_PROGRESS_INVOICE: 'PROJECT_PROGRESS_INVOICE',
 } as const;
 export type AccountingPurpose = (typeof AccountingPurpose)[keyof typeof AccountingPurpose];
 
@@ -788,6 +789,127 @@ export interface WorkOrder {
 }
 
 // ==========================================
+// Projects, Cost Centers & BOQ (M6)
+// ==========================================
+export type CostCenterType = 'OPERATIONAL' | 'PROJECT' | 'OVERHEAD';
+
+export interface CostCenter {
+  id: string;
+  organization_id: string;
+  code: string;
+  name: string;
+  cost_center_type: CostCenterType;
+  manager_name?: string | null;
+  created_at?: string;
+}
+
+export type ProjectType = 'CONSTRUCTION' | 'CONSULTING' | 'INTERNAL' | 'EPC' | 'SERVICES';
+export type ProjectStatus = 'ESTIMATING' | 'APPROVED' | 'IN_PROGRESS' | 'ON_HOLD' | 'COMPLETED' | 'CLOSED';
+
+export interface Project {
+  id: string;
+  organization_id: string;
+  code: string;
+  name: string;
+  customer_id?: string | null;
+  customer_name?: string | null;
+  manager_name?: string | null;
+  project_type: ProjectType;
+  contract_value: string;
+  budgeted_cost: string;
+  retention_percentage: string;
+  status: ProjectStatus;
+  start_date: string;
+  end_date?: string | null;
+  cost_center_id?: string | null;
+  cost_center_name?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type WBSStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED';
+
+export interface ProjectWBSNode {
+  id: string;
+  project_id: string;
+  wbs_code: string;
+  name: string;
+  parent_id?: string | null;
+  budget_cost: string;
+  progress_percentage: string;
+  status: WBSStatus;
+  created_at?: string;
+}
+
+export type BOQStatus = 'DRAFT' | 'APPROVED' | 'REVISED';
+
+export interface BOQItem {
+  id: string;
+  boq_id: string;
+  wbs_node_id?: string | null;
+  wbs_code?: string | null;
+  item_code: string;
+  description: string;
+  uom: string;
+  contract_quantity: string;
+  unit_rate: string;
+  total_amount: string;
+  certified_quantity: string;
+  created_at?: string;
+}
+
+export interface BillOfQuantities {
+  id: string;
+  organization_id: string;
+  project_id: string;
+  project_code?: string;
+  project_name?: string;
+  boq_number: string;
+  title: string;
+  version: string;
+  total_amount: string;
+  status: BOQStatus;
+  items?: BOQItem[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type ProgressCertificateStatus = 'DRAFT' | 'CERTIFIED' | 'INVOICED' | 'CANCELLED';
+
+export interface ProgressCertificateItem {
+  id: string;
+  certificate_id: string;
+  boq_item_id: string;
+  item_code?: string;
+  description?: string;
+  previous_quantity: string;
+  current_quantity: string;
+  cumulative_quantity: string;
+  unit_rate: string;
+  current_amount: string;
+  created_at?: string;
+}
+
+export interface ProgressCertificate {
+  id: string;
+  organization_id: string;
+  certificate_number: string;
+  project_id: string;
+  project_name?: string;
+  boq_id: string;
+  period_id: string;
+  certificate_date: string;
+  gross_certified_amount: string;
+  retention_amount: string;
+  net_certified_amount: string;
+  status: ProgressCertificateStatus;
+  journal_id?: string | null;
+  items?: ProgressCertificateItem[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+// ==========================================
 // Organization, Legal Entity, User & Auth
 // ==========================================
 export const UserRole = {
@@ -799,6 +921,7 @@ export const UserRole = {
   HR_MANAGER: 'HR_MANAGER',
   PRODUCTION_MANAGER: 'PRODUCTION_MANAGER',
   WAREHOUSE_OPERATOR: 'WAREHOUSE_OPERATOR',
+  PROJECT_MANAGER: 'PROJECT_MANAGER',
   AUDITOR: 'AUDITOR',
   VIEWER: 'VIEWER',
 } as const;
@@ -847,6 +970,11 @@ export const Permission = {
   WORK_ORDER_RELEASE: 'workorder.release',
   WORK_ORDER_CONSUME: 'workorder.consume',
   WORK_ORDER_COMPLETE: 'workorder.complete',
+  // Projects, Cost Centers & BOQ (M6)
+  PROJECT_MANAGE: 'project.manage',
+  BOQ_MANAGE: 'boq.manage',
+  PROGRESS_CERTIFY: 'progress.certify',
+  PROGRESS_INVOICE: 'progress.invoice',
   // Audit
   AUDIT_VIEW: 'audit.view',
 } as const;
@@ -890,6 +1018,9 @@ export const ErrorCode = {
   INSUFFICIENT_RAW_MATERIALS: 'INSUFFICIENT_RAW_MATERIALS',
   WORK_ORDER_NOT_RELEASED: 'WORK_ORDER_NOT_RELEASED',
   COUNT_NOT_RECONCILED: 'COUNT_NOT_RECONCILED',
+  OVER_CERTIFICATION: 'OVER_CERTIFICATION',
+  RETENTION_LIMIT_EXCEEDED: 'RETENTION_LIMIT_EXCEEDED',
+  PROJECT_CLOSED: 'PROJECT_CLOSED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

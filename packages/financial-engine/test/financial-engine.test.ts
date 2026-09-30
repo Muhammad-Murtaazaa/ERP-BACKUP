@@ -14,6 +14,7 @@ import {
   PayrollEngine,
   ManufacturingEngine,
   InventoryReconciliationEngine,
+  ProjectsEngine,
 } from '../src/index.js';
 import {
   Account,
@@ -802,6 +803,104 @@ describe('Financial Engine: Physical Inventory Count & Adjustments', () => {
     expect(draft.lines[0].account_id).toBe('acc-adj-511002');
     expect(draft.lines[1].credit_amount).toBe('4000.00000000');
     expect(draft.lines[1].account_id).toBe('acc-inv-113001');
+  });
+});
+
+describe('Financial Engine: Projects, BOQ & Progress Certificates (IPC)', () => {
+  it('calculates progress certificate with cumulative quantities and retention money deduction', () => {
+    const cert = ProjectsEngine.calculateProgressCertificate(
+      [
+        {
+          boq_item_id: 'boq-item-1',
+          previous_quantity: '20.00000000',
+          current_quantity: '30.00000000',
+          unit_rate: '15000.00000000', // 30 * 15,000 = 450,000
+        },
+        {
+          boq_item_id: 'boq-item-2',
+          previous_quantity: '0.00000000',
+          current_quantity: '10.00000000',
+          unit_rate: '25000.00000000', // 10 * 25,000 = 250,000
+        },
+      ],
+      '5.00' // 5% retention
+    );
+
+    // Gross = 450,000 + 250,000 = 700,000
+    // Retention = 700,000 * 5% = 35,000
+    // Net = 700,000 - 35,000 = 665,000
+    expect(cert.gross_certified_amount).toBe('700000.00000000');
+    expect(cert.retention_amount).toBe('35000.00000000');
+    expect(cert.net_certified_amount).toBe('665000.00000000');
+
+    expect(cert.items[0].cumulative_quantity).toBe('50.00000000');
+    expect(cert.items[0].current_amount).toBe('450000.00000000');
+    expect(cert.items[1].cumulative_quantity).toBe('10.00000000');
+    expect(cert.items[1].current_amount).toBe('250000.00000000');
+  });
+
+  it('validates and rejects over-certification against BOQ contract quantities', () => {
+    const boqItems: any[] = [
+      {
+        id: 'boq-item-1',
+        item_code: 'CIV-001',
+        contract_quantity: '100.00000000',
+        certified_quantity: '80.00000000',
+      },
+    ];
+
+    // Attempting to certify 30 more when only 20 remaining
+    const result = ProjectsEngine.validateBoqQuantities(boqItems, [
+      { boq_item_id: 'boq-item-1', current_quantity: '30.00000000' },
+    ]);
+
+    expect(result.valid).toBe(false);
+    expect(result.exceededItemCode).toBe('CIV-001');
+    expect(result.exceededQty).toBe('10.00000000');
+
+    // Valid certification of 20
+    const validResult = ProjectsEngine.validateBoqQuantities(boqItems, [
+      { boq_item_id: 'boq-item-1', current_quantity: '20.00000000' },
+    ]);
+    expect(validResult.valid).toBe(true);
+  });
+
+  it('generates perfectly balanced General Ledger progress invoice journal with retention split', () => {
+    const journalDraft = ProjectsEngine.generateProgressInvoiceJournal({
+      organization_id: 'org-1',
+      legal_entity_id: 'le-1',
+      period_id: 'per-2026-03',
+      certificate_number: 'IPC-2026-001',
+      project_code: 'PRJ-GULBERG',
+      gross_amount: '1000000.00000000',
+      retention_amount: '50000.00000000',
+      net_amount: '950000.00000000',
+      ar_account_id: 'acc-ar-112001',
+      retention_receivable_account_id: 'acc-ret-112003',
+      revenue_account_id: 'acc-rev-411003',
+      user_id: 'user-admin',
+    });
+
+    expect(journalDraft.lines).toHaveLength(3);
+    // Dr Trade AR: 950,000
+    expect(journalDraft.lines[0].account_id).toBe('acc-ar-112001');
+    expect(journalDraft.lines[0].debit_amount).toBe('950000.00000000');
+    expect(journalDraft.lines[0].credit_amount).toBe('0.00000000');
+
+    // Dr Retention Receivable: 50,000
+    expect(journalDraft.lines[1].account_id).toBe('acc-ret-112003');
+    expect(journalDraft.lines[1].debit_amount).toBe('50000.00000000');
+    expect(journalDraft.lines[1].credit_amount).toBe('0.00000000');
+
+    // Cr Milestone Revenue: 1,000,000
+    expect(journalDraft.lines[2].account_id).toBe('acc-rev-411003');
+    expect(journalDraft.lines[2].debit_amount).toBe('0.00000000');
+    expect(journalDraft.lines[2].credit_amount).toBe('1000000.00000000');
+
+    // Debit sum = 950,000 + 50,000 = 1,000,000 === Credit sum 1,000,000
+    const totalDr = new Money(journalDraft.lines[0].debit_amount).add(new Money(journalDraft.lines[1].debit_amount));
+    const totalCr = new Money(journalDraft.lines[2].credit_amount);
+    expect(totalDr.format()).toBe(totalCr.format());
   });
 });
 

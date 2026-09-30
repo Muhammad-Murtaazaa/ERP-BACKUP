@@ -49,3 +49,15 @@
   4. Work order completion settles WIP to finished goods and scrap (`Dr Finished Goods 113004 / Dr Scrap 511003 / Cr WIP 113003`).
 - **Consequences**:
   - Full traceability across warehouse bins, lot batches, and manufacturing WIP accounts with verified double-entry balance sheet reconciliation.
+
+## ADR-006: Project Costing, Bill of Quantities (BOQ) & Interim Payment Certificate (IPC) Invoicing
+- **Context**: Construction, EPC, and contracting workflows require detailed contract quantification (BOQ), Work Breakdown Structure (WBS) cost centers, cumulative measurement validation (to prevent over-billing), and retention money withholding on interim progress certificates.
+- **Decision**:
+  1. Projects link to operational/project cost centers and record contract value, budgeted cost, and contract retention percentage.
+  2. Bill of Quantities (BOQ) maintains contract quantities and unit rates, enforcing an over-certification guard (`certified_quantity + current_quantity <= contract_quantity`).
+  3. Progress certificates compute cumulative quantities, gross certified amount, retention money deduction (`gross * retention_pct / 100`), and net billable amount.
+  4. Generating a progress invoice posts a balanced General Ledger voucher:
+     $$\text{Dr Trade AR Control (112001)} \ [Net] \ + \ \text{Dr Project Retention Receivable (112003)} \ [Retention] = \text{Cr Project Milestone Revenue (411003)} \ [Gross]$$
+- **Consequences**:
+  - Eliminates contract over-billing, automates retention money accounting on balance sheets, and provides real-time project profitability tracking.
+

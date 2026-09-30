@@ -54,11 +54,18 @@
 - **Physical Inventory Cycle Counting & Stock Adjustments**: Variance analysis and automated balanced GL adjustment vouchers (`Dr Inventory Adjustments & Shrinkage 511002 / Cr Inventory 113001` or surplus).
 - **Bills of Materials (BOM) & Work Orders**: Multi-level BOM yield explosion with scrap percentages, raw material issuance to WIP, and finished goods assembly completion with balanced GL voucher (`Dr Finished Goods 113004 / Dr Scrap 511003 / Cr WIP 113003`).
 
+## Milestone 6: Projects, Cost Centers, Bill of Quantities (BOQ) & Progress Invoicing (Verified)
+- **Database Migration**: `packages/platform/src/db/migrations/006_projects_and_boq.sql` applied cleanly.
+- **Cost Centers & Project Masters**: Operational, project, and overhead cost centers, project contracts, and Work Breakdown Structure (WBS) trees.
+- **Bill of Quantities (BOQ)**: Contract line items with exact contract quantities and unit rates.
+- **Interim Payment Certificates (IPC)**: Cumulative measurement calculation, contract over-certification guard, and automated retention money withholding (`gross * retention_pct / 100`).
+- **Progress Invoice GL Posting**: Balanced General Ledger voucher generation (`Dr Trade AR Control 112001 [Net] + Dr Project Retention Receivable 112003 [Retention] = Cr Project Milestone Revenue 411003 [Gross]`), with guaranteed zero net difference on Trial Balance.
+
 ## Automated Test Summary
 - **Test Command**: `npx vitest run`
-- **Result**: 3 test files, 42 tests passed, 0 failures.
-  - `packages/financial-engine/test/financial-engine.test.ts`: 27/27 passed.
+- **Result**: 3 test files, 46 tests passed, 0 failures.
+  - `packages/financial-engine/test/financial-engine.test.ts`: 30/30 passed.
   - `packages/platform/test/platform.test.ts`: 3/3 passed.
-  - `apps/api/test/api.test.ts`: 12/12 passed.
+  - `apps/api/test/api.test.ts`: 13/13 passed.
 - **Build Command**: `npm run build`
-- **Result**: All monorepo packages and React UI bundle compiled cleanly with 0 type errors in 6.63s.
+- **Result**: All monorepo packages and React UI bundle compiled cleanly with 0 type errors in 53.42s.

@@ -9,3 +9,4 @@ export * from './fx.js';
 export * from './payroll.js';
 export * from './manufacturing.js';
 export * from './inventory.js';
+export * from './projects.js';
