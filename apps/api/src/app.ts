@@ -25,6 +25,7 @@ import { registerWmsRoutes } from './routes/wms.js';
 import { registerAutomationEventRoutes } from './routes/automation-events.js';
 import { registerServiceRoutes } from './routes/service.js';
 import { registerCrmRoutes } from './routes/crm.js';
+import { registerTimeRoutes } from './routes/time.js';
 
 export function createApp() {
   const app = express();
@@ -93,6 +94,7 @@ export function createApp() {
   registerAutomationEventRoutes(app);
   registerServiceRoutes(app);
   registerCrmRoutes(app);
+  registerTimeRoutes(app);
 
   app.use('/api', (req: Request, res: Response) => {
     res.status(404).json({

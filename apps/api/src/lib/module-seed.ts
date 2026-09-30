@@ -138,3 +138,19 @@ registerSeeder('CRM', async (q, c) => {
     );
   }
 });
+
+registerSeeder('TIM', async (q, c) => {
+  const emps = [
+    ['EMP-101', 'Bilal', 'Ahmed', 'bilal.ahmed@omnysync.internal', '2024-03-01'],
+    ['EMP-102', 'Usman', 'Tariq', 'usman.tariq@omnysync.internal', '2023-07-15'],
+    ['EMP-103', 'Hamza', 'Riaz', 'hamza.riaz@omnysync.internal', '2025-01-10'],
+    ['EMP-104', 'Mariam', 'Siddiqui', 'mariam.s@omnysync.internal', '2022-11-01'],
+  ];
+  for (const [num, first, last, email, joined] of emps) {
+    await q.query(
+      `INSERT INTO employees (id, organization_id, legal_entity_id, employee_number, first_name, last_name, email, employment_type, joining_date, status)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, 'FULL_TIME', $7, 'ACTIVE') ON CONFLICT (legal_entity_id, employee_number) DO NOTHING`,
+      [c.org, c.le, num, first, last, email, joined],
+    );
+  }
+});
