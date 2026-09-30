@@ -130,4 +130,40 @@ export class BankReconciliationEngine {
       unmatchedLinesCount: params.statementLines.length - matchedCount,
     };
   }
+
+  /**
+   * Deterministic auto-match suggestions (no external services):
+   *  1. exact signed amount (decimal compare),
+   *  2. GL date within +/- toleranceDays of the bank transaction date,
+   *  3. prefer candidates whose text contains the bank reference, then the closest date,
+   *     then the lowest id (stable tie-break). Each GL line is used at most once.
+   */
+  static suggestMatches(
+    statementLines: { id: string; date: string; amount: string; reference?: string; description?: string }[],
+    glLines: { id: string; date: string; amount: string; text?: string }[],
+    toleranceDays = 5,
+  ): { statementLineId: string; journalLineId: string; score: number; reason: string }[] {
+    const used = new Set<string>();
+    const out: { statementLineId: string; journalLineId: string; score: number; reason: string }[] = [];
+    const day = (d: string) => Math.floor(Date.parse(`${d}T00:00:00Z`) / 86400000);
+    for (const s of statementLines) {
+      const amt = new Money(s.amount);
+      const ref = (s.reference || '').trim().toUpperCase();
+      const candidates = glLines
+        .filter((g) => !used.has(g.id) && new Money(g.amount).eq(amt) && Math.abs(day(g.date) - day(s.date)) <= toleranceDays)
+        .map((g) => {
+          const refHit = ref.length >= 3 && (g.text || '').toUpperCase().includes(ref);
+          const dist = Math.abs(day(g.date) - day(s.date));
+          return { g, refHit, dist, score: (refHit ? 100 : 50) - dist };
+        })
+        .sort((a, b) => b.score - a.score || a.g.id.localeCompare(b.g.id));
+      const best = candidates[0];
+      if (!best) continue;
+      // Ambiguity guard: two equally scored candidates without a reference hit are left for a human.
+      if (!best.refHit && candidates[1] && candidates[1].score === best.score) continue;
+      used.add(best.g.id);
+      out.push({ statementLineId: s.id, journalLineId: best.g.id, score: best.score, reason: best.refHit ? 'amount+reference' : 'amount+date' });
+    }
+    return out;
+  }
 }
