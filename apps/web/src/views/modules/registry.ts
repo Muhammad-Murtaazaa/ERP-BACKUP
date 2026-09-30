@@ -1,6 +1,6 @@
 /** Registry of module workspaces added after the core pack; lazily loaded (route-level code splitting). */
 import React, { lazy } from 'react';
-import { Cog, Receipt, Boxes, Workflow, Wrench, Handshake, Clock, BadgeCheck, Truck } from 'lucide-react';
+import { Cog, Receipt, Boxes, Workflow, Wrench, Handshake, Clock, BadgeCheck, Truck, BarChart3 } from 'lucide-react';
 
 type Nav = { title: string; items: { id: string; label: string; icon: React.ComponentType<any> }[] };
 
@@ -13,6 +13,7 @@ export const MODULE_VIEWS: Record<string, React.LazyExoticComponent<React.Compon
   time: lazy(() => import('./TimeView.js').then((m) => ({ default: m.TimeView }))),
   sup: lazy(() => import('./SupplierView.js').then((m) => ({ default: m.SupplierView }))),
   log: lazy(() => import('./LogisticsView.js').then((m) => ({ default: m.LogisticsView }))),
+  bi: lazy(() => import('./BiView.js').then((m) => ({ default: m.BiView }))),
   'workflow-studio': lazy(() => import('./WorkflowStudioView.js').then((m) => ({ default: m.WorkflowStudioView }))),
 };
 
@@ -33,6 +34,10 @@ export const MODULE_NAV: Nav[] = [
       { id: 'sup', label: 'Supplier Management', icon: BadgeCheck },
       { id: 'log', label: 'Logistics', icon: Truck },
     ],
+  },
+  {
+    title: 'Insight & Records',
+    items: [{ id: 'bi', label: 'BI Dashboards', icon: BarChart3 }],
   },
   {
     title: 'Administration',

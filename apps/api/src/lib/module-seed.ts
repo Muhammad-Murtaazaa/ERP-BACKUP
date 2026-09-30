@@ -183,3 +183,24 @@ registerSeeder('LOG', async (q, c) => {
     await q.query(`INSERT INTO log_carriers (organization_id, legal_entity_id, code, name, mode, party_id, tracking_url_template, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (organization_id, code) DO NOTHING`, [c.org, c.le, code, name, mode, party, url, c.admin]);
   }
 });
+
+registerSeeder('BI', async (q, c) => {
+  const boards = [
+    ['EXEC-OVERVIEW', 'Executive overview', 'Revenue trend, receivables risk, pipeline and field-service health.', [
+      { dataset: 'revenue_by_month', chart: 'LINE', title: 'Revenue by month', measure: 'revenue' },
+      { dataset: 'ar_aging', chart: 'BAR', title: 'Receivables aging', measure: 'outstanding' },
+      { dataset: 'pipeline_by_stage', chart: 'BAR', title: 'Weighted pipeline', measure: 'weighted' },
+      { dataset: 'service_cases_by_status', chart: 'BAR', title: 'Service cases (YTD)', measure: 'cases' },
+      { dataset: 'expense_by_account', chart: 'TABLE', title: 'Top expenses', measure: 'amount' },
+      { dataset: 'stock_value_by_item', chart: 'BAR', title: 'Stock value (top items)', measure: 'value' },
+    ]],
+    ['SERVICE-OPS', 'Service operations', 'SLA attainment and technician utilisation.', [
+      { dataset: 'service_sla_by_priority', chart: 'BAR', title: 'SLA attainment % by priority', measure: 'attainment_pct' },
+      { dataset: 'technician_hours', chart: 'BAR', title: 'Approved hours per technician', measure: 'hours' },
+      { dataset: 'service_cases_by_status', chart: 'TABLE', title: 'Cases by status', measure: 'cases' },
+    ]],
+  ] as const;
+  for (const [code, name, desc, widgets] of boards) {
+    await q.query(`INSERT INTO bi_dashboards (organization_id, legal_entity_id, code, name, description, widgets, visibility, created_by) VALUES ($1,$2,$3,$4,$5,$6,'SHARED',$7) ON CONFLICT (organization_id, code) DO NOTHING`, [c.org, c.le, code, name, desc, JSON.stringify(widgets), c.admin]);
+  }
+});
