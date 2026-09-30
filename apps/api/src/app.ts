@@ -30,6 +30,7 @@ import { registerSupplierRoutes } from './routes/supplier.js';
 import { registerLogisticsRoutes } from './routes/logistics.js';
 import { registerBiRoutes } from './routes/bi.js';
 import { registerDocumentRoutes } from './routes/documents.js';
+import { registerFleetRoutes } from './routes/fleet.js';
 
 export function createApp() {
   const app = express();
@@ -106,6 +107,7 @@ export function createApp() {
   registerLogisticsRoutes(app);
   registerBiRoutes(app);
   registerDocumentRoutes(app);
+  registerFleetRoutes(app);
 
   app.use('/api', (req: Request, res: Response) => {
     res.status(404).json({

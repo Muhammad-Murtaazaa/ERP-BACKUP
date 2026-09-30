@@ -204,3 +204,17 @@ registerSeeder('BI', async (q, c) => {
     await q.query(`INSERT INTO bi_dashboards (organization_id, legal_entity_id, code, name, description, widgets, visibility, created_by) VALUES ($1,$2,$3,$4,$5,$6,'SHARED',$7) ON CONFLICT (organization_id, code) DO NOTHING`, [c.org, c.le, code, name, desc, JSON.stringify(widgets), c.admin]);
   }
 });
+
+registerSeeder('FLT', async (q, c) => {
+  const vans = [
+    ['VAN-01', 'LEB-21-4410', 'Suzuki Every 660cc', 2022, 'PETROL', '48210', '2027-03-31', '2026-10-15'],
+    ['VAN-02', 'LEC-23-1187', 'Toyota Hiace 2.8', 2023, 'DIESEL', '61540', '2026-12-31', '2027-01-31'],
+    ['BIKE-01', 'LEF-24-9022', 'Honda CD 70', 2024, 'PETROL', '12880', '2027-06-30', null],
+  ];
+  for (const [code, reg, mm, yr, fuel, odo, ins, fit] of vans) {
+    await q.query(
+      `INSERT INTO flt_vehicles (organization_id, legal_entity_id, code, registration, make_model, model_year, fuel_type, odometer_km, insurance_expiry, fitness_expiry, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (organization_id, code) DO NOTHING`,
+      [c.org, c.le, code, reg, mm, yr, fuel, odo, ins, fit, c.admin],
+    );
+  }
+});
