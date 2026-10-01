@@ -96,12 +96,19 @@ const tabs: TabDef[] = [
     ],
     detailExtra: (row) => (
       <div className="flex flex-col gap-2">
+        {row.pending_plan_id && <Alert variant="info">A downgrade is queued and applies from the next bill date ({String(row.next_bill_date || '').slice(0, 10)}).</Alert>}
+        {(row.plan_changes || []).length > 0 && (
+          <>
+            <div className="text-sm font-semibold">Plan changes</div>
+            <Table columns={[{ key: 'effective_date', header: 'Effective', render: (r: any) => String(r.effective_date).slice(0, 10) }, { key: 'direction', header: 'Change', render: (r: any) => <Badge size="sm" variant={r.direction === 'UPGRADE' ? 'success' : r.direction === 'DOWNGRADE' ? 'warning' : 'neutral'}>{r.direction}</Badge> }, { key: 'from_plan', header: 'From → to', render: (r: any) => `${r.from_plan} → ${r.to_plan}` }, { key: 'prorated_net', header: 'Prorated charge', align: 'right', render: (r: any) => fmtMoney(r.prorated_net) }, { key: 'applied', header: 'Status', render: (r: any) => (r.applied ? 'Applied' : 'Queued') }]} data={row.plan_changes} keyExtractor={(r: any) => `${r.effective_date}-${r.to_plan}`} />
+          </>
+        )}
         <div className="text-sm font-semibold">Billed periods</div>
-        <Table columns={[{ key: 'period_start', header: 'From', render: (r: any) => String(r.period_start).slice(0, 10) }, { key: 'period_end', header: 'To', render: (r: any) => String(r.period_end).slice(0, 10) }, { key: 'net_amount', header: 'Net', align: 'right', render: (r: any) => fmtMoney(r.net_amount) }, { key: 'invoice_number', header: 'Invoice' }]} data={row.periods || []} keyExtractor={(r: any) => r.id} emptyMessage="Not billed yet." />
+        <Table columns={[{ key: 'period_start', header: 'From', render: (r: any) => String(r.period_start).slice(0, 10) }, { key: 'period_end', header: 'To', render: (r: any) => String(r.period_end).slice(0, 10) }, { key: 'kind', header: 'Kind', render: (r: any) => (r.kind === 'UPGRADE' ? <Badge size="sm" variant="success">Upgrade</Badge> : 'Regular') }, { key: 'net_amount', header: 'Net', align: 'right', render: (r: any) => fmtMoney(r.net_amount) }, { key: 'invoice_number', header: 'Invoice' }]} data={row.periods || []} keyExtractor={(r: any) => r.id} emptyMessage="Not billed yet." />
         {(row.revenue_schedule || []).length > 0 && (
           <>
             <div className="text-sm font-semibold">Revenue recognition (deferred)</div>
-            <Table columns={[{ key: 'month_start', header: 'Month', render: (r: any) => String(r.month_start).slice(0, 7) }, { key: 'amount', header: 'Amount', align: 'right', render: (r: any) => fmtMoney(r.amount) }, { key: 'status', header: 'Status', render: (r: any) => <Badge size="sm" variant={r.status === 'RECOGNISED' ? 'success' : 'neutral'}>{r.status}</Badge> }, { key: 'journal_number', header: 'Journal' }]} data={row.revenue_schedule} keyExtractor={(r: any) => r.id} />
+            <Table columns={[{ key: 'month_start', header: 'Month', render: (r: any) => String(r.month_start).slice(0, 7) }, { key: 'amount', header: 'Amount', align: 'right', render: (r: any) => fmtMoney(r.amount) }, { key: 'status', header: 'Status', render: (r: any) => <Badge size="sm" variant={r.status === 'RECOGNISED' ? 'success' : r.status === 'RELEASED' ? 'warning' : 'neutral'}>{r.status}</Badge> }, { key: 'journal_number', header: 'Journal' }]} data={row.revenue_schedule} keyExtractor={(r: any) => r.id} />
           </>
         )}
       </div>
@@ -111,6 +118,7 @@ const tabs: TabDef[] = [
     editFields: [{ name: 'quantity', label: 'Quantity', type: 'int' }, { name: 'discount_pct', label: 'Discount %', type: 'decimal' }, { name: 'end_date', label: 'End date', type: 'date' }],
     actions: [
       { id: 'activate', label: 'Activate', variant: 'primary', when: ['DRAFT'], fields: [{ name: 'create_service_contract', label: 'Also create AMC service contract', type: 'select', options: [{ value: 'true', label: 'Yes — create AMC contract in Field Service' }, { value: 'false', label: 'No' }], default: 'true' }], transform: (p) => ({ create_service_contract: p.create_service_contract === 'true' || p.create_service_contract === true }) },
+      { id: 'change-plan', label: 'Change plan', when: ['ACTIVE'], fields: [{ ...planRef, label: 'New plan (same billing cycle)' }, { name: 'effective_date', label: 'Effective date', type: 'date', default: today() }], confirm: 'Upgrade: the prorated price difference for the rest of the current period is invoiced now and the plan switches immediately. Downgrade: takes effect from the next bill date (no credit).' },
       { id: 'pause', label: 'Pause', when: ['ACTIVE'], confirm: 'Paused periods are not billed retroactively.' },
       { id: 'resume', label: 'Resume', variant: 'primary', when: ['PAUSED'] },
       { id: 'cancel', label: 'Cancel', variant: 'destructive', when: ['DRAFT', 'ACTIVE', 'PAUSED'], fields: [

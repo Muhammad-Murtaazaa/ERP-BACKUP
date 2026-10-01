@@ -191,4 +191,41 @@ describe('COM API', () => {
     expect(await net(f.id, '211006')).toBe(0);
     expect(await net(f.id, '411007')).toBe(12000); // whole quarter forfeited to revenue
   });
+
+  it('plan change: upgrade bills the prorated difference (deferred), downgrade is queued to the next bill date', async () => {
+    const base = plan('AMC-PLUS');
+    const up = await makeRequest('POST', '/api/com/plans', { code: 'AMC-PLUSX', name: 'Home AMC Plus XL', billing_interval: 'QUARTERLY', price: '18000', item_id: base.item_id }, acct);
+    expect(up.status, JSON.stringify(up.body)).toBe(201);
+    const s = await sub({ plan_id: base.id, start_date: '2026-09-01' });
+    await makeRequest('POST', `/api/com/subscriptions/${s.id}/activate`, {}, acct);
+    await makeRequest('POST', '/api/com/billing-run', { as_of: '2026-09-01' }, acct);
+    const change = (body: any, tok = acct) => makeRequest('POST', `/api/com/subscriptions/${s.id}/change-plan`, body, tok);
+    expect((await change({ plan_id: up.body.data.id, effective_date: '2026-09-16' }, viewer)).status).toBe(403);
+    expect((await change({ plan_id: plan('AMC-HOME').id, effective_date: '2026-09-16' })).status).toBe(400); // cycle must match
+    expect((await change({ plan_id: up.body.data.id, effective_date: '2099-01-01' })).status).toBe(400);
+    const u = await change({ plan_id: up.body.data.id, effective_date: '2026-09-16' });
+    expect(u.status, JSON.stringify(u.body)).toBe(200);
+    // (18000 − 12000) × 76 / 91 days left in 09-01..11-30
+    expect(u.body.data.result.plan_change).toMatchObject({ direction: 'UPGRADE', prorated_net: '5010.99', applies_from: '2026-09-16' });
+    expect(u.body.data.result.plan_change.invoice).toBeTruthy();
+    expect(u.body.data.plan_id).toBe(up.body.data.id);
+    expect((await change({ plan_id: base.id, effective_date: '2026-09-16' })).status).toBe(409); // one change per day
+    const det = (await makeRequest('GET', `/api/com/subscriptions/${s.id}`, undefined, acct)).body.data;
+    const upg = det.revenue_schedule.filter((r: any) => Number(r.amount) > 0);
+    expect(upg.reduce((a: number, r: any) => a + Number(r.amount), 0)).toBeCloseTo(12000 + 5010.99, 2); // all deferred
+    expect(det.periods_billed).toBe(1);
+    // Downgrade: queued, current plan unchanged until the next bill date.
+    const d = await change({ plan_id: base.id, effective_date: '2026-09-20' });
+    expect(d.body.data.result.plan_change).toMatchObject({ direction: 'DOWNGRADE', prorated_net: '0.00', applies_from: '2026-12-01' });
+    expect(d.body.data.plan_id).toBe(up.body.data.id);
+    expect(d.body.data.pending_plan_id).toBe(base.id);
+    await makeRequest('POST', '/api/com/billing-run', { as_of: '2026-12-01' }, acct);
+    const after = (await makeRequest('GET', `/api/com/subscriptions/${s.id}`, undefined, acct)).body.data;
+    expect(after.plan_id).toBe(base.id);
+    expect(after.pending_plan_id).toBeNull();
+    const dec = after.periods.find((p: any) => String(p.period_start).slice(0, 10) === '2026-12-01' || new Date(p.period_start).toISOString().startsWith('2026-11-30'));
+    expect(Number(dec.net_amount)).toBe(12000);
+    expect(after.plan_changes.map((c: any) => [c.direction, c.applied])).toEqual([['DOWNGRADE', true], ['UPGRADE', true]]);
+    await makeRequest('POST', `/api/com/subscriptions/${s.id}/cancel`, { cancel_reason: 'cleanup', effective_date: '2026-10-01' }, acct);
+  });
 });

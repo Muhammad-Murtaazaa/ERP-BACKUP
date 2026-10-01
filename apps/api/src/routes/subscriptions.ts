@@ -144,10 +144,88 @@ export async function releaseDeferredOnCancel(ctx: Ctx, sub: { id: string; numbe
   return { earned: earned.toFixed(2), unearned: unearned.toFixed(2), treatment, journal_id: j?.journalId ?? null };
 }
 
+/**
+ * Changes an ACTIVE subscription's plan (same billing cycle). An upgrade bills the prorated price difference
+ * for the rest of the current billed period at once (deferred for quarterly/annual plans) and switches the
+ * plan immediately; a downgrade is queued and applies from the next bill date. One change per day.
+ */
+export async function changePlan(ctx: Ctx, sub: any, toPlanId: string, effective: string) {
+  if (sub.status !== 'ACTIVE') throw new ApiError(409, ErrorCode.INVALID_STATE, `Only ACTIVE subscriptions can change plan (is ${sub.status})`);
+  if (toPlanId === sub.plan_id) throw validationError('The subscription is already on that plan', { field: 'plan_id' });
+  const from = await loadRow(ctx.tx, 'com_plans', sub.plan_id, ctx.org, 'Plan');
+  const to = await loadRow(ctx.tx, 'com_plans', toPlanId, ctx.org, 'Plan');
+  if (to.status !== 'ACTIVE') throw validationError('The target plan is retired', { field: 'plan_id' });
+  if (to.billing_interval !== from.billing_interval) throw validationError(`Plan changes must keep the billing cycle (${from.billing_interval})`, { field: 'plan_id' });
+  if (effective > todayIso()) throw validationError('effective_date cannot be in the future', { field: 'effective_date' });
+  if (effective < toIsoDate(sub.start_date)) throw validationError('effective_date is before the subscription start', { field: 'effective_date' });
+  const dup = await ctx.tx.query(`SELECT 1 FROM com_plan_changes WHERE subscription_id = $1 AND effective_date = $2`, [sub.id, effective]);
+  if (dup.rows[0]) throw new ApiError(409, ErrorCode.DUPLICATE_RESOURCE, `The plan was already changed effective ${effective}`);
+  const oldNet = periodNet(from.price, sub.quantity, sub.discount_pct);
+  const newNet = periodNet(to.price, sub.quantity, sub.discount_pct);
+  const direction = newNet.gt(oldNet) ? 'UPGRADE' : newNet.lt(oldNet) ? 'DOWNGRADE' : 'LATERAL';
+  let prorated = Money.zero();
+  let periodId: string | null = null;
+  let invoice: string | null = null;
+  if (direction === 'DOWNGRADE') {
+    await ctx.tx.query(`UPDATE com_subscriptions SET pending_plan_id = $2 WHERE id = $1`, [sub.id, to.id]);
+  } else {
+    const cur = (
+      await ctx.tx.query(
+        `SELECT id, period_start, period_end FROM com_billing_periods WHERE subscription_id = $1 AND kind = 'REGULAR' AND period_start <= $2 AND period_end >= $2 ORDER BY period_start DESC LIMIT 1`,
+        [sub.id, effective],
+      )
+    ).rows[0];
+    if (cur && direction === 'UPGRADE') {
+      const ps = toIsoDate(cur.period_start);
+      const pe = toIsoDate(cur.period_end);
+      const day = 86400000;
+      const total = Math.round((Date.parse(pe) - Date.parse(ps)) / day) + 1;
+      const remaining = Math.round((Date.parse(pe) - Date.parse(effective)) / day) + 1;
+      prorated = newNet.sub(oldNet).mul(remaining).div(total).round(2);
+      if (prorated.isPositive()) {
+        const deferred = MONTHS[to.billing_interval] > 1;
+        const ins = await ctx.tx.query(
+          `INSERT INTO com_billing_periods (organization_id, subscription_id, period_start, period_end, net_amount, kind) VALUES ($1,$2,$3,$4,$5,'UPGRADE') RETURNING id`,
+          [ctx.org, sub.id, effective, pe, prorated.toFixed(8)],
+        );
+        periodId = ins.rows[0].id;
+        const inv = await createPostedSourceInvoice(ctx, {
+          party_id: sub.party_id, invoice_date: effective, due_days: 15,
+          lines: [{ item_id: to.item_id, description: `Upgrade ${from.name} → ${to.name}, ${effective} – ${pe} (${remaining}/${total} days)`, quantity: '1.0000', unit_price: prorated.toFixed(4), tax_rate: new Money(to.tax_rate).toFixed(3), revenue_account_code: deferred ? '211010' : '411007' }],
+          sourceType: 'SUBSCRIPTION', sourceId: sub.id, sourceKey: `COM-UPG:${sub.id}:${effective}`, notes: `Subscription ${sub.number} plan upgrade`, purpose: AccountingPurpose.SUBSCRIPTION_INVOICE, prefix: 'INV',
+        });
+        await ctx.tx.query(`UPDATE com_billing_periods SET ar_invoice_id = $2 WHERE id = $1`, [periodId, inv?.id ?? null]);
+        invoice = inv?.invoice_number ?? null;
+        if (deferred && inv) {
+          for (const m of allocateByMonth(effective, pe, prorated.toFixed(2))) {
+            await ctx.tx.query(
+              `INSERT INTO com_revenue_schedule (organization_id, subscription_id, billing_period_id, month_start, recognize_on, amount) VALUES ($1,$2,$3,$4,$5,$6)`,
+              [ctx.org, sub.id, periodId, m.month_start, m.month_end, m.amount],
+            );
+          }
+        }
+      }
+    }
+    await ctx.tx.query(`UPDATE com_subscriptions SET plan_id = $2, pending_plan_id = NULL WHERE id = $1`, [sub.id, to.id]);
+  }
+  await ctx.tx.query(
+    `INSERT INTO com_plan_changes (organization_id, subscription_id, from_plan_id, to_plan_id, direction, effective_date, prorated_net, billing_period_id, applied, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [ctx.org, sub.id, from.id, to.id, direction, effective, prorated.toFixed(8), periodId, direction !== 'DOWNGRADE', ctx.user],
+  );
+  return { direction, from_plan: from.code, to_plan: to.code, effective_date: effective, prorated_net: prorated.toFixed(2), invoice, applies_from: direction === 'DOWNGRADE' ? toIsoDate(sub.next_bill_date) : effective };
+}
+
 /** Bills every due period of one subscription inside the caller's unit of work (API run or automation job). */
 export async function billSubscription(ctx: Ctx, id: string, asOf: string, maxPeriods = 12) {
   const s = await loadRow(ctx.tx, 'com_subscriptions', id, ctx.org, 'Subscription', true);
   if (s.status !== 'ACTIVE') return { subscription: s.number, skipped: s.status };
+  if (s.pending_plan_id && s.next_bill_date && toIsoDate(s.next_bill_date) <= asOf) {
+    // A queued downgrade takes effect from the next bill date.
+    await ctx.tx.query(`UPDATE com_subscriptions SET plan_id = pending_plan_id, pending_plan_id = NULL WHERE id = $1`, [s.id]);
+    await ctx.tx.query(`UPDATE com_plan_changes SET applied = true WHERE subscription_id = $1 AND to_plan_id = $2 AND applied = false`, [s.id, s.pending_plan_id]);
+    s.plan_id = s.pending_plan_id;
+    s.pending_plan_id = null;
+  }
   const plan = await loadRow(ctx.tx, 'com_plans', s.plan_id, ctx.org, 'Plan');
   const step = MONTHS[plan.billing_interval];
   const invoices: string[] = [];
@@ -168,7 +246,7 @@ export async function billSubscription(ctx: Ctx, id: string, asOf: string, maxPe
       net = net.mul(used).div(full).round(2);
       pEnd = minusDay(end);
     }
-    const ins = await ctx.tx.query(`INSERT INTO com_billing_periods (organization_id, subscription_id, period_start, period_end, net_amount) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (subscription_id, period_start) DO NOTHING RETURNING id`, [ctx.org, s.id, next, pEnd, net.toFixed(8)]);
+    const ins = await ctx.tx.query(`INSERT INTO com_billing_periods (organization_id, subscription_id, period_start, period_end, net_amount) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (subscription_id, period_start) WHERE kind = 'REGULAR' DO NOTHING RETURNING id`, [ctx.org, s.id, next, pEnd, net.toFixed(8)]);
     if (ins.rows[0] && net.isPositive()) {
       const deferred = step > 1;
       const qty = new Money(s.quantity).toFixed(4);
@@ -256,11 +334,12 @@ export function registerSubscriptionRoutes(app: Express): void {
     initialStatus: 'DRAFT',
     select: `t.*, p.name AS party_name, pl.code AS plan_code, pl.name AS plan_name, pl.billing_interval, pl.price AS plan_price,
       ROUND(pl.price * t.quantity * (100 - t.discount_pct) / 100, 2) AS period_amount,
-      (SELECT COUNT(*)::int FROM com_billing_periods b WHERE b.subscription_id = t.id) AS periods_billed`,
+      (SELECT COUNT(*)::int FROM com_billing_periods b WHERE b.subscription_id = t.id AND b.kind = 'REGULAR') AS periods_billed`,
     joins: 'JOIN parties p ON p.id = t.party_id JOIN com_plans pl ON pl.id = t.plan_id',
     search: ['number', 'p.name', 'pl.name'],
     filters: ['plan_id', 'party_id'],
     detail: async (q, row) => ({
+      plan_changes: (await q.query(`SELECT c.direction, c.effective_date, c.prorated_net::text, c.applied, f.code AS from_plan, t2.code AS to_plan, c.created_at FROM com_plan_changes c JOIN com_plans f ON f.id = c.from_plan_id JOIN com_plans t2 ON t2.id = c.to_plan_id WHERE c.subscription_id = $1 ORDER BY c.created_at DESC`, [row.id])).rows,
       periods: (await q.query(`SELECT b.*, i.invoice_number FROM com_billing_periods b LEFT JOIN ar_invoices i ON i.id = b.ar_invoice_id WHERE b.subscription_id = $1 ORDER BY b.period_start DESC`, [row.id])).rows,
       revenue_schedule: (await q.query(`SELECT r.id, r.month_start, r.recognize_on, r.amount, r.status, j.journal_number FROM com_revenue_schedule r LEFT JOIN journals j ON j.id = r.journal_id WHERE r.subscription_id = $1 ORDER BY r.month_start`, [row.id])).rows,
     }),
@@ -308,6 +387,17 @@ export function registerSubscriptionRoutes(app: Express): void {
           let next = toIsoDate(row.next_bill_date || row.start_date);
           for (let g = 0; next < todayIso() && g < 240; g++) next = addMonths(next, MONTHS[plan.billing_interval]);
           return { set: { next_bill_date: next } };
+        },
+      },
+      'change-plan': {
+        from: ['ACTIVE'],
+        permission: Permission.SUBSCRIPTION_MANAGE,
+        fields: { plan_id: { type: 'ref', table: 'com_plans', required: true, label: 'plan_id' }, effective_date: { type: 'date' } },
+        run: async (ctx, row, i) => {
+          const effective = i.effective_date ? toIsoDate(i.effective_date) : todayIso();
+          const plan_change = await changePlan(ctx, row, i.plan_id, effective);
+          const now = (await ctx.tx.query(`SELECT plan_id, pending_plan_id FROM com_subscriptions WHERE id = $1`, [row.id])).rows[0];
+          return { set: { plan_id: now.plan_id, pending_plan_id: now.pending_plan_id }, data: { plan_change } };
         },
       },
       cancel: {
