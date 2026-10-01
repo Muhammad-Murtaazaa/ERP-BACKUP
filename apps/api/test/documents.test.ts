@@ -77,4 +77,22 @@ describe('DOC API', () => {
     expect(v.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect((await makeRequest('GET', `/api/doc/documents/${d.id}/versions/1/download`, undefined, service)).status).toBe(410);
   });
+
+  it('link picker: tenant-scoped records of one type with labels; listed documents show the linked record label', async () => {
+    const t = await makeRequest('GET', '/api/doc/link-targets?type=SERVICE_CONTRACT', undefined, service);
+    expect(t.status).toBe(200);
+    expect(t.body.data.length).toBeGreaterThan(0);
+    expect(t.body.data[0].label).toMatch(/ · /);
+    expect((await makeRequest('GET', '/api/doc/link-targets?type=USERS', undefined, service)).status).toBe(400);
+    for (const type of ['PARTY', 'SERVICE_CASE', 'SERVICE_WORK_ORDER', 'SERVICE_CONTRACT', 'OPPORTUNITY', 'SUPPLIER', 'SHIPMENT', 'PROJECT', 'EMPLOYEE', 'PURCHASE_ORDER', 'SALES_ORDER']) {
+      expect([type, (await makeRequest('GET', `/api/doc/link-targets?type=${type}`, undefined, service)).status]).toEqual([type, 200]);
+    }
+    expect((await makeRequest('GET', '/api/doc/link-targets?type=EMPLOYEE', undefined, tech)).status).toBe(403); // DOC_MANAGE only
+    const parties = (await makeRequest('GET', '/api/doc/link-targets?type=PARTY&search=zzzz-no-match', undefined, service)).body.data;
+    expect(parties).toEqual([]);
+    const target = t.body.data[0];
+    const d = (await makeRequest('POST', '/api/doc/documents', { title: 'Warranty terms', category: 'CONTRACT', entity_type: 'SERVICE_CONTRACT', entity_id: target.id }, service)).body.data;
+    const row = (await makeRequest('GET', `/api/doc/documents/${d.id}`, undefined, service)).body.data;
+    expect(row.entity_label).toBe(target.label);
+  });
 });

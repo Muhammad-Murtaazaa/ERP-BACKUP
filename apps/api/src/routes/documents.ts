@@ -21,6 +21,24 @@ export const LINKABLE: Record<string, string> = {
   PARTY: 'parties', SERVICE_CASE: 'srv_cases', SERVICE_WORK_ORDER: 'srv_work_orders', SERVICE_CONTRACT: 'srv_contracts', OPPORTUNITY: 'crm_opportunities',
   SUPPLIER: 'sup_profiles', SHIPMENT: 'log_shipments', PROJECT: 'projects', EMPLOYEE: 'employees', PURCHASE_ORDER: 'purchase_orders', SALES_ORDER: 'sales_orders',
 };
+/** Human label SQL per linkable type (alias x), used by the link picker and to show what a document is linked to. */
+const LINK_LABEL: Record<string, { from: string; label: string; order: string }> = {
+  PARTY: { from: 'parties x', label: "x.code || ' · ' || x.name", order: 'x.code' },
+  SERVICE_CASE: { from: 'srv_cases x', label: "x.number || ' · ' || x.title", order: 'x.number DESC' },
+  SERVICE_WORK_ORDER: { from: 'srv_work_orders x', label: "x.number || ' · ' || x.status", order: 'x.number DESC' },
+  SERVICE_CONTRACT: { from: 'srv_contracts x', label: "x.number || ' · ' || x.title", order: 'x.number DESC' },
+  OPPORTUNITY: { from: 'crm_opportunities x', label: "x.number || ' · ' || x.name", order: 'x.number DESC' },
+  SUPPLIER: { from: 'sup_profiles x JOIN parties p ON p.id = x.party_id', label: "p.code || ' · ' || p.name", order: 'p.code' },
+  SHIPMENT: { from: 'log_shipments x', label: "x.number || ' · ' || x.status", order: 'x.number DESC' },
+  PROJECT: { from: 'projects x', label: "x.code || ' · ' || x.name", order: 'x.code' },
+  EMPLOYEE: { from: 'employees x', label: "x.employee_number || ' · ' || x.first_name || ' ' || x.last_name", order: 'x.employee_number' },
+  PURCHASE_ORDER: { from: 'purchase_orders x', label: "x.po_number || ' · ' || x.status", order: 'x.po_number DESC' },
+  SALES_ORDER: { from: 'sales_orders x', label: "x.order_number || ' · ' || x.status", order: 'x.order_number DESC' },
+};
+const entityLabelSql = `CASE t.entity_type ${Object.entries(LINK_LABEL)
+  .map(([k, d]) => `WHEN '${k}' THEN (SELECT ${d.label} FROM ${d.from} WHERE x.id::text = t.entity_id::text AND x.organization_id = t.organization_id)`)
+  .join(' ')} END`;
+
 const MIME: Record<string, { ext: string[]; magic?: (b: Buffer) => boolean }> = {
   'application/pdf': { ext: ['pdf'], magic: (b) => b.subarray(0, 5).toString('latin1') === '%PDF-' },
   'image/png': { ext: ['png'], magic: (b) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
@@ -67,7 +85,7 @@ export function registerDocumentRoutes(app: Express): void {
     editableIn: ['DRAFT', 'IN_REVIEW', 'APPROVED'],
     numbering: { column: 'number', prefix: 'DOC' },
     initialStatus: 'DRAFT',
-    select: `t.*, v.filename, v.mime_type, v.size_bytes, v.sha256, u.name AS owner_name`,
+    select: `t.*, v.filename, v.mime_type, v.size_bytes, v.sha256, u.name AS owner_name, ${entityLabelSql} AS entity_label`,
     joins: 'LEFT JOIN doc_versions v ON v.document_id = t.id AND v.version_no = t.current_version LEFT JOIN users u ON u.id = t.created_by',
     search: ['number', 'title', 'v.filename'],
     filters: ['category', 'entity_type', 'entity_id', 'legal_hold'],
@@ -112,6 +130,19 @@ export function registerDocumentRoutes(app: Express): void {
         },
       },
     },
+  });
+
+  /** Link picker: records of one linkable type in this organisation (tenant-scoped, label only). */
+  app.get('/api/doc/link-targets', authenticate, requireAnyPermission(Permission.DOC_MANAGE), async (req: Request, res: Response) => {
+    const type = String(req.query.type || '');
+    const d = LINK_LABEL[type];
+    if (!d) throw validationError(`type must be one of ${Object.keys(LINK_LABEL).join(', ')}`, { field: 'type' });
+    const search = typeof req.query.search === 'string' && req.query.search.trim() ? `%${req.query.search.trim().slice(0, 80)}%` : null;
+    const r = await db.query(
+      `SELECT x.id, ${d.label} AS label FROM ${d.from} WHERE x.organization_id = $1 AND ($2::text IS NULL OR ${d.label} ILIKE $2) ORDER BY ${d.order} LIMIT 200`,
+      [req.session!.organization_id, search],
+    );
+    return ok(req, res, r.rows.map((x: any) => ({ ...x, entity_type: type })));
   });
 
   app.post('/api/doc/documents/:id/versions', authenticate, requireAnyPermission(Permission.DOC_MANAGE), requireModule('DOC'), async (req: Request, res: Response) => {

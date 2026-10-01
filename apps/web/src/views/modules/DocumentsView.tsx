@@ -1,9 +1,10 @@
 import React, { useRef, useState } from 'react';
 import { ApiClient, API_BASE } from '../../api/client.js';
 import { Alert, Badge, Button, Input, Table } from '@omnysync/ui';
-import { ModuleWorkspace, TabDef, fmtWhen } from '../kit/ModuleWorkspace.js';
+import { ModuleWorkspace, TabDef, FormField, fmtWhen } from '../kit/ModuleWorkspace.js';
 import { opts } from './shared.js';
 
+const LINK_TYPES = ['PARTY', 'SERVICE_CASE', 'SERVICE_WORK_ORDER', 'SERVICE_CONTRACT', 'OPPORTUNITY', 'SUPPLIER', 'SHIPMENT', 'PROJECT', 'EMPLOYEE', 'PURCHASE_ORDER', 'SALES_ORDER'];
 const ALLOWED = 'application/pdf,image/png,image/jpeg,text/plain,.csv,.docx,.xlsx';
 const size = (n: number) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 const toBase64 = (f: File) =>
@@ -89,7 +90,7 @@ const tabs: TabDef[] = [
       { key: 'number', header: 'Document' },
       { key: 'title', header: 'Title' },
       { key: 'category', header: 'Category', kind: 'badge' },
-      { key: 'entity_type', header: 'Linked to', render: (r) => (r.entity_type ? r.entity_type.replace(/_/g, ' ').toLowerCase() : '—') },
+      { key: 'entity_type', header: 'Linked to', render: (r) => (r.entity_type ? `${r.entity_type.replace(/_/g, ' ').toLowerCase()}${r.entity_label ? ` · ${r.entity_label}` : ''}` : '—') },
       { key: 'current_version', header: 'v', align: 'right' },
       { key: 'filename', header: 'File' },
       { key: 'legal_hold', header: 'Hold', render: (r) => (r.legal_hold ? <Badge variant="warning">Legal hold</Badge> : '') },
@@ -100,6 +101,7 @@ const tabs: TabDef[] = [
       { key: 'title', header: 'Title' },
       { key: 'category', header: 'Category' },
       { key: 'entity_type', header: 'Linked record type' },
+      { key: 'entity_label', header: 'Linked record' },
       { key: 'retention_until', header: 'Retain until', kind: 'date' },
       { key: 'owner_name', header: 'Owner' },
       { key: 'approved_at', header: 'Approved', kind: 'datetime' },
@@ -109,8 +111,8 @@ const tabs: TabDef[] = [
     createFields: [
       { name: 'title', label: 'Title', type: 'text', required: true },
       { name: 'category', label: 'Category', type: 'select', required: true, options: opts('CONTRACT', 'WARRANTY_CARD', 'SITE_PHOTO', 'INVOICE', 'CERTIFICATE', 'DRAWING', 'POLICY', 'HR', 'OTHER') },
-      { name: 'entity_type', label: 'Link to record type', type: 'select', options: opts('PARTY', 'SERVICE_CASE', 'SERVICE_WORK_ORDER', 'SERVICE_CONTRACT', 'OPPORTUNITY', 'SUPPLIER', 'SHIPMENT', 'PROJECT', 'EMPLOYEE', 'PURCHASE_ORDER', 'SALES_ORDER') },
-      { name: 'entity_id', label: 'Record id', type: 'text', when: (v) => !!v.entity_type, hint: 'Checked to exist in your organisation.' },
+      { name: 'entity_type', label: 'Link to record type', type: 'select', options: opts(...LINK_TYPES) },
+      ...LINK_TYPES.map((t): FormField => ({ name: 'entity_id', label: `Linked ${t.replace(/_/g, ' ').toLowerCase()}`, type: 'ref', when: (v) => v.entity_type === t, ref: { endpoint: `/doc/link-targets?type=${t}`, label: (r) => r.label } })),
       { name: 'retention_until', label: 'Retain until', type: 'date', hint: 'Deletion is refused before this date.' },
     ],
     editFields: [{ name: 'title', label: 'Title', type: 'text' }, { name: 'retention_until', label: 'Retain until', type: 'date' }],
