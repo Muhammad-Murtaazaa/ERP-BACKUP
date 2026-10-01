@@ -89,7 +89,7 @@ export const ProjectsView: React.FC = () => {
         ApiClient.get('/projects'),
         ApiClient.get('/projects/cost-centers'),
         ApiClient.get('/parties'),
-        ApiClient.get('/finance/periods'),
+        ApiClient.get('/periods'),
       ]);
 
       const prjList = asRows(prjRes);
