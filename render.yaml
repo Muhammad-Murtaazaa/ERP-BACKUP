@@ -6,13 +6,13 @@ services:
     runtime: node
     plan: free
     region: oregon
-    buildCommand: NODE_OPTIONS="--max-old-space-size=380" npm install --no-audit --no-fund --include=dev && NODE_OPTIONS="--max-old-space-size=380" npm run build
-    startCommand: node --max-old-space-size=380 apps/api/dist/index.js
+    buildCommand: NODE_OPTIONS="--max-old-space-size=256" npm install --no-audit --no-fund && NODE_OPTIONS="--max-old-space-size=256" npm run build
+    startCommand: node --max-old-space-size=256 apps/api/dist/index.js
     healthCheckPath: /health
     autoDeploy: true
     envVars:
       - key: NODE_OPTIONS
-        value: "--max-old-space-size=380"
+        value: "--max-old-space-size=256"
       - key: NODE_ENV
         value: production
       - key: PORT

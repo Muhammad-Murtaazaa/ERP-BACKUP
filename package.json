@@ -8,9 +8,9 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
-    "start": "node --max-old-space-size=380 apps/api/dist/index.js",
-    "start:prod": "node --max-old-space-size=380 apps/api/dist/index.js",
+    "build": "npm run build --workspace=@omnysync/contracts && npm run build --workspace=@omnysync/financial-engine && npm run build --workspace=@omnysync/platform && npm run build --workspace=@omnysync/ui && npm run build --workspace=@omnysync/api && npm run build --workspace=@omnysync/web",
+    "start": "node --max-old-space-size=256 apps/api/dist/index.js",
+    "start:prod": "node --max-old-space-size=256 apps/api/dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
