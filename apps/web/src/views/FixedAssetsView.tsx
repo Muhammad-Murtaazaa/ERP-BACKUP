@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
+import { asRows } from '../lib/rows.js';
 import { Table, Button, Input, Drawer, Badge, Card, Column, Combobox } from '@omnysync/ui';
 import {
   Landmark,
@@ -62,10 +63,10 @@ export const FixedAssetsView: React.FC = () => {
         ApiClient.get('/assets'),
         ApiClient.get('/assets/categories'),
       ]);
-      setAssets((assetsRes as any).data || []);
-      setCategories((catRes as any).data || []);
-      if (((catRes as any).data || []).length > 0 && !catId) {
-        setCatId((catRes as any).data[0].id);
+      setAssets(asRows(assetsRes));
+      setCategories(asRows(catRes));
+      if (asRows(catRes).length > 0 && !catId) {
+        setCatId(asRows(catRes)[0].id);
       }
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : String(err));

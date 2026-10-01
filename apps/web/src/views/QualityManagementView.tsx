@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
+import { asRows } from '../lib/rows.js';
 import { Table, Button, Input, Drawer, Badge, Card, Column, Combobox } from '@omnysync/ui';
 import {
   ShieldCheck,
@@ -88,15 +89,15 @@ export const QualityManagementView: React.FC = () => {
         ApiClient.get('/parties'),
       ]);
       // Optional: receiving inspections can reference a PO (links the supplier for SUP quality scoring).
-      ApiClient.get('/procurement/orders').then((r: any) => setPos((r.data || []).filter((p: any) => p.status !== 'DRAFT' && p.status !== 'CANCELLED'))).catch(() => setPos([]));
+      ApiClient.get('/procurement/orders').then((r: any) => setPos(asRows(r).filter((p: any) => p.status !== 'DRAFT' && p.status !== 'CANCELLED'))).catch(() => setPos([]));
 
-      setLots((lotsRes as any).data || []);
-      setPlans((plansRes as any).data || []);
-      setNcrs((ncrRes as any).data || []);
-      setCoas((coaRes as any).data || []);
-      const itemList = (itemsRes as any).data || [];
+      setLots(asRows(lotsRes));
+      setPlans(asRows(plansRes));
+      setNcrs(asRows(ncrRes));
+      setCoas(asRows(coaRes));
+      const itemList = asRows(itemsRes);
       setItems(itemList);
-      const partyList = (partiesRes as any).data || [];
+      const partyList = asRows(partiesRes);
       setParties(partyList);
 
       if (itemList.length > 0) {

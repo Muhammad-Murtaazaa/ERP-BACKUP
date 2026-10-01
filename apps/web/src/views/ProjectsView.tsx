@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
+import { asRows } from '../lib/rows.js';
 import { Table, Button, Input, Drawer, Badge, Card, Column, Combobox } from '@omnysync/ui';
 import {
   Briefcase,
@@ -91,11 +92,11 @@ export const ProjectsView: React.FC = () => {
         ApiClient.get('/finance/periods'),
       ]);
 
-      const prjList = (prjRes as any).data || [];
+      const prjList = asRows(prjRes);
       setProjects(prjList);
-      setCostCenters((ccRes as any).data || []);
-      setParties((partiesRes as any).data || []);
-      setPeriods((perRes as any).data || []);
+      setCostCenters(asRows(ccRes));
+      setParties(asRows(partiesRes));
+      setPeriods(asRows(perRes));
 
       if (prjList.length > 0 && !selectedProjectId) {
         setSelectedProjectId(prjList[0].id);
@@ -115,8 +116,8 @@ export const ProjectsView: React.FC = () => {
         ApiClient.get(`/projects/${projectId}/boq`),
         ApiClient.get(`/projects/${projectId}/certificates`),
       ]);
-      setBoqs((boqRes as any).data || []);
-      setCertificates((certRes as any).data || []);
+      setBoqs(asRows(boqRes));
+      setCertificates(asRows(certRes));
     } catch (err) {
       console.error('Failed to load project details:', err);
     }

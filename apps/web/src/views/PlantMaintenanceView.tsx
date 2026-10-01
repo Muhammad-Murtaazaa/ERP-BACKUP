@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
+import { asRows } from '../lib/rows.js';
 import { Table, Button, Input, Drawer, Badge, Card, Column, Combobox } from '@omnysync/ui';
 import {
   Wrench,
@@ -90,13 +91,13 @@ export const PlantMaintenanceView: React.FC = () => {
         ApiClient.get('/items'),
       ]);
 
-      const equipList = (equipRes as any).data || [];
+      const equipList = asRows(equipRes);
       setEquipment(equipList);
-      setSchedules((schedRes as any).data || []);
-      setWorkOrders((woRes as any).data || []);
-      setCalibrations((calibRes as any).data || []);
-      setAssets((assetsRes as any).data || []);
-      const itemList = (itemsRes as any).data || [];
+      setSchedules(asRows(schedRes));
+      setWorkOrders(asRows(woRes));
+      setCalibrations(asRows(calibRes));
+      setAssets(asRows(assetsRes));
+      const itemList = asRows(itemsRes);
       setItems(itemList);
 
       if (equipList.length > 0) {
