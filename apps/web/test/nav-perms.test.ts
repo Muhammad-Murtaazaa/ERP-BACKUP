@@ -13,3 +13,11 @@ describe('sidebar module gating', () => {
     expect(canSeeModule('srv', undefined)).toBe(true); // before the session loads
   });
 });
+
+describe('MODULE_PERMS literals stay in sync with contracts', () => {
+  it('every literal is a real Permission value', async () => {
+    const { Permission } = await import('@omnysync/contracts');
+    const all = new Set(Object.values(Permission));
+    for (const [id, perms] of Object.entries(MODULE_PERMS)) for (const p of perms) expect(all.has(p as any), `${id}: ${p}`).toBe(true);
+  });
+});
