@@ -256,3 +256,14 @@ registerSeeder('EPM', async (q, c) => {
     }
   }
 });
+
+registerSeeder('LND', async (q, c) => {
+  const exists = (await q.query(`SELECT 1 FROM lnd_loans WHERE organization_id = $1 AND number = 'LN-DEMO-001'`, [c.org])).rows.length;
+  if (exists) return;
+  const party = (await q.query(`SELECT id FROM parties WHERE organization_id = $1 AND party_type IN ('CUSTOMER','BOTH') ORDER BY code LIMIT 1`, [c.org])).rows[0];
+  if (!party) return;
+  await q.query(
+    `INSERT INTO lnd_loans (organization_id, legal_entity_id, number, party_id, purpose, principal, annual_rate, term_months, method, application_date, status, created_by) VALUES ($1,$2,'LN-DEMO-001',$3,'VRF upgrade financed over 12 months',850000,16,12,'ANNUITY',CURRENT_DATE,'DRAFT',$4)`,
+    [c.org, c.le, party.id, c.admin],
+  );
+});

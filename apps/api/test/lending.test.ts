@@ -1,0 +1,115 @@
+import { describe, it, expect, beforeAll } from 'vitest';
+import { bootstrap, login, makeRequest, db } from './harness.js';
+import { amortise, allocate } from '../src/routes/lending.js';
+
+const sum = (xs: string[]) => xs.reduce((a, x) => a + Math.round(Number(x) * 100), 0) / 100;
+
+describe('LND pure rules', () => {
+  it('annuity schedule: level payment, principal sums exactly, last instalment absorbs rounding', () => {
+    const s = amortise('100000', '12', 12, '2026-11-30');
+    expect(s.length).toBe(12);
+    expect(sum(s.map((x) => x.principal))).toBe(100000);
+    expect(Number(s[0].interest)).toBe(1000);
+    expect((Number(s[0].principal) + Number(s[0].interest)).toFixed(2)).toBe('8884.88');
+    expect(s[1].due_date).toBe('2026-12-30');
+    expect(s[3].due_date).toBe('2027-02-28'); // month-end clamp
+    const z = amortise('1000', '0', 3, '2026-11-01');
+    expect(z.map((x) => x.principal)).toEqual(['333.33', '333.33', '333.34']);
+    expect(z.every((x) => x.interest === '0.00')).toBe(true);
+    const ep = amortise('1200', '12', 3, '2026-11-01', 'EQUAL_PRINCIPAL');
+    expect(ep.map((x) => x.interest)).toEqual(['12.00', '8.00', '4.00']);
+  });
+  it('allocation: interest before principal, oldest first, reports unapplied', () => {
+    const rows = [
+      { id: 'a', principal: '100', interest: '10', paid_principal: '0', paid_interest: '0' },
+      { id: 'b', principal: '100', interest: '5', paid_principal: '0', paid_interest: '0' },
+    ];
+    expect(allocate(rows, '50')).toMatchObject({ interest: '10.00', principal: '40.00', unapplied: '0.00' });
+    const two = allocate(rows, '120');
+    expect(two).toMatchObject({ interest: '15.00', principal: '105.00' });
+    expect(allocate(rows, '300').unapplied).toBe('85.00');
+  });
+});
+
+describe('LND API', () => {
+  let acct: string;
+  let ctrl: string;
+  let viewer: string;
+  let admin: string;
+  let party: any;
+  beforeAll(async () => {
+    await bootstrap();
+    [acct, ctrl, viewer, admin] = await Promise.all(['accountant', 'controller', 'viewer', 'admin'].map((u) => login(`${u}@omnysync.internal`)));
+    party = (await db.query(`SELECT id FROM parties WHERE party_type IN ('CUSTOMER','BOTH') ORDER BY code LIMIT 1`)).rows[0];
+  });
+
+  const make = async (body: any = {}) => (await makeRequest('POST', '/api/lnd/loans', { party_id: party.id, principal: '120000', annual_rate: '18', term_months: 6, purpose: '2 × 1.5 ton inverter AC on instalments', ...body }, acct)).body.data;
+  const approved = async (body: any = {}) => {
+    const l = await make(body);
+    await makeRequest('POST', `/api/lnd/loans/${l.id}/submit`, {}, acct);
+    await makeRequest('POST', `/api/lnd/loans/${l.id}/approve`, {}, ctrl);
+    return l;
+  };
+
+  it('validation, preview schedule, approval SoD and permissions', async () => {
+    expect((await makeRequest('GET', '/api/lnd/loans', undefined, viewer)).status).toBe(403);
+    expect((await makeRequest('POST', '/api/lnd/loans', { party_id: party.id, principal: '0', annual_rate: '10', term_months: 6 }, acct)).status).toBe(400);
+    expect((await makeRequest('POST', '/api/lnd/loans', { party_id: party.id, principal: '1000', annual_rate: '150', term_months: 6 }, acct)).status).toBe(400);
+    expect((await makeRequest('POST', '/api/lnd/loans', { party_id: party.id, principal: '1000', annual_rate: '10', term_months: 0 }, acct)).status).toBe(400);
+    const l = await make();
+    const d = (await makeRequest('GET', `/api/lnd/loans/${l.id}`, undefined, acct)).body.data;
+    expect(d.schedule.length).toBe(6);
+    expect(d.schedule[0].preview).toBe(true);
+    expect((await makeRequest('POST', `/api/lnd/loans/${l.id}/disburse`, {}, acct)).status).toBe(409); // not approved
+    expect((await makeRequest('POST', `/api/lnd/loans/${l.id}/submit`, {}, ctrl)).status).toBe(403); // controller cannot originate
+    await makeRequest('POST', `/api/lnd/loans/${l.id}/submit`, {}, admin);
+    expect((await makeRequest('POST', `/api/lnd/loans/${l.id}/approve`, {}, acct)).status).toBe(403); // accountant cannot approve
+    expect((await makeRequest('POST', `/api/lnd/loans/${l.id}/approve`, {}, admin)).body.error.code).toBe('SEGREGATION_OF_DUTIES');
+    expect((await makeRequest('POST', `/api/lnd/loans/${l.id}/reject`, {}, ctrl)).status).toBe(400); // reason required
+  });
+
+  it('disbursement posts once and builds the schedule; closed period leaves loan approved', async () => {
+    const bad = await approved();
+    const r0 = await makeRequest('POST', `/api/lnd/loans/${bad.id}/disburse`, { disbursement_date: '2019-01-10' }, acct);
+    expect(r0.status).toBeGreaterThanOrEqual(400);
+    expect((await db.query(`SELECT status FROM lnd_loans WHERE id = $1`, [bad.id])).rows[0].status).toBe('APPROVED');
+    expect((await db.query(`SELECT COUNT(*)::int n FROM lnd_schedule WHERE loan_id = $1`, [bad.id])).rows[0].n).toBe(0);
+    expect((await makeRequest('POST', `/api/lnd/loans/${bad.id}/disburse`, { disbursement_date: '2026-09-10', first_due_date: '2026-09-01' }, acct)).status).toBe(400);
+    const ok1 = await makeRequest('POST', `/api/lnd/loans/${bad.id}/disburse`, { disbursement_date: '2026-09-10' }, acct);
+    expect(ok1.status).toBe(200);
+    expect(ok1.body.data.status).toBe('ACTIVE');
+    expect((await makeRequest('POST', `/api/lnd/loans/${bad.id}/disburse`, { disbursement_date: '2026-09-10' }, acct)).status).toBe(409);
+    const j = (await db.query(`SELECT a.code, SUM(jl.base_debit)::text d, SUM(jl.base_credit)::text c FROM journal_lines jl JOIN journals j ON j.id = jl.journal_id JOIN accounts a ON a.id = jl.account_id WHERE j.source_key = $1 GROUP BY a.code ORDER BY a.code`, [`LND_DISB:${bad.id}`])).rows;
+    expect(j.map((x: any) => [x.code, Number(x.d), Number(x.c)])).toEqual([['111002', 0, 120000], ['112004', 120000, 0]]);
+    const s = (await db.query(`SELECT due_date::text, principal::text FROM lnd_schedule WHERE loan_id = $1 ORDER BY seq`, [bad.id])).rows;
+    expect(s[0].due_date).toBe('2026-10-10');
+    expect(sum(s.map((x: any) => x.principal))).toBe(120000);
+  });
+
+  it('repayments: interest-first allocation, duplicates and overpayment refused, payoff closes and nets the receivable', async () => {
+    const l = await approved({ principal: '60000', annual_rate: '12', term_months: 3 });
+    await makeRequest('POST', `/api/lnd/loans/${l.id}/disburse`, { disbursement_date: '2026-09-01' }, acct);
+    expect((await makeRequest('POST', `/api/lnd/loans/${l.id}/repayments`, { amount: '100', reference: 'X' }, viewer)).status).toBe(403);
+    expect((await makeRequest('POST', `/api/lnd/loans/${l.id}/repayments`, { amount: '100' }, acct)).status).toBe(400);
+    expect((await makeRequest('POST', `/api/lnd/loans/${l.id}/repayments`, { amount: '100', reference: 'X', payment_date: '2026-08-01' }, acct)).status).toBe(400);
+    const p1 = await makeRequest('POST', `/api/lnd/loans/${l.id}/repayments`, { amount: '1000', reference: 'RCPT-1', payment_date: '2026-09-20' }, acct);
+    expect(p1.status).toBe(201);
+    expect(p1.body.data).toMatchObject({ interest_part: expect.anything(), loan_status: 'ACTIVE' });
+    expect(Number(p1.body.data.interest_part)).toBe(600); // 1% of 60,000
+    expect(Number(p1.body.data.principal_part)).toBe(400);
+    expect((await makeRequest('POST', `/api/lnd/loans/${l.id}/repayments`, { amount: '1000', reference: 'RCPT-1', payment_date: '2026-09-20' }, acct)).body.error.code).toBe('DUPLICATE_RESOURCE');
+    const sched = (await db.query(`SELECT SUM(principal + interest - paid_principal - paid_interest)::text r FROM lnd_schedule WHERE loan_id = $1`, [l.id])).rows[0].r;
+    expect((await makeRequest('POST', `/api/lnd/loans/${l.id}/repayments`, { amount: (Number(sched) + 1).toFixed(2), reference: 'OVER', payment_date: '2026-09-21' }, acct)).status).toBe(400);
+    const pay = await makeRequest('POST', `/api/lnd/loans/${l.id}/repayments`, { amount: Number(sched).toFixed(2), reference: 'PAYOFF', payment_date: '2026-09-25' }, acct);
+    expect(pay.body.data.loan_status).toBe('CLOSED');
+    expect(Number(pay.body.data.outstanding_principal)).toBe(0);
+    const net = (await db.query(`SELECT a.code, SUM(jl.base_debit - jl.base_credit)::text n FROM journal_lines jl JOIN journals j ON j.id = jl.journal_id JOIN accounts a ON a.id = jl.account_id WHERE j.source_id = $1 OR j.source_id IN (SELECT id FROM lnd_repayments WHERE loan_id = $1) GROUP BY a.code ORDER BY a.code`, [l.id])).rows;
+    const by = Object.fromEntries(net.map((x: any) => [x.code, Number(x.n)]));
+    expect(by['112004']).toBe(0);
+    const totalInterest = (await db.query(`SELECT SUM(interest)::text t FROM lnd_schedule WHERE loan_id = $1`, [l.id])).rows[0].t;
+    expect(by['411006']).toBeCloseTo(-Number(totalInterest), 2);
+    expect((await makeRequest('POST', `/api/lnd/loans/${l.id}/repayments`, { amount: '1', reference: 'LATE', payment_date: '2026-09-26' }, acct)).status).toBe(409);
+    const sm = await makeRequest('GET', '/api/lnd/summary', undefined, acct);
+    expect(sm.status).toBe(200);
+  });
+});
