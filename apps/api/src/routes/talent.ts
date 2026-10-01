@@ -110,7 +110,8 @@ export function registerTalentRoutes(app: Express): void {
       if (d.rows.length) throw new ApiError(409, ErrorCode.DUPLICATE_RESOURCE, `A candidate with ${v.email} already exists`);
     },
     detail: async (q, row) => ({
-      applications: (await q.query(`SELECT a.id, a.status, r.number, r.title FROM tal_applications a JOIN tal_requisitions r ON r.id = a.requisition_id WHERE a.candidate_id = $1 ORDER BY a.created_at DESC`, [row.id])).rows,
+      // Separate key: `applications` is the list count column (it rendered as [object Object] in the drawer).
+      application_history: (await q.query(`SELECT a.id, a.status, r.number, r.title FROM tal_applications a JOIN tal_requisitions r ON r.id = a.requisition_id WHERE a.candidate_id = $1 ORDER BY a.created_at DESC`, [row.id])).rows,
       // CVs and certificates are DOC documents linked to the candidate (type/size/magic-byte checked, versioned, hashed).
       documents: (
         await q.query(

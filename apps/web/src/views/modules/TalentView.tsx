@@ -139,6 +139,13 @@ const tabs: TabDef[] = [
     ],
     detailExtra: (row) => (
       <div className="flex flex-col gap-2">
+        <div className="text-sm font-semibold">Applications</div>
+        <Table
+          columns={[{ key: 'number', header: 'Requisition' }, { key: 'title', header: 'Role' }, { key: 'status', header: 'Stage', render: (r: any) => <Badge size="sm" variant="info">{r.status}</Badge> }]}
+          data={row.application_history || []}
+          keyExtractor={(r: any) => r.id}
+          emptyMessage="Not applied to any requisition yet."
+        />
         <div className="text-sm font-semibold">CV &amp; documents</div>
         <Table
           columns={[

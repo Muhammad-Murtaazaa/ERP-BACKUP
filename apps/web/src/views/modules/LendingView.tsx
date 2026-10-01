@@ -76,12 +76,10 @@ const tabs: TabDef[] = [
         <Table
           columns={[
             { key: 'seq', header: '#' },
-            { key: 'due_date', header: 'Due', render: (r: any) => String(r.due_date).slice(0, 10) },
+            { key: 'due_date', header: 'Due', render: (r: any) => <span className="whitespace-nowrap">{String(r.due_date).slice(0, 10)}</span> },
             { key: 'principal', header: 'Principal', align: 'right', render: (r: any) => fmtMoney(r.principal) },
-            { key: 'interest', header: 'Interest', align: 'right', render: (r: any) => fmtMoney(r.interest) },
-            { key: 'total', header: 'Instalment', align: 'right', render: (r: any) => fmtMoney(Number(r.principal) + Number(r.interest)) },
-            { key: 'late_fee', header: 'Late fee', align: 'right', render: (r: any) => (Number(r.late_fee || 0) > 0 ? fmtMoney(r.late_fee) : '—') },
-            { key: 'state', header: '', render: instState },
+            { key: 'total', header: 'Instalment', align: 'right', render: (r: any) => <span title={`Principal ${fmtMoney(r.principal)} + interest ${fmtMoney(r.interest)}`} className="whitespace-nowrap">{fmtMoney(Number(r.principal) + Number(r.interest))}<span className="block text-xs text-[#5B6472]">int. {fmtMoney(r.interest)}</span></span> },
+            { key: 'state', header: '', render: (r: any) => (Number(r.late_fee || 0) > 0 ? <span className="flex flex-col items-start gap-0.5">{instState(r)}<span className="whitespace-nowrap text-xs text-[#B42318]" title={`Late fee ${fmtMoney(r.late_fee)}`}>+{Number(r.late_fee).toFixed(0)} fee</span></span> : instState(r)) },
           ]}
           data={row.schedule || []}
           keyExtractor={(r: any) => String(r.seq)}
