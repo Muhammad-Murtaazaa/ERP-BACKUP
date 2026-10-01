@@ -9,6 +9,8 @@
   ],
   "scripts": {
     "build": "npm run build --workspace=@omnysync/contracts && npm run build --workspace=@omnysync/financial-engine && npm run build --workspace=@omnysync/platform && npm run build --workspace=@omnysync/ui && npm run build --workspace=@omnysync/api && npm run build --workspace=@omnysync/web",
+    "build:api": "npm run build --workspace=@omnysync/contracts && npm run build --workspace=@omnysync/financial-engine && npm run build --workspace=@omnysync/platform && npm run build --workspace=@omnysync/api",
+    "build:web": "npm run build --workspace=@omnysync/contracts && npm run build --workspace=@omnysync/financial-engine && npm run build --workspace=@omnysync/ui && npm run build --workspace=@omnysync/web",
     "start": "node --max-old-space-size=256 apps/api/dist/index.js",
     "start:prod": "node --max-old-space-size=256 apps/api/dist/index.js",
     "test": "vitest run",

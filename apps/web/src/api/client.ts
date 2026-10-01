@@ -1,4 +1,5 @@
-export const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
+const envUrl = ((import.meta as any).env?.VITE_API_URL || '').trim().replace(/\/+$/, '');
+export const API_BASE = envUrl ? (envUrl.endsWith('/api') ? envUrl : `${envUrl}/api`) : '/api';
 
 /** Error carrying the server's error code / details, or `offline` for network failures. */
 export class ApiRequestError extends Error {
