@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
 import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
-import { Plus, RefreshCw, CheckCircle2, Download } from 'lucide-react';
+import { Plus, RefreshCw, CheckCircle2, Download, Printer, FileSpreadsheet } from 'lucide-react';
 import { Party, Item } from '@omnysync/contracts';
 import { fmtMoney, isPositive } from '../lib/format.js';
+import { exportToCsv, exportToExcel, printHtmlDocument, renderCommercialOrderPrintHtml } from '../lib/exportUtils.js';
 
 export const ProcurementOrdersView: React.FC = () => {
   const [orders, setOrders] = useState<any[]>([]);
@@ -47,6 +48,35 @@ export const ProcurementOrdersView: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleExportCsv = () => {
+    exportToCsv(orders, `purchase_orders_${new Date().toISOString().slice(0, 10)}.csv`, [
+      { header: 'PO #', key: 'po_number' },
+      { header: 'Supplier / Vendor', key: 'party_name' },
+      { header: 'PO Date', key: 'po_date' },
+      { header: 'Expected Date', key: 'expected_date' },
+      { header: 'Total Value (PKR)', key: 'total_amount', formatter: (val) => fmtMoney(val) },
+      { header: 'Status', key: 'status' },
+      { header: 'Notes', key: 'notes' },
+    ]);
+  };
+
+  const handleExportExcel = () => {
+    exportToExcel(orders, `purchase_orders_${new Date().toISOString().slice(0, 10)}.xls`, 'Purchase Orders', [
+      { header: 'PO #', key: 'po_number' },
+      { header: 'Supplier / Vendor', key: 'party_name' },
+      { header: 'PO Date', key: 'po_date' },
+      { header: 'Expected Date', key: 'expected_date' },
+      { header: 'Total Value (PKR)', key: 'total_amount', formatter: (val) => fmtMoney(val) },
+      { header: 'Status', key: 'status' },
+      { header: 'Notes', key: 'notes' },
+    ]);
+  };
+
+  const handlePrintPo = (po: any) => {
+    const html = renderCommercialOrderPrintHtml(po, 'PURCHASE_ORDER', 'ERP SAMPLE');
+    printHtmlDocument(html, `Purchase Order ${po.po_number || po.id}`);
+  };
 
   const handleLineChange = (index: number, field: string, value: string) => {
     const nextLines = [...lines];
@@ -141,7 +171,13 @@ export const ProcurementOrdersView: React.FC = () => {
             Manage vendor purchase orders, authorization limits, goods receipt notes (GRN), and inventory accruals
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" size="sm" onClick={handleExportCsv}>
+            <Download size={13} className="mr-1" /> Export CSV
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleExportExcel}>
+            <FileSpreadsheet size={13} className="mr-1 text-emerald-600" /> Export Excel
+          </Button>
           <Button variant="secondary" size="sm" onClick={loadData} isLoading={loading}>
             <RefreshCw size={13} className="mr-1" /> Refresh
           </Button>
@@ -177,7 +213,10 @@ export const ProcurementOrdersView: React.FC = () => {
               header: 'Actions',
               align: 'right',
               render: (o) => (
-                <div className="flex items-center justify-end gap-2">
+                <div className="flex items-center justify-end gap-1.5">
+                  <Button variant="secondary" size="sm" onClick={() => handlePrintPo(o)} title="Print Purchase Order PDF">
+                    <Printer size={12} className="mr-1 text-emerald-700" /> Print PDF
+                  </Button>
                   {o.status === 'DRAFT' && (
                     <Button variant="secondary" size="sm" onClick={() => handleApprovePo(o.id)}>
                       <CheckCircle2 size={12} className="mr-1 text-[#5940B8]" /> Approve

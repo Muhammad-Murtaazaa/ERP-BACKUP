@@ -372,7 +372,7 @@ export const PlantMaintenanceView: React.FC = () => {
         <button
           onClick={() => setActiveTab('EQUIPMENT')}
           className={`pb-3 flex items-center gap-2 border-b-2 transition-colors ${
-            activeTab === 'EQUIPMENT' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+            activeTab === 'EQUIPMENT' ? 'border-[#5940B8] text-[#5940B8]' : 'border-transparent text-slate-500 hover:text-slate-700'
           }`}
         >
           <Cpu className="w-4 h-4" />
@@ -381,7 +381,7 @@ export const PlantMaintenanceView: React.FC = () => {
         <button
           onClick={() => setActiveTab('SCHEDULES')}
           className={`pb-3 flex items-center gap-2 border-b-2 transition-colors ${
-            activeTab === 'SCHEDULES' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+            activeTab === 'SCHEDULES' ? 'border-[#5940B8] text-[#5940B8]' : 'border-transparent text-slate-500 hover:text-slate-700'
           }`}
         >
           <Calendar className="w-4 h-4" />
@@ -390,7 +390,7 @@ export const PlantMaintenanceView: React.FC = () => {
         <button
           onClick={() => setActiveTab('WORK_ORDERS')}
           className={`pb-3 flex items-center gap-2 border-b-2 transition-colors ${
-            activeTab === 'WORK_ORDERS' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+            activeTab === 'WORK_ORDERS' ? 'border-[#5940B8] text-[#5940B8]' : 'border-transparent text-slate-500 hover:text-slate-700'
           }`}
         >
           <Wrench className="w-4 h-4" />
@@ -399,7 +399,7 @@ export const PlantMaintenanceView: React.FC = () => {
         <button
           onClick={() => setActiveTab('CALIBRATIONS')}
           className={`pb-3 flex items-center gap-2 border-b-2 transition-colors ${
-            activeTab === 'CALIBRATIONS' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+            activeTab === 'CALIBRATIONS' ? 'border-[#5940B8] text-[#5940B8]' : 'border-transparent text-slate-500 hover:text-slate-700'
           }`}
         >
           <Clock className="w-4 h-4" />

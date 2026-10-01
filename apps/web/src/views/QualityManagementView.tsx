@@ -422,7 +422,7 @@ export const QualityManagementView: React.FC = () => {
         <button
           onClick={() => setActiveTab('LOTS')}
           className={`pb-3 flex items-center gap-2 border-b-2 transition-colors ${
-            activeTab === 'LOTS' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+            activeTab === 'LOTS' ? 'border-[#5940B8] text-[#5940B8]' : 'border-transparent text-slate-500 hover:text-slate-700'
           }`}
         >
           <ListFilter className="w-4 h-4" />
@@ -431,7 +431,7 @@ export const QualityManagementView: React.FC = () => {
         <button
           onClick={() => setActiveTab('PLANS')}
           className={`pb-3 flex items-center gap-2 border-b-2 transition-colors ${
-            activeTab === 'PLANS' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+            activeTab === 'PLANS' ? 'border-[#5940B8] text-[#5940B8]' : 'border-transparent text-slate-500 hover:text-slate-700'
           }`}
         >
           <ShieldCheck className="w-4 h-4" />
@@ -440,7 +440,7 @@ export const QualityManagementView: React.FC = () => {
         <button
           onClick={() => setActiveTab('NCR')}
           className={`pb-3 flex items-center gap-2 border-b-2 transition-colors ${
-            activeTab === 'NCR' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+            activeTab === 'NCR' ? 'border-[#5940B8] text-[#5940B8]' : 'border-transparent text-slate-500 hover:text-slate-700'
           }`}
         >
           <AlertTriangle className="w-4 h-4" />
@@ -449,7 +449,7 @@ export const QualityManagementView: React.FC = () => {
         <button
           onClick={() => setActiveTab('COA')}
           className={`pb-3 flex items-center gap-2 border-b-2 transition-colors ${
-            activeTab === 'COA' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+            activeTab === 'COA' ? 'border-[#5940B8] text-[#5940B8]' : 'border-transparent text-slate-500 hover:text-slate-700'
           }`}
         >
           <FileCheck2 className="w-4 h-4" />

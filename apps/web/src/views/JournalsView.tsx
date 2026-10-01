@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
 import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
-import { Plus, RefreshCw, Eye, CheckCircle2, RotateCcw, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { Plus, RefreshCw, Eye, CheckCircle2, RotateCcw, AlertTriangle, ShieldAlert, Printer, FileSpreadsheet, Download } from 'lucide-react';
 import { Journal, Account } from '@omnysync/contracts';
 import { Money, sumMoney } from '@omnysync/financial-engine';
 import { fmtMoney } from '../lib/format.js';
+import {
+  exportToCsv,
+  exportToExcel,
+  printHtmlDocument,
+  renderJournalVoucherPrintHtml,
+} from '../lib/exportUtils.js';
 
 export const JournalsView: React.FC = () => {
   const [journals, setJournals] = useState<Journal[]>([]);
@@ -223,6 +229,35 @@ export const JournalsView: React.FC = () => {
     }
   };
 
+  const handleExportCsv = () => {
+    exportToCsv(journals, 'General-Ledger-Journals', [
+      { header: 'Voucher Number', key: 'journal_number' },
+      { header: 'Posting Date', key: 'posting_date' },
+      { header: 'Purpose', key: 'accounting_purpose' },
+      { header: 'Description', key: 'description' },
+      { header: 'Total Debit (PKR)', key: 'total_base_debit', formatter: (v) => fmtMoney(v) },
+      { header: 'Total Credit (PKR)', key: 'total_base_credit', formatter: (v) => fmtMoney(v) },
+      { header: 'Status', key: 'status' },
+    ]);
+  };
+
+  const handleExportExcel = () => {
+    exportToExcel(journals, 'General-Ledger-Journals', 'Journals', [
+      { header: 'Voucher Number', key: 'journal_number' },
+      { header: 'Posting Date', key: 'posting_date' },
+      { header: 'Purpose', key: 'accounting_purpose' },
+      { header: 'Description', key: 'description' },
+      { header: 'Total Debit (PKR)', key: 'total_base_debit', formatter: (v) => fmtMoney(v) },
+      { header: 'Total Credit (PKR)', key: 'total_base_credit', formatter: (v) => fmtMoney(v) },
+      { header: 'Status', key: 'status' },
+    ]);
+  };
+
+  const handlePrintVoucher = (j: any) => {
+    const html = renderJournalVoucherPrintHtml(j, 'ERP SAMPLE');
+    printHtmlDocument(html, `Journal-Voucher-${j.journal_number || 'JV'}`);
+  };
+
   return (
     <div className="flex flex-col gap-6 text-left">
       {/* Header */}
@@ -233,7 +268,13 @@ export const JournalsView: React.FC = () => {
             Double-entry vouchers • Period locking • Immutable posted facts • Linked reversals
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <Button variant="secondary" size="sm" onClick={handleExportCsv} title="Export to CSV">
+            <Download size={13} className="mr-1" /> Export CSV
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleExportExcel} title="Export to Excel">
+            <FileSpreadsheet size={13} className="mr-1" /> Export Excel
+          </Button>
           <Button variant="secondary" size="sm" onClick={loadData} isLoading={loading}>
             <RefreshCw size={13} className="mr-1" /> Refresh
           </Button>
@@ -266,7 +307,7 @@ export const JournalsView: React.FC = () => {
                 onClick={() => setStatusFilter(st)}
                 className={`px-2.5 py-1 text-xs rounded-full font-medium transition-colors ${
                   statusFilter === st
-                    ? 'bg-[#5940B8] text-white'
+                    ? 'bg-[#0D6E51] text-white font-bold'
                     : 'bg-[#F1F4F9] text-[#46536B] hover:bg-[#D9DFEA]'
                 }`}
               >
@@ -284,7 +325,7 @@ export const JournalsView: React.FC = () => {
           keyExtractor={(j) => j.id}
           isLoading={loading} error={loadError} onRetry={loadData}
           columns={[
-            { key: 'journal_number', header: 'Voucher Number', className: 'font-mono font-semibold text-[#5940B8]' },
+            { key: 'journal_number', header: 'Voucher Number', className: 'font-mono font-semibold text-[#0D6E51]' },
             { key: 'posting_date', header: 'Posting Date' },
             { key: 'accounting_purpose', header: 'Purpose' },
             { key: 'description', header: 'Description', className: 'max-w-md truncate' },
@@ -310,9 +351,14 @@ export const JournalsView: React.FC = () => {
               header: 'Action',
               align: 'center',
               render: (j) => (
-                <Button variant="secondary" size="sm" onClick={() => viewJournalDetail(j.id)}>
-                  <Eye size={12} className="mr-1" /> View
-                </Button>
+                <div className="flex items-center justify-center gap-1.5">
+                  <Button variant="secondary" size="sm" onClick={() => viewJournalDetail(j.id)}>
+                    <Eye size={12} className="mr-1" /> View
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => handlePrintVoucher(j)} title="Print Journal Voucher (PDF)">
+                    <Printer size={12} className="mr-1" /> Print PDF
+                  </Button>
+                </div>
               ),
             },
           ]}

@@ -585,4 +585,401 @@ export function registerHrmRoutes(app: Express): void {
     });
     return ok(req, res, out);
   });
+
+  // ==========================================
+  // Workman Services HRM Enhancements
+  // ==========================================
+
+  // --- 1. Staff Advances & Floats (Hisaab) ---
+  app.get('/api/hrm/advances', authenticate, hrRead, async (req: Request, res: Response) => {
+    const result = await db.query(
+      `SELECT a.*, e.employee_number, e.first_name || ' ' || e.last_name AS employee_name
+       FROM hrm_advances a
+       JOIN employees e ON e.id = a.employee_id
+       WHERE a.organization_id = $1
+       ORDER BY a.created_at DESC`,
+      [req.session!.organization_id],
+    );
+    return ok(req, res, result.rows, 200, { total_count: result.rows.length });
+  });
+
+  app.post('/api/hrm/advances', authenticate, requirePermission(Permission.HRM_MANAGE), async (req: Request, res: Response) => {
+    const employee_id = str(req.body?.employee_id, 'employee_id');
+    const advance_type = oneOf(req.body?.advance_type, 'advance_type', ['CASH', 'TRAVEL', 'PARTS_FLOAT', 'EMERGENCY_LOAN']);
+    const amount = decimal(req.body?.amount, 'amount', { sign: 'positive' });
+    const purpose = str(req.body?.purpose, 'purpose', { max: 1000 });
+    const repayment_months = Math.max(1, Number(req.body?.repayment_months || 1));
+    const monthly_deduction = new Money(amount).div(repayment_months).toFixed(8);
+
+    await assertOrgRef(db, 'employees', employee_id, req.session!.organization_id, 'employee_id');
+    const docNumber = await nextDocumentNumber(db, req.session!.organization_id, 'ADV');
+
+    const advId = crypto.randomUUID();
+    await db.query(
+      `INSERT INTO hrm_advances (id, organization_id, legal_entity_id, number, employee_id, advance_type, amount, purpose, repayment_months, monthly_deduction, balance_amount, status, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'DRAFT', $12)`,
+      [advId, req.session!.organization_id, req.session!.legal_entity_id, docNumber, employee_id, advance_type, amount, purpose, repayment_months, monthly_deduction, amount, req.session!.user_id],
+    );
+    const row = (await db.query(`SELECT * FROM hrm_advances WHERE id = $1`, [advId])).rows[0];
+    return ok(req, res, row, 201);
+  });
+
+  app.post('/api/hrm/advances/:id/approve', authenticate, requirePermission(Permission.HRM_MANAGE), async (req: Request, res: Response) => {
+    const out = await db.transaction(async (tx) => {
+      const adv = await requireOrgRow(tx, 'hrm_advances', req.params.id, req.session!.organization_id, 'Staff advance', { forUpdate: true });
+      if (adv.status !== 'DRAFT' && adv.status !== 'SUBMITTED') {
+        throw new ApiError(409, ErrorCode.INVALID_STATE, `Only DRAFT or SUBMITTED advances can be approved (current: ${adv.status})`);
+      }
+      if (adv.created_by === req.session!.user_id) {
+        throw sodViolation('Segregation of duties: preparer cannot approve staff advance');
+      }
+      await tx.query(
+        `UPDATE hrm_advances SET status = 'APPROVED', approved_by = $2, updated_at = NOW() WHERE id = $1`,
+        [adv.id, req.session!.user_id],
+      );
+      return { id: adv.id, status: 'APPROVED' };
+    });
+    return ok(req, res, out);
+  });
+
+  app.post('/api/hrm/advances/:id/disburse', authenticate, requirePermission(Permission.PAYROLL_DISBURSE), async (req: Request, res: Response) => {
+    const payment_date = dateOnly(req.body?.payment_date, 'payment_date', { required: false }) || new Date().toISOString().slice(0, 10);
+    const out = await db.transaction(async (tx) => {
+      const adv = await requireOrgRow(tx, 'hrm_advances', req.params.id, req.session!.organization_id, 'Staff advance', { forUpdate: true });
+      if (adv.status !== 'APPROVED') {
+        throw new ApiError(409, ErrorCode.INVALID_STATE, `Only APPROVED advances can be disbursed (current: ${adv.status})`);
+      }
+      const bankRes = await tx.query(`SELECT id FROM accounts WHERE organization_id = $1 AND code = '111002'`, [req.session!.organization_id]);
+      if (bankRes.rows.length === 0) throw new ApiError(400, ErrorCode.MAPPING_MISSING, 'Operating bank account not found');
+      const bankId = bankRes.rows[0].id;
+
+      const advanceAcc = (await tx.query(`SELECT id FROM accounts WHERE organization_id = $1 AND code IN ('112006', '112004', '113005') ORDER BY code ASC LIMIT 1`, [req.session!.organization_id])).rows[0]?.id;
+
+      const posted = await postJournal(tx, auditLogger, outboxService, {
+        organizationId: req.session!.organization_id,
+        legalEntityId: adv.legal_entity_id,
+        userId: req.session!.user_id,
+        postingDate: payment_date,
+        purpose: AccountingPurpose.PAYROLL_DISBURSEMENT,
+        description: `Disbursement of staff advance ${adv.number} - ${adv.advance_type}`,
+        sourceType: 'HRM_ADVANCE',
+        sourceId: adv.id,
+        sourceKey: `HRM_ADVANCE:${adv.id}`,
+        numberPrefix: 'JV-ADV',
+        correlationId: req.correlationId,
+        lines: [
+          advanceAcc
+            ? { account_id: advanceAcc, debit: adv.amount, description: `Staff advance receivable ${adv.number}` }
+            : { account_code: '112006', debit: adv.amount, description: `Staff advance receivable ${adv.number}` },
+          { account_id: bankId, credit: adv.amount, description: `Bank disbursement for advance ${adv.number}` },
+        ],
+      });
+
+      // Generate recovery schedule
+      const months = Number(adv.repayment_months);
+      const monthlyAmt = new Money(adv.amount).div(months).toFixed(8);
+      for (let i = 1; i <= months; i++) {
+        const dueDate = new Date();
+        dueDate.setMonth(dueDate.getMonth() + i);
+        await tx.query(
+          `INSERT INTO hrm_advance_installments (id, advance_id, installment_number, due_date, amount, status)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, 'PENDING')`,
+          [adv.id, i, dueDate.toISOString().slice(0, 10), monthlyAmt],
+        );
+      }
+
+      await tx.query(
+        `UPDATE hrm_advances SET status = 'DISBURSED', disbursement_journal_id = $2, disbursed_at = NOW(), updated_at = NOW() WHERE id = $1`,
+        [adv.id, posted?.journalId ?? null],
+      );
+
+      return { id: adv.id, status: 'DISBURSED', journal_id: posted?.journalId };
+    });
+    return ok(req, res, out);
+  });
+
+  // --- 2. Geofence Zones & Shifts ---
+  app.get('/api/hrm/geofences', authenticate, hrRead, async (req: Request, res: Response) => {
+    const result = await db.query(
+      `SELECT * FROM hrm_geofence_zones WHERE organization_id = $1 ORDER BY code ASC`,
+      [req.session!.organization_id],
+    );
+    return ok(req, res, result.rows, 200, { total_count: result.rows.length });
+  });
+
+  app.post('/api/hrm/geofences', authenticate, requirePermission(Permission.HRM_MANAGE), async (req: Request, res: Response) => {
+    const code = str(req.body?.code, 'code', { max: 32 });
+    const name = str(req.body?.name, 'name', { max: 255 });
+    const latitude = Number(req.body?.latitude);
+    const longitude = Number(req.body?.longitude);
+    const radius_meters = Number(req.body?.radius_meters || 100);
+
+    const geoId = crypto.randomUUID();
+    await db.query(
+      `INSERT INTO hrm_geofence_zones (id, organization_id, code, name, latitude, longitude, radius_meters, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true)
+       ON CONFLICT (organization_id, code) DO UPDATE SET name = EXCLUDED.name, latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude, radius_meters = EXCLUDED.radius_meters`,
+      [geoId, req.session!.organization_id, code, name, latitude, longitude, radius_meters],
+    );
+    const row = (await db.query(`SELECT * FROM hrm_geofence_zones WHERE id = $1`, [geoId])).rows[0];
+    return ok(req, res, row, 201);
+  });
+
+  app.get('/api/hrm/shifts', authenticate, hrRead, async (req: Request, res: Response) => {
+    const result = await db.query(
+      `SELECT * FROM hrm_shifts WHERE organization_id = $1 ORDER BY code ASC`,
+      [req.session!.organization_id],
+    );
+    return ok(req, res, result.rows, 200, { total_count: result.rows.length });
+  });
+
+  app.post('/api/hrm/shifts', authenticate, requirePermission(Permission.HRM_MANAGE), async (req: Request, res: Response) => {
+    const code = str(req.body?.code, 'code', { max: 32 });
+    const name = str(req.body?.name, 'name', { max: 255 });
+    const start_time = str(req.body?.start_time, 'start_time', { max: 5 });
+    const end_time = str(req.body?.end_time, 'end_time', { max: 5 });
+    const grace_period_minutes = Number(req.body?.grace_period_minutes || 15);
+    const half_day_hours = Number(req.body?.half_day_hours || 4.5);
+
+    const shiftId = crypto.randomUUID();
+    await db.query(
+      `INSERT INTO hrm_shifts (id, organization_id, code, name, start_time, end_time, grace_period_minutes, half_day_hours, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true)
+       ON CONFLICT (organization_id, code) DO UPDATE SET name = EXCLUDED.name, start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time`,
+      [shiftId, req.session!.organization_id, code, name, start_time, end_time, grace_period_minutes, half_day_hours],
+    );
+    const row = (await db.query(`SELECT * FROM hrm_shifts WHERE id = $1`, [shiftId])).rows[0];
+    return ok(req, res, row, 201);
+  });
+
+  // --- 3. Attendance Logs with Geofencing & Verification ---
+  app.get('/api/hrm/attendance', authenticate, hrRead, async (req: Request, res: Response) => {
+    const date = req.query?.date ? String(req.query.date) : null;
+    const params: any[] = [req.session!.organization_id];
+    let query = `
+      SELECT a.*, e.employee_number, e.first_name || ' ' || e.last_name AS employee_name,
+             s.name AS shift_name, g.name AS geofence_zone_name
+      FROM hrm_attendance_logs a
+      JOIN employees e ON e.id = a.employee_id
+      LEFT JOIN hrm_shifts s ON s.id = a.shift_id
+      LEFT JOIN hrm_geofence_zones g ON g.id = a.geofence_zone_id
+      WHERE a.organization_id = $1
+    `;
+    if (date) {
+      params.push(date);
+      query += ` AND a.work_date = $2`;
+    }
+    query += ` ORDER BY a.work_date DESC, a.created_at DESC`;
+    const result = await db.query(query, params);
+    return ok(req, res, result.rows, 200, { total_count: result.rows.length });
+  });
+
+  app.post('/api/hrm/attendance/check-in', authenticate, async (req: Request, res: Response) => {
+    const employee_id = str(req.body?.employee_id, 'employee_id');
+    const work_date = dateOnly(req.body?.work_date, 'work_date', { required: false }) || new Date().toISOString().slice(0, 10);
+    const shift_id = optionalUuid(req.body?.shift_id, 'shift_id');
+    const latitude = Number(req.body?.latitude || 0);
+    const longitude = Number(req.body?.longitude || 0);
+    const verification_method = oneOf(req.body?.verification_method, 'verification_method', ['GEOFENCE', 'FACE_VERIFIED', 'BIOMETRIC', 'MANUAL']);
+    const notes = optionalStr(req.body?.notes, 'notes', 500);
+
+    await assertOrgRef(db, 'employees', employee_id, req.session!.organization_id, 'employee_id');
+
+    // Find closest geofence zone
+    const zones = (await db.query(`SELECT * FROM hrm_geofence_zones WHERE organization_id = $1 AND is_active = true`, [req.session!.organization_id])).rows;
+    let insideZoneId: string | null = null;
+    let geofence_status: 'INSIDE_GEOFENCE' | 'OUTSIDE_GEOFENCE' = 'OUTSIDE_GEOFENCE';
+
+    for (const z of zones) {
+      const d = Math.hypot((Number(z.latitude) - latitude) * 111320, (Number(z.longitude) - longitude) * 111320 * Math.cos((latitude * Math.PI) / 180));
+      if (d <= Number(z.radius_meters)) {
+        insideZoneId = z.id;
+        geofence_status = 'INSIDE_GEOFENCE';
+        break;
+      }
+    }
+
+    const logId = crypto.randomUUID();
+    await db.query(
+      `INSERT INTO hrm_attendance_logs (id, organization_id, employee_id, work_date, shift_id, check_in_time, check_in_lat, check_in_lng, geofence_zone_id, geofence_status, verification_method, status, notes)
+       VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7, $8, $9, $10, 'PRESENT', $11)
+       ON CONFLICT (employee_id, work_date) DO UPDATE SET
+         check_in_time = NOW(), check_in_lat = EXCLUDED.check_in_lat, check_in_lng = EXCLUDED.check_in_lng, geofence_zone_id = EXCLUDED.geofence_zone_id, geofence_status = EXCLUDED.geofence_status`,
+      [logId, req.session!.organization_id, employee_id, work_date, shift_id, latitude, longitude, insideZoneId, geofence_status, verification_method, notes],
+    );
+    const row = (await db.query(`SELECT * FROM hrm_attendance_logs WHERE employee_id = $1 AND work_date = $2`, [employee_id, work_date])).rows[0];
+    return ok(req, res, row, 201);
+  });
+
+  app.post('/api/hrm/attendance/check-out', authenticate, async (req: Request, res: Response) => {
+    const employee_id = str(req.body?.employee_id, 'employee_id');
+    const work_date = dateOnly(req.body?.work_date, 'work_date', { required: false }) || new Date().toISOString().slice(0, 10);
+
+    const log = (await db.query(`SELECT * FROM hrm_attendance_logs WHERE employee_id = $1 AND work_date = $2 AND organization_id = $3`, [employee_id, work_date, req.session!.organization_id])).rows[0];
+    if (!log) throw new ApiError(404, ErrorCode.RESOURCE_NOT_FOUND, 'Check-in record not found for this date');
+
+    const checkIn = new Date(log.check_in_time);
+    const now = new Date();
+    const hours = Math.max(0, (now.getTime() - checkIn.getTime()) / (1000 * 60 * 60));
+
+    await db.query(
+      `UPDATE hrm_attendance_logs SET check_out_time = NOW(), total_hours = $3 WHERE employee_id = $1 AND work_date = $2`,
+      [employee_id, work_date, hours.toFixed(2)],
+    );
+    const row = (await db.query(`SELECT * FROM hrm_attendance_logs WHERE employee_id = $1 AND work_date = $2`, [employee_id, work_date])).rows[0];
+    return ok(req, res, row);
+  });
+
+  // --- 4. Leave Types & Allocations ---
+  app.get('/api/hrm/leave-types', authenticate, hrRead, async (req: Request, res: Response) => {
+    const result = await db.query(
+      `SELECT * FROM hrm_leave_types WHERE organization_id = $1 ORDER BY code ASC`,
+      [req.session!.organization_id],
+    );
+    return ok(req, res, result.rows, 200, { total_count: result.rows.length });
+  });
+
+  app.post('/api/hrm/leave-types', authenticate, requirePermission(Permission.HRM_MANAGE), async (req: Request, res: Response) => {
+    const code = str(req.body?.code, 'code', { max: 32 });
+    const name = str(req.body?.name, 'name', { max: 255 });
+    const annual_quota = Number(req.body?.annual_quota || 0);
+    const is_paid = bool(req.body?.is_paid, true);
+
+    const typeId = crypto.randomUUID();
+    await db.query(
+      `INSERT INTO hrm_leave_types (id, organization_id, code, name, annual_quota, is_paid, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, true)
+       ON CONFLICT (organization_id, code) DO UPDATE SET name = EXCLUDED.name, annual_quota = EXCLUDED.annual_quota, is_paid = EXCLUDED.is_paid`,
+      [typeId, req.session!.organization_id, code, name, annual_quota, is_paid],
+    );
+    const row = (await db.query(`SELECT * FROM hrm_leave_types WHERE id = $1`, [typeId])).rows[0];
+    return ok(req, res, row, 201);
+  });
+
+  app.get('/api/hrm/leave-allocations', authenticate, hrRead, async (req: Request, res: Response) => {
+    const year = Number(req.query?.year || new Date().getFullYear());
+    const result = await db.query(
+      `SELECT la.*, e.employee_number, e.first_name || ' ' || e.last_name AS employee_name, lt.name AS leave_type_name, lt.code AS leave_type_code
+       FROM hrm_leave_allocations la
+       JOIN employees e ON e.id = la.employee_id
+       JOIN hrm_leave_types lt ON lt.id = la.leave_type_id
+       WHERE la.organization_id = $1 AND la.year = $2
+       ORDER BY e.employee_number ASC`,
+      [req.session!.organization_id, year],
+    );
+    return ok(req, res, result.rows, 200, { total_count: result.rows.length });
+  });
+
+  app.post('/api/hrm/leave-allocations', authenticate, requirePermission(Permission.HRM_MANAGE), async (req: Request, res: Response) => {
+    const employee_id = str(req.body?.employee_id, 'employee_id');
+    const leave_type_id = str(req.body?.leave_type_id, 'leave_type_id');
+    const year = Number(req.body?.year || new Date().getFullYear());
+    const allocated_days = Number(req.body?.allocated_days || 0);
+
+    const allocId = crypto.randomUUID();
+    await db.query(
+      `INSERT INTO hrm_leave_allocations (id, organization_id, employee_id, leave_type_id, year, allocated_days, used_days, remaining_days)
+       VALUES ($1, $2, $3, $4, $5, $6, 0, $6)
+       ON CONFLICT (employee_id, leave_type_id, year) DO UPDATE SET allocated_days = EXCLUDED.allocated_days, remaining_days = EXCLUDED.allocated_days - hrm_leave_allocations.used_days`,
+      [allocId, req.session!.organization_id, employee_id, leave_type_id, year, allocated_days],
+    );
+    const row = (await db.query(`SELECT * FROM hrm_leave_allocations WHERE id = $1`, [allocId])).rows[0];
+    return ok(req, res, row, 201);
+  });
+
+  // --- 5. Staff & Technician Expense Claims ---
+  app.get('/api/hrm/expenses', authenticate, hrRead, async (req: Request, res: Response) => {
+    const result = await db.query(
+      `SELECT exp.*, e.employee_number, e.first_name || ' ' || e.last_name AS employee_name
+       FROM hrm_expense_claims exp
+       JOIN employees e ON e.id = exp.employee_id
+       WHERE exp.organization_id = $1
+       ORDER BY exp.claim_date DESC, exp.created_at DESC`,
+      [req.session!.organization_id],
+    );
+    return ok(req, res, result.rows, 200, { total_count: result.rows.length });
+  });
+
+  app.post('/api/hrm/expenses', authenticate, async (req: Request, res: Response) => {
+    const employee_id = str(req.body?.employee_id, 'employee_id');
+    const claim_date = dateOnly(req.body?.claim_date, 'claim_date', { required: false }) || new Date().toISOString().slice(0, 10);
+    const category = oneOf(req.body?.category, 'category', ['TRAVEL', 'FUEL', 'TOOLS', 'PARTS', 'FOOD', 'OTHER']);
+    const amount = decimal(req.body?.amount, 'amount', { sign: 'positive' });
+    const description = str(req.body?.description, 'description', { max: 1000 });
+    const receipt_reference = optionalStr(req.body?.receipt_reference, 'receipt_reference', 255);
+
+    await assertOrgRef(db, 'employees', employee_id, req.session!.organization_id, 'employee_id');
+    const docNumber = await nextDocumentNumber(db, req.session!.organization_id, 'EXP');
+
+    const expId = crypto.randomUUID();
+    await db.query(
+      `INSERT INTO hrm_expense_claims (id, organization_id, legal_entity_id, number, employee_id, claim_date, category, amount, description, receipt_reference, status, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'SUBMITTED', $11)`,
+      [expId, req.session!.organization_id, req.session!.legal_entity_id, docNumber, employee_id, claim_date, category, amount, description, receipt_reference, req.session!.user_id],
+    );
+    const row = (await db.query(`SELECT * FROM hrm_expense_claims WHERE id = $1`, [expId])).rows[0];
+    return ok(req, res, row, 201);
+  });
+
+  app.post('/api/hrm/expenses/:id/approve', authenticate, requirePermission(Permission.HRM_MANAGE), async (req: Request, res: Response) => {
+    const out = await db.transaction(async (tx) => {
+      const exp = await requireOrgRow(tx, 'hrm_expense_claims', req.params.id, req.session!.organization_id, 'Expense claim', { forUpdate: true });
+      if (exp.status !== 'SUBMITTED') {
+        throw new ApiError(409, ErrorCode.INVALID_STATE, `Only SUBMITTED expense claims can be approved (current: ${exp.status})`);
+      }
+      if (exp.created_by === req.session!.user_id) {
+        throw sodViolation('Segregation of duties: claim submitter cannot approve expense');
+      }
+      await tx.query(
+        `UPDATE hrm_expense_claims SET status = 'APPROVED', approved_by = $2, approved_at = NOW() WHERE id = $1`,
+        [exp.id, req.session!.user_id],
+      );
+      return { id: exp.id, status: 'APPROVED' };
+    });
+    return ok(req, res, out);
+  });
+
+  app.post('/api/hrm/expenses/:id/settle', authenticate, requirePermission(Permission.PAYROLL_DISBURSE), async (req: Request, res: Response) => {
+    const payment_date = dateOnly(req.body?.payment_date, 'payment_date', { required: false }) || new Date().toISOString().slice(0, 10);
+    const out = await db.transaction(async (tx) => {
+      const exp = await requireOrgRow(tx, 'hrm_expense_claims', req.params.id, req.session!.organization_id, 'Expense claim', { forUpdate: true });
+      if (exp.status !== 'APPROVED') {
+        throw new ApiError(409, ErrorCode.INVALID_STATE, `Only APPROVED expense claims can be settled (current: ${exp.status})`);
+      }
+      const bankRes = await tx.query(`SELECT id FROM accounts WHERE organization_id = $1 AND code = '111002'`, [req.session!.organization_id]);
+      if (bankRes.rows.length === 0) throw new ApiError(400, ErrorCode.MAPPING_MISSING, 'Operating bank account not found');
+      const bankId = bankRes.rows[0].id;
+
+      const expAcc = (await tx.query(`SELECT id FROM accounts WHERE organization_id = $1 AND code IN ('521014', '521010', '521013') ORDER BY code ASC LIMIT 1`, [req.session!.organization_id])).rows[0]?.id;
+
+      const posted = await postJournal(tx, auditLogger, outboxService, {
+        organizationId: req.session!.organization_id,
+        legalEntityId: exp.legal_entity_id,
+        userId: req.session!.user_id,
+        postingDate: payment_date,
+        purpose: AccountingPurpose.PAYROLL_DISBURSEMENT,
+        description: `Cash reimbursement for expense claim ${exp.number} (${exp.category})`,
+        sourceType: 'HRM_EXPENSE_CLAIM',
+        sourceId: exp.id,
+        sourceKey: `HRM_EXPENSE_CLAIM:${exp.id}`,
+        numberPrefix: 'JV-EXP',
+        correlationId: req.correlationId,
+        lines: [
+          expAcc
+            ? { account_id: expAcc, debit: exp.amount, description: `Field expense ${exp.number}` }
+            : { account_code: '521014', debit: exp.amount, description: `Field expense ${exp.number}` },
+          { account_id: bankId, credit: exp.amount, description: `Cash reimbursement for ${exp.number}` },
+        ],
+      });
+
+      await tx.query(
+        `UPDATE hrm_expense_claims SET status = 'SETTLED_CASH', settlement_journal_id = $2 WHERE id = $1`,
+        [exp.id, posted?.journalId ?? null],
+      );
+
+      return { id: exp.id, status: 'SETTLED_CASH', journal_id: posted?.journalId };
+    });
+    return ok(req, res, out);
+  });
 }
+

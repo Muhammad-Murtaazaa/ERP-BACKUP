@@ -1,0 +1,25 @@
+# Render Blueprint Specification for Omnysync ERP Platform
+# Single Unified Web Service (Frontend SPA + Modular Monolith API + Database Engine)
+services:
+  - type: web
+    name: omnysync-erp
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: OMNYSYNC_DEMO_MODE
+        value: "false"
+      - key: OMNYSYNC_DEMO_SEED
+        value: "true"
+      - key: KEEP_ALIVE_ENABLED
+        value: "true"
+      - key: KEEP_ALIVE_INTERVAL_MINUTES
+        value: "10"

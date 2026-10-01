@@ -9,6 +9,8 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
+    "start": "node apps/api/dist/index.js",
+    "start:prod": "node apps/api/dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
@@ -16,7 +18,7 @@
     "seed": "npm run seed --workspace=@omnysync/platform",
     "start:api": "npm run dev --workspace=@omnysync/api",
     "start:web": "npm run dev --workspace=@omnysync/web",
-    "dev": "npm run dev --workspaces --parallel"
+    "dev": "npm run dev --workspaces --if-present --parallel"
   },
   "devDependencies": {
     "@types/node": "^22.5.5",

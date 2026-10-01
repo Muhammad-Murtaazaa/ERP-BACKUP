@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
 import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
-import { Plus, RefreshCw, Send } from 'lucide-react';
+import { Plus, RefreshCw, Send, Printer, FileSpreadsheet, Download } from 'lucide-react';
 import { Party, Item } from '@omnysync/contracts';
 import { fmtMoney, isPositive } from '../lib/format.js';
+import { exportToCsv, exportToExcel, printHtmlDocument, renderCommercialOrderPrintHtml } from '../lib/exportUtils.js';
 
 export const ApInvoicesView: React.FC = () => {
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -48,6 +49,35 @@ export const ApInvoicesView: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleExportCsv = () => {
+    exportToCsv(invoices, `vendor_bills_${new Date().toISOString().slice(0, 10)}.csv`, [
+      { header: 'Bill #', key: 'invoice_number' },
+      { header: 'Vendor', key: 'party_name' },
+      { header: 'Bill Date', key: 'invoice_date' },
+      { header: 'Due Date', key: 'due_date' },
+      { header: 'Total (PKR)', key: 'total_amount', formatter: (val) => fmtMoney(val) },
+      { header: 'Payable Balance (PKR)', key: 'outstanding_amount', formatter: (val) => fmtMoney(val) },
+      { header: 'Status', key: 'status' },
+    ]);
+  };
+
+  const handleExportExcel = () => {
+    exportToExcel(invoices, `vendor_bills_${new Date().toISOString().slice(0, 10)}.xls`, 'Vendor Bills', [
+      { header: 'Bill #', key: 'invoice_number' },
+      { header: 'Vendor', key: 'party_name' },
+      { header: 'Bill Date', key: 'invoice_date' },
+      { header: 'Due Date', key: 'due_date' },
+      { header: 'Total (PKR)', key: 'total_amount', formatter: (val) => fmtMoney(val) },
+      { header: 'Payable Balance (PKR)', key: 'outstanding_amount', formatter: (val) => fmtMoney(val) },
+      { header: 'Status', key: 'status' },
+    ]);
+  };
+
+  const handlePrintBill = (inv: any) => {
+    const html = renderCommercialOrderPrintHtml(inv, 'VENDOR_BILL', 'ERP SAMPLE');
+    printHtmlDocument(html, `Vendor Bill ${inv.invoice_number || inv.id}`);
+  };
 
   const handleLineChange = (index: number, field: string, value: string) => {
     const nextLines = [...lines];
@@ -133,7 +163,13 @@ export const ApInvoicesView: React.FC = () => {
             Process supplier invoices, match with GRNI liability vouchers, and track accounts payable aging
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" size="sm" onClick={handleExportCsv}>
+            <Download size={13} className="mr-1" /> Export CSV
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleExportExcel}>
+            <FileSpreadsheet size={13} className="mr-1 text-emerald-600" /> Export Excel
+          </Button>
           <Button variant="secondary" size="sm" onClick={loadData} isLoading={loading}>
             <RefreshCw size={13} className="mr-1" /> Refresh
           </Button>
@@ -177,7 +213,10 @@ export const ApInvoicesView: React.FC = () => {
               header: 'Actions',
               align: 'right',
               render: (inv) => (
-                <div className="flex items-center justify-end gap-2">
+                <div className="flex items-center justify-end gap-1.5">
+                  <Button variant="secondary" size="sm" onClick={() => handlePrintBill(inv)} title="Print Vendor Bill PDF">
+                    <Printer size={12} className="mr-1 text-emerald-700" /> Print PDF
+                  </Button>
                   {inv.status === 'DRAFT' && (
                     <Button variant="primary" size="sm" onClick={() => handlePostBill(inv.id)}>
                       <Send size={12} className="mr-1" /> Post to GL

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
 import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
-import { Plus, RefreshCw, CheckCircle2, Truck, Eye } from 'lucide-react';
+import { Plus, RefreshCw, CheckCircle2, Truck, Eye, Printer, FileSpreadsheet, Download } from 'lucide-react';
 import { Party, Item } from '@omnysync/contracts';
 import { fmtDec, fmtMoney, isPositive } from '../lib/format.js';
+import { exportToCsv, exportToExcel, printHtmlDocument, renderCommercialOrderPrintHtml } from '../lib/exportUtils.js';
 
 export const SalesOrdersView: React.FC = () => {
   const [orders, setOrders] = useState<any[]>([]);
@@ -48,6 +49,43 @@ export const SalesOrdersView: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleExportCsv = () => {
+    exportToCsv(orders, `sales_orders_${new Date().toISOString().slice(0, 10)}.csv`, [
+      { header: 'Order #', key: 'order_number' },
+      { header: 'Customer', key: 'party_name' },
+      { header: 'Order Date', key: 'order_date' },
+      { header: 'Delivery Date', key: 'delivery_date' },
+      { header: 'Total (PKR)', key: 'total_amount', formatter: (val) => fmtMoney(val) },
+      { header: 'Status', key: 'status' },
+      { header: 'Notes', key: 'notes' },
+    ]);
+  };
+
+  const handleExportExcel = () => {
+    exportToExcel(orders, `sales_orders_${new Date().toISOString().slice(0, 10)}.xls`, 'Sales Orders', [
+      { header: 'Order #', key: 'order_number' },
+      { header: 'Customer', key: 'party_name' },
+      { header: 'Order Date', key: 'order_date' },
+      { header: 'Delivery Date', key: 'delivery_date' },
+      { header: 'Total (PKR)', key: 'total_amount', formatter: (val) => fmtMoney(val) },
+      { header: 'Status', key: 'status' },
+      { header: 'Notes', key: 'notes' },
+    ]);
+  };
+
+  const handlePrintOrder = async (orderSummary: any) => {
+    try {
+      let fullOrder = orderSummary;
+      if (!orderSummary.lines || orderSummary.lines.length === 0) {
+        fullOrder = await ApiClient.get(`/sales/orders/${orderSummary.id}`);
+      }
+      const html = renderCommercialOrderPrintHtml(fullOrder, 'SALES_ORDER', 'ERP SAMPLE');
+      printHtmlDocument(html, `Sales Order ${fullOrder.order_number || fullOrder.id}`);
+    } catch (err: any) {
+      alert(err.message || 'Failed to print order');
+    }
+  };
 
   const handleLineChange = (index: number, field: string, value: string) => {
     const nextLines = [...lines];
@@ -149,7 +187,13 @@ export const SalesOrdersView: React.FC = () => {
             Manage customer quotations, confirmed sales orders, inventory reservations, and shipments
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" size="sm" onClick={handleExportCsv}>
+            <Download size={13} className="mr-1" /> Export CSV
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleExportExcel}>
+            <FileSpreadsheet size={13} className="mr-1 text-emerald-600" /> Export Excel
+          </Button>
           <Button variant="secondary" size="sm" onClick={loadData} isLoading={loading}>
             <RefreshCw size={13} className="mr-1" /> Refresh
           </Button>
@@ -185,7 +229,10 @@ export const SalesOrdersView: React.FC = () => {
               header: 'Workflow Actions',
               align: 'right',
               render: (o) => (
-                <div className="flex items-center justify-end gap-2">
+                <div className="flex items-center justify-end gap-1.5">
+                  <Button variant="secondary" size="sm" onClick={() => handlePrintOrder(o)} title="Print Sales Order / Quote PDF">
+                    <Printer size={12} className="mr-1 text-emerald-700" /> Print PDF
+                  </Button>
                   <Button variant="secondary" size="sm" onClick={() => handleViewOrder(o.id)}>
                     <Eye size={12} className="mr-1" /> View
                   </Button>
@@ -258,7 +305,10 @@ export const SalesOrdersView: React.FC = () => {
               </table>
             </div>
 
-            <div className="flex justify-end gap-3 mt-4">
+            <div className="flex justify-between items-center mt-4">
+              <Button variant="secondary" onClick={() => handlePrintOrder(selectedOrder)}>
+                <Printer size={13} className="mr-1 text-emerald-700" /> Print Official Order PDF
+              </Button>
               <Button variant="secondary" onClick={() => setSelectedOrder(null)}>
                 Close
               </Button>

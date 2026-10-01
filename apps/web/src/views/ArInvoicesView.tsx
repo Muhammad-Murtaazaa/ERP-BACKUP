@@ -1,9 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { ApiClient } from '../api/client.js';
 import { Table, Button, Input, Drawer, Badge, Card, Combobox } from '@omnysync/ui';
-import { Plus, RefreshCw, Send, Eye } from 'lucide-react';
+import { Plus, RefreshCw, Send, Eye, Printer, FileSpreadsheet, Download } from 'lucide-react';
 import { Party, Item } from '@omnysync/contracts';
 import { fmtDec, fmtMoney, isPositive } from '../lib/format.js';
+import {
+  exportToCsv,
+  exportToExcel,
+  printHtmlDocument,
+  renderInvoicePrintHtml,
+} from '../lib/exportUtils.js';
 
 export const ArInvoicesView: React.FC = () => {
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -78,18 +84,23 @@ export const ArInvoicesView: React.FC = () => {
     setErrorMsg('');
     setSaving(true);
     try {
+      const validLines = lines.filter((l) => l.item_id && isPositive(l.quantity));
+      if (validLines.length === 0) {
+        throw new Error('Please add at least one line item with valid quantity.');
+      }
+
       await ApiClient.post('/ar/invoices', {
         party_id: partyId,
         invoice_date: invoiceDate,
         due_date: dueDate,
         notes,
-        lines: lines.filter((l) => l.item_id && isPositive(l.quantity)),
+        lines: validLines,
       });
 
       setIsModalOpen(false);
+      setLines([{ item_id: '', quantity: '1', unit_price: '0.00', description: '' }]);
       setPartyId('');
       setNotes('');
-      setLines([{ item_id: '', quantity: '1', unit_price: '0.00', description: '' }]);
       await loadData();
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to create invoice');
@@ -116,6 +127,36 @@ export const ArInvoicesView: React.FC = () => {
     }
   };
 
+  const handlePrintSelectedInvoice = () => {
+    if (!selectedInvoice) return;
+    const html = renderInvoicePrintHtml(selectedInvoice, 'ERP SAMPLE');
+    printHtmlDocument(html, `Tax-Invoice-${selectedInvoice.invoice_number || 'INV'}`);
+  };
+
+  const handleExportCsv = () => {
+    exportToCsv(invoices, 'Customer-Invoices-AR', [
+      { header: 'Invoice #', key: 'invoice_number' },
+      { header: 'Customer Name', key: 'party_name' },
+      { header: 'Invoice Date', key: 'invoice_date' },
+      { header: 'Due Date', key: 'due_date' },
+      { header: 'Total Amount (PKR)', key: 'total_amount', formatter: (v) => fmtMoney(v) },
+      { header: 'Outstanding (PKR)', key: 'outstanding_amount', formatter: (v) => fmtMoney(v) },
+      { header: 'Status', key: 'status' },
+    ]);
+  };
+
+  const handleExportExcel = () => {
+    exportToExcel(invoices, 'Customer-Invoices-AR', 'AR Invoices', [
+      { header: 'Invoice #', key: 'invoice_number' },
+      { header: 'Customer Name', key: 'party_name' },
+      { header: 'Invoice Date', key: 'invoice_date' },
+      { header: 'Due Date', key: 'due_date' },
+      { header: 'Total Amount (PKR)', key: 'total_amount', formatter: (v) => fmtMoney(v) },
+      { header: 'Outstanding (PKR)', key: 'outstanding_amount', formatter: (v) => fmtMoney(v) },
+      { header: 'Status', key: 'status' },
+    ]);
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'DRAFT':
@@ -140,7 +181,13 @@ export const ArInvoicesView: React.FC = () => {
             Issue sales tax invoices, post receivables to General Ledger, and track customer aging
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <Button variant="secondary" size="sm" onClick={handleExportCsv} title="Export to CSV">
+            <Download size={13} className="mr-1" /> Export CSV
+          </Button>
+          <Button variant="secondary" size="sm" onClick={handleExportExcel} title="Export to Excel">
+            <FileSpreadsheet size={13} className="mr-1" /> Export Excel
+          </Button>
           <Button variant="secondary" size="sm" onClick={loadData} isLoading={loading}>
             <RefreshCw size={13} className="mr-1" /> Refresh
           </Button>
@@ -187,6 +234,17 @@ export const ArInvoicesView: React.FC = () => {
                 <div className="flex items-center justify-end gap-2">
                   <Button variant="secondary" size="sm" onClick={() => handleViewInvoice(inv.id)}>
                     <Eye size={12} className="mr-1" /> View
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      const html = renderInvoicePrintHtml(inv, 'ERP SAMPLE');
+                      printHtmlDocument(html, `Tax-Invoice-${inv.invoice_number || 'INV'}`);
+                    }}
+                    title="Print Document (PDF)"
+                  >
+                    <Printer size={12} className="mr-1" /> Print PDF
                   </Button>
                   {inv.status === 'DRAFT' && (
                     <Button variant="primary" size="sm" onClick={() => handlePostInvoice(inv.id)}>
@@ -250,7 +308,10 @@ export const ArInvoicesView: React.FC = () => {
               </table>
             </div>
 
-            <div className="flex justify-end gap-3 mt-4">
+            <div className="flex justify-between items-center mt-4 pt-3 border-t border-[#D9DFEA]">
+              <Button variant="primary" onClick={handlePrintSelectedInvoice}>
+                <Printer size={14} className="mr-1.5" /> Print Tax Invoice (PDF)
+              </Button>
               <Button variant="secondary" onClick={() => setSelectedInvoice(null)}>
                 Close
               </Button>

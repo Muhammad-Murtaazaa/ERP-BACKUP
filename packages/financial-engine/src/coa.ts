@@ -133,6 +133,7 @@ export const STANDARD_COA_TEMPLATE: CoaTemplateItem[] = [
   { code: '112003', name: 'Project Retention Receivable', level: 4, parentCode: '1120', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.AR_CONTROL },
   { code: '112004', name: 'Loans & Advances Receivable', level: 4, parentCode: '1120', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '112005', name: 'Accrued Interest Receivable (Customer Financing)', level: 4, parentCode: '1120', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '112006', name: 'Staff Advances & Employee Floats', level: 4, parentCode: '1120', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
 
   { code: '1130', name: 'Inventory', level: 3, parentCode: '1100', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: false, controlType: AccountControlType.GENERAL },
   { code: '113001', name: 'Trading Inventory', level: 4, parentCode: '1130', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.INVENTORY_CONTROL },
@@ -220,6 +221,7 @@ export const STANDARD_COA_TEMPLATE: CoaTemplateItem[] = [
   { code: '521011', name: 'Fleet Fuel & Vehicle Expense', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '521012', name: 'Freight & Logistics Expense', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '521013', name: 'Warranty Service Cost', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '521014', name: 'Employee Travel & Field Expenses', level: 4, parentCode: '5210', statementClass: StatementClass.EXPENSE, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
 
   // --- 9. TECHNICAL ACCOUNTS ---
   { code: '9000', name: 'Technical Accounts', level: 1, statementClass: StatementClass.EQUITY, normalBalance: NormalBalance.CREDIT, postingAllowed: false, controlType: AccountControlType.GENERAL },

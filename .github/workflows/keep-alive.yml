@@ -1,0 +1,25 @@
+name: Render Keep-Alive Pinger
+
+on:
+  schedule:
+    # Runs every 10 minutes (*:00, *:10, *:20, *:30, *:40, *:50)
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  keep-alive-ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render App Health Endpoint
+        env:
+          RENDER_APP_URL: ${{ secrets.RENDER_APP_URL }}
+        run: |
+          TARGET_URL="${RENDER_APP_URL:-https://omnysync-erp.onrender.com}"
+          echo "Pinging ${TARGET_URL}/health to prevent Render sleep..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${TARGET_URL}/health" || echo "failed")
+          echo "Response code: $STATUS"
+          if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 400 ]; then
+            echo "Keep-alive ping successful! Render instance is awake."
+          else
+            echo "Warning: Received status $STATUS (or ping timed out)"
+          fi

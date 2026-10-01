@@ -58,7 +58,7 @@ export const MODULE_NAV: Nav[] = [
   {
     title: 'Administration',
     items: [
-      { id: 'admin-config', label: 'Admin & Configuration', icon: Cog },
+      { id: 'admin-config', label: 'System Admin & Branding', icon: Cog },
       { id: 'workflow-studio', label: 'Workflow Studio', icon: Workflow },
     ],
   },

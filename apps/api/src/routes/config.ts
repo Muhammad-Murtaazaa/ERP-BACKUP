@@ -31,6 +31,11 @@ export const SETTINGS: Record<string, { label: string; group: string; type: Sett
   'lnd.interest_basis': { label: 'Loan interest recognition', group: 'Lending', type: { kind: 'enum', values: ['CASH', 'ACCRUAL'] }, default: 'CASH', help: 'ACCRUAL accrues each instalment’s interest on its due date (DR 112005 / CR 411006, LND-LATE-FEES job or the Accrue action); collections then clear the receivable.' },
   'lnd.grace_days': { label: 'Loan grace period (days)', group: 'Lending', type: { kind: 'int', min: 0, max: 60 }, default: 5, help: 'Days after the due date before a late fee applies.' },
   'org.timezone': { label: 'Organisation time zone', group: 'Organisation', type: { kind: 'enum', values: ['Asia/Karachi', 'Asia/Dubai', 'Asia/Riyadh', 'Asia/Kolkata', 'Europe/London', 'UTC', 'America/New_York'] }, default: 'Asia/Karachi', help: 'Local day and business-hour SLA clocks (SRV) use this zone.' },
+  'org.company_name': { label: 'Company / Organization Name', group: 'Branding & Customization', type: { kind: 'text', max: 200 }, default: 'OMNYSYNC ERP', help: 'Display name across the top bar, sidebar, invoices, and reports.' },
+  'org.legal_entity_name': { label: 'Legal Entity Name', group: 'Branding & Customization', type: { kind: 'text', max: 200 }, default: 'Omnysync Pakistan Pvt Ltd', help: 'Legal entity printed on official documents, invoices and receipts.' },
+  'org.tagline': { label: 'Brand Tagline / Subtitle', group: 'Branding & Customization', type: { kind: 'text', max: 200 }, default: 'Modular Enterprise Platform', help: 'Subtitle shown under company name in the sidebar.' },
+  'org.logo_url': { label: 'Custom Logo (PNG/SVG URL or Data URI)', group: 'Branding & Customization', type: { kind: 'text', max: 500000 }, default: '', help: 'Custom PNG/SVG image or Base64 data URI for branding.' },
+  'org.primary_color': { label: 'Primary Brand Color', group: 'Branding & Customization', type: { kind: 'text', max: 32 }, default: '#5940B8', help: 'Hex color code for theme highlights and primary logo badge.' },
   'finance.require_journal_approval': { label: 'Manual journals need approval', group: 'Finance', type: { kind: 'bool' }, default: true, help: 'Maker-checker on manual vouchers.' },
 };
 
@@ -234,6 +239,59 @@ export function registerConfigRoutes(app: Express): void {
       );
       await audit(ctx, 'MODULE_STATE_CHANGED', 'MODULE', ctx.org, { module: code, state: from }, { module: code, state: to, reason });
       return { code, from, state: to };
+    });
+    return ok(req, res, out);
+  });
+
+  // ---------- Branding & Customization ----------
+  app.get('/api/config/branding', authenticate, async (req: Request, res: Response) => {
+    const org = req.session!.organization_id;
+    const r = await db.query(
+      `SELECT setting_key, value FROM org_settings WHERE organization_id = $1 AND setting_key IN ('org.company_name', 'org.legal_entity_name', 'org.tagline', 'org.logo_url', 'org.primary_color')`,
+      [org],
+    );
+    const map = new Map(r.rows.map((x) => [x.setting_key, x.value]));
+    return ok(req, res, {
+      company_name: map.get('org.company_name') || 'OMNYSYNC ERP',
+      legal_entity_name: map.get('org.legal_entity_name') || 'Omnysync Pakistan Pvt Ltd',
+      tagline: map.get('org.tagline') || 'Modular Enterprise Platform',
+      logo_url: map.get('org.logo_url') || '',
+      primary_color: map.get('org.primary_color') || '#5940B8',
+    });
+  });
+
+  app.post('/api/config/branding', authenticate, requirePermission(Permission.CONFIG_MANAGE), async (req: Request, res: Response) => {
+    const company_name = str(req.body?.company_name || 'OMNYSYNC ERP', 'company_name', { max: 200 });
+    const legal_entity_name = str(req.body?.legal_entity_name || 'Omnysync Pakistan Pvt Ltd', 'legal_entity_name', { max: 200 });
+    const tagline = str(req.body?.tagline || 'Modular Enterprise Platform', 'tagline', { max: 200 });
+    const logo_url = String(req.body?.logo_url || '');
+    const primary_color = str(req.body?.primary_color || '#5940B8', 'primary_color', { max: 32 });
+
+    const brandingItems = [
+      { key: 'org.company_name', val: company_name },
+      { key: 'org.legal_entity_name', val: legal_entity_name },
+      { key: 'org.tagline', val: tagline },
+      { key: 'org.logo_url', val: logo_url },
+      { key: 'org.primary_color', val: primary_color },
+    ];
+
+    const out = await unitOfWork(req, async (ctx) => {
+      for (const item of brandingItems) {
+        await ctx.tx.query(
+          `INSERT INTO org_settings (organization_id, setting_key, value, version, updated_by, updated_at)
+           VALUES ($1, $2, $3, 1, $4, NOW())
+           ON CONFLICT (organization_id, setting_key) DO UPDATE SET value = EXCLUDED.value, version = org_settings.version + 1, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+          [ctx.org, item.key, JSON.stringify(item.val), ctx.user],
+        );
+      }
+      await audit(ctx, 'BRANDING_UPDATED', 'ORGANIZATION', ctx.org, undefined, {
+        company_name,
+        legal_entity_name,
+        tagline,
+        primary_color,
+        has_logo: Boolean(logo_url),
+      });
+      return { company_name, legal_entity_name, tagline, logo_url, primary_color };
     });
     return ok(req, res, out);
   });

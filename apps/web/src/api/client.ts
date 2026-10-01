@@ -1,4 +1,4 @@
-export const API_BASE = '/api';
+export const API_BASE = (import.meta as any).env?.VITE_API_URL || '/api';
 
 /** Error carrying the server's error code / details, or `offline` for network failures. */
 export class ApiRequestError extends Error {

@@ -1,7 +1,11 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import crypto from 'node:crypto';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { errorHandler, wrapAsyncRoutes } from './lib/http.js';
+import { getKeepAliveStatus, sendPing, resolveKeepAliveUrl } from './automation/keep-alive.js';
 import { registerPlatformRoutes } from './routes/platform.js';
 import { registerFinanceRoutes } from './routes/finance.js';
 import { registerMastersRoutes } from './routes/masters.js';
@@ -37,6 +41,9 @@ import { registerLendingRoutes } from './routes/lending.js';
 import { registerGrcRoutes } from './routes/grc.js';
 import { registerTalentRoutes } from './routes/talent.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 export function createApp() {
   const app = express();
   wrapAsyncRoutes(app);
@@ -59,14 +66,61 @@ export function createApp() {
     next();
   });
 
-  // Narrow CORS (SECURITY.md). Configure OMNYSYNC_ALLOWED_ORIGINS as a comma list.
-  const allowed = (process.env.OMNYSYNC_ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
+  // Health check & ping endpoints for Render and keep-alive monitors
+  app.get(['/health', '/ping'], (_req: Request, res: Response) => {
+    res.status(200).json({
+      status: 'healthy',
+      service: 'omnysync-erp',
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+      keepAlive: getKeepAliveStatus(),
+    });
+  });
+
+  app.get('/api/health', (_req: Request, res: Response) => {
+    res.status(200).json({
+      success: true,
+      data: {
+        status: 'healthy',
+        service: 'omnysync-erp-api',
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+        version: '0.2.0',
+        environment: process.env.NODE_ENV || 'development',
+      },
+    });
+  });
+
+  app.get('/api/keep-alive/status', (_req: Request, res: Response) => {
+    res.status(200).json({
+      success: true,
+      data: getKeepAliveStatus(),
+    });
+  });
+
+  app.post('/api/keep-alive/ping', async (req: Request, res: Response) => {
+    const targetUrl = resolveKeepAliveUrl();
+    if (!targetUrl) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'CONFIG_MISSING', message: 'No target URL configured for keep-alive ping' },
+      });
+    }
+    const result = await sendPing(targetUrl);
+    return res.status(result.success ? 200 : 502).json({
+      success: result.success,
+      data: result,
+    });
+  });
+
+  // CORS: Configure OMNYSYNC_ALLOWED_ORIGINS as a comma-separated list or '*'
+  const allowed = (process.env.OMNYSYNC_ALLOWED_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,*')
     .split(',')
     .map((o) => o.trim())
     .filter(Boolean);
   app.use(
     cors({
-      origin: (origin, cb) => cb(null, !origin || allowed.includes(origin)),
+      origin: (origin, cb) => cb(null, !origin || allowed.includes('*') || allowed.includes(origin)),
       exposedHeaders: ['x-correlation-id', 'idempotent-replay'],
     }),
   );
@@ -119,12 +173,36 @@ export function createApp() {
   registerGrcRoutes(app);
   registerTalentRoutes(app);
 
+  // 404 handler for unknown API routes
   app.use('/api', (req: Request, res: Response) => {
     res.status(404).json({
       success: false,
       error: { code: 'RESOURCE_NOT_FOUND', message: `No route ${req.method} ${req.path}`, correlation_id: req.correlationId },
     });
   });
+
+  // Resolve static web distribution directory for production single-service deployment
+  const candidateWebPaths = [
+    path.resolve(__dirname, '../../web/dist'),
+    path.resolve(process.cwd(), 'apps/web/dist'),
+    path.resolve(process.cwd(), 'dist/web'),
+  ];
+  const staticWebDir = candidateWebPaths.find((p) => fs.existsSync(p));
+
+  if (staticWebDir) {
+    console.log(`[Omnysync Web Host] Serving production frontend build from ${staticWebDir}`);
+    app.use(express.static(staticWebDir));
+    app.get('*', (req: Request, res: Response, next: NextFunction) => {
+      if (req.path.startsWith('/api')) return next();
+      const indexFile = path.join(staticWebDir, 'index.html');
+      if (fs.existsSync(indexFile)) {
+        res.sendFile(indexFile);
+      } else {
+        next();
+      }
+    });
+  }
+
   app.use(errorHandler);
   return app;
 }

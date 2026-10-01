@@ -648,6 +648,27 @@ export const PosTerminalView: React.FC = () => {
     }
   };
 
+  const [creatingReg, setCreatingReg] = useState(false);
+  const createDefaultRegister = async () => {
+    setCreatingReg(true);
+    setBootError(null);
+    try {
+      await ApiClient.post('/pos/registers', {
+        register_code: 'POS-01',
+        name: 'Main Counter Register 1',
+        default_tax_rate: '18',
+        max_cashier_discount_percent: '10',
+        receipt_header: 'OMNYSYNC RETAIL MART\nMain Counter Terminal',
+        receipt_footer: 'Thank you for shopping!\nExchange within 14 days with receipt.',
+      });
+      await boot();
+    } catch (e) {
+      setBootError(errMsg(e));
+    } finally {
+      setCreatingReg(false);
+    }
+  };
+
   const onShiftClosed = (z: any) => {
     setPanel(null);
     setReport(z);
@@ -681,7 +702,14 @@ export const PosTerminalView: React.FC = () => {
           </div>
           {bootError && <div className="mb-4"><Notice tone="danger">{bootError}</Notice></div>}
           {registers.length === 0 ? (
-            <Notice tone="warning">No POS registers are set up. A POS manager can create one under Registers.</Notice>
+            <div className="flex flex-col gap-4">
+              <Notice tone="warning">No POS registers are set up yet for this organization.</Notice>
+              <div className="pt-2">
+                <Button size="md" onClick={createDefaultRegister} disabled={creatingReg}>
+                  {creatingReg ? 'Creating register…' : 'Quick Setup: Create Default Register (POS-01)'}
+                </Button>
+              </div>
+            </div>
           ) : (
             <form className="flex flex-col gap-5" onSubmit={(e) => { e.preventDefault(); openShift(); }}>
               <div className="flex flex-col gap-1">
