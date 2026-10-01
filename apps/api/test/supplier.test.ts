@@ -108,4 +108,31 @@ describe('SUP API', () => {
     expect(none.status).toBe(400);
     expect(none.body.error.details?.field ?? none.body.error.field).toBe('price_score');
   });
+
+  it('quality score: derived from receiving inspections on the supplier’s POs (qty-weighted usage decisions) when omitted', async () => {
+    const prof = (await db.query(`SELECT id FROM sup_profiles WHERE party_id = $1`, [vendor.id])).rows[0];
+    const item = (await makeRequest('POST', '/api/items', { code: 'VALVE-QM', name: 'Expansion valve', item_type: 'INVENTORY', uom: 'EA', unit_price: '50', unit_cost: '30' }, admin)).body.data;
+    const other = (await makeRequest('POST', '/api/items', { code: 'FILTER-QM', name: 'Drier filter', item_type: 'INVENTORY', uom: 'EA', unit_price: '50', unit_cost: '30' }, admin)).body.data;
+    expect((await makeRequest('POST', '/api/quality/plans', { plan_code: 'QP-VALVE', name: 'Valve leak test', item_id: item.id, inspection_type: 'RECEIVING', sample_size: '2', params: [{ param_name: 'Leak rate', data_type: 'NUMERIC', min_tolerance: '0', max_tolerance: '5', uom: 'g/yr', is_mandatory: true }] }, admin)).status).toBe(201);
+    const po = (await makeRequest('POST', '/api/procurement/orders', { party_id: vendor.id, po_date: '2026-10-01', lines: [{ item_id: item.id, quantity: '100', unit_price: '30' }] }, controller)).body.data;
+    expect((await makeRequest('POST', '/api/quality/lots', { item_id: other.id, quantity: '10', purchase_order_id: po.id }, admin)).status).toBe(400); // item not on the PO
+    expect((await makeRequest('POST', '/api/quality/lots', { item_id: item.id, quantity: '10', purchase_order_id: '00000000-0000-0000-0000-00000000dead' }, admin)).status).toBe(404);
+    const lot = async (qty: string, leak: string) => {
+      const l = await makeRequest('POST', '/api/quality/lots', { item_id: item.id, quantity: qty, purchase_order_id: po.id }, admin);
+      expect(l.status).toBe(201);
+      expect(l.body.data.party_id).toBe(vendor.id);
+      return (await makeRequest('POST', `/api/quality/lots/${l.body.data.id}/inspect`, { results: [{ param_name: 'Leak rate', measured_numeric_value: leak }] }, admin)).body.data.status;
+    };
+    expect(await lot('60', '2')).toBe('ACCEPTED');
+    expect(await lot('40', '9')).toBe('REJECTED');
+    const period = new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 7);
+    await db.query(`DELETE FROM sup_scorecards WHERE profile_id = $1 AND period = $2`, [prof.id, period]);
+    const sc = await makeRequest('POST', '/api/sup/scorecards', { profile_id: prof.id, period, delivery_score: 80, price_score: 70, service_score: 60 }, admin);
+    expect(sc.status, JSON.stringify(sc.body)).toBe(201);
+    expect([sc.body.data.quality_score, sc.body.data.inspected_lots, sc.body.data.rejected_lots]).toEqual([60, 2, 1]);
+    // No decided inspections in a period → a manual quality score is required.
+    const none = await makeRequest('POST', '/api/sup/scorecards', { profile_id: prof.id, period: '2026-04', delivery_score: 80, price_score: 70, service_score: 60 }, admin);
+    expect(none.status).toBe(400);
+    expect(none.body.error.details?.field ?? none.body.error.field).toBe('quality_score');
+  });
 });

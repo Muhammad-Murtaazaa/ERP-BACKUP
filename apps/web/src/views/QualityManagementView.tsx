@@ -51,6 +51,8 @@ export const QualityManagementView: React.FC = () => {
   // Lot Form
   const [lotItemId, setLotItemId] = useState('');
   const [lotQty, setLotQty] = useState('100.00');
+  const [lotPoId, setLotPoId] = useState('');
+  const [pos, setPos] = useState<any[]>([]);
   const [batchNum, setBatchNum] = useState('');
 
   // Inspect Form
@@ -85,6 +87,8 @@ export const QualityManagementView: React.FC = () => {
         ApiClient.get('/items'),
         ApiClient.get('/parties'),
       ]);
+      // Optional: receiving inspections can reference a PO (links the supplier for SUP quality scoring).
+      ApiClient.get('/procurement/orders').then((r: any) => setPos((r.data || []).filter((p: any) => p.status !== 'DRAFT' && p.status !== 'CANCELLED'))).catch(() => setPos([]));
 
       setLots((lotsRes as any).data || []);
       setPlans((plansRes as any).data || []);
@@ -152,9 +156,10 @@ export const QualityManagementView: React.FC = () => {
         item_id: lotItemId,
         quantity: lotQty,
         batch_number: batchNum || `BATCH-${Date.now().toString().slice(-4)}`,
-        source_type: 'MANUAL',
+        ...(lotPoId ? { purchase_order_id: lotPoId } : { source_type: 'MANUAL' }),
       });
       setIsLotModalOpen(false);
+      setLotPoId('');
       setBatchNum('');
       await loadData();
     } catch (err: any) {
@@ -248,6 +253,7 @@ export const QualityManagementView: React.FC = () => {
     { key: 'lot_number', header: 'Lot Number', render: (row) => <span className="font-mono font-bold text-indigo-600">{row.lot_number}</span> },
     { key: 'item', header: 'Item / Material', render: (row) => <span>{row.item_code} - {row.item_name}</span> },
     { key: 'batch', header: 'Batch / Heat #', render: (row) => <span>{row.batch_number || 'N/A'}</span> },
+    { key: 'supplier', header: 'Supplier · PO', render: (row: any) => <span className="text-slate-600">{row.supplier_name ? `${row.supplier_name} · ${row.po_number}` : '—'}</span> },
     { key: 'qty', header: 'Quantity', render: (row) => <span>{fmtQty(row.quantity)}</span> },
     {
       key: 'status',
@@ -528,6 +534,16 @@ export const QualityManagementView: React.FC = () => {
                 <option key={it.id} value={it.id}>{it.code} - {it.name}</option>
               ))}
             </Combobox>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Received against PO (optional)</label>
+            <Combobox aria-label="Received against PO" className="w-full" value={lotPoId} onChange={(e) => setLotPoId(e.target.value)}>
+              <option value="">— none (manual / production lot) —</option>
+              {pos.map((p) => (
+                <option key={p.id} value={p.id}>{p.po_number} · {p.party_name}</option>
+              ))}
+            </Combobox>
+            <p className="mt-1 text-xs text-slate-500">Linking the PO records the supplier; its usage decisions feed the supplier scorecard quality score.</p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Input label="Quantity" value={lotQty} onChange={(e) => setLotQty(e.target.value)} required />

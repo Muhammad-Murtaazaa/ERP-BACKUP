@@ -53,6 +53,27 @@ export async function deliveryPerformance(q: DbClient, org: string, partyId: str
   return { total, onTime, score: total ? Math.round((onTime / total) * 100) : null };
 }
 
+/**
+ * Quality score from receiving inspections decided in the period (PKT month of the usage decision):
+ * quantity-weighted, ACCEPTED = 1, CONDITIONALLY_ACCEPTED = ½, REJECTED = 0.
+ */
+export async function qualityPerformance(q: DbClient, org: string, partyId: string, period: string) {
+  const r = await q.query(
+    `SELECT status, quantity::text FROM quality_inspection_lots
+     WHERE organization_id = $1 AND party_id = $2 AND status IN ('ACCEPTED','CONDITIONALLY_ACCEPTED','REJECTED')
+       AND inspected_at IS NOT NULL AND to_char(inspected_at AT TIME ZONE 'Asia/Karachi', 'YYYY-MM') = $3`,
+    [org, partyId, period],
+  );
+  let total = 0;
+  let good = 0;
+  for (const l of r.rows) {
+    const qn = Number(l.quantity);
+    total += qn;
+    good += l.status === 'ACCEPTED' ? qn : l.status === 'CONDITIONALLY_ACCEPTED' ? qn / 2 : 0;
+  }
+  return { lots: r.rows.length, rejected: r.rows.filter((l: any) => l.status === 'REJECTED').length, score: total > 0 ? Math.round((good / total) * 100) : null };
+}
+
 /** Price score from a price index (supplier ÷ market): at or below market = 100, each 1% above costs 2 points. */
 export function priceScoreFromIndex(index: number): number {
   return Math.max(0, Math.min(100, Math.round(100 - (index - 1) * 200)));
@@ -199,7 +220,7 @@ export function registerSupplierRoutes(app: Express): void {
     fields: {
       profile_id: { type: 'ref', table: 'sup_profiles', required: true, label: 'profile_id' },
       period: { type: 'string', required: true, max: 7, pattern: /^\d{4}-(0[1-9]|1[0-2])$/ },
-      quality_score: { type: 'int', required: true, min: 0, max: 100 },
+      quality_score: { type: 'int', min: 0, max: 100 },
       delivery_score: { type: 'int', min: 0, max: 100 },
       price_score: { type: 'int', min: 0, max: 100 },
       service_score: { type: 'int', required: true, min: 0, max: 100 },
@@ -222,6 +243,13 @@ export function registerSupplierRoutes(app: Express): void {
         if (perf.score == null) throw validationError('No receipts against POs due in this period — enter a delivery score', { field: 'delivery_score' });
         v.delivery_score = perf.score;
       }
+      const qual = await qualityPerformance(ctx.tx, ctx.org, prof.party_id, v.period);
+      if (v.quality_score == null) {
+        if (qual.score == null) throw validationError('No receiving inspections decided for this supplier in this period — enter a quality score', { field: 'quality_score' });
+        v.quality_score = qual.score;
+      }
+      v.inspected_lots = qual.lots;
+      v.rejected_lots = qual.rejected;
       const price = await pricePerformance(ctx.tx, ctx.org, prof.party_id, v.period);
       if (v.price_score == null) {
         if (price.score == null) throw validationError('No purchase orders in this period to benchmark — enter a price score', { field: 'price_score' });

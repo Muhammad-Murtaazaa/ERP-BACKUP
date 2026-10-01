@@ -106,7 +106,7 @@ const tabs: TabDef[] = [
     columns: [
       { key: 'supplier_name', header: 'Supplier' },
       { key: 'period', header: 'Period' },
-      { key: 'quality_score', header: 'Quality (40)', align: 'right' },
+      { key: 'quality_score', header: 'Quality (40)', align: 'right', render: (r) => `${r.quality_score}${r.inspected_lots ? ` · ${r.inspected_lots - (r.rejected_lots || 0)}/${r.inspected_lots} lots passed` : ''}` },
       { key: 'delivery_score', header: 'Delivery (30)', align: 'right', render: (r) => `${r.delivery_score}${r.total_receipts ? ` · ${r.on_time_receipts}/${r.total_receipts} on time` : ''}` },
       { key: 'price_score', header: 'Price (20)', align: 'right', render: (r) => `${r.price_score}${r.price_index != null ? ` · index ${Number(r.price_index).toFixed(2)}` : ''}` },
       { key: 'service_score', header: 'Service (10)', align: 'right' },
@@ -118,7 +118,7 @@ const tabs: TabDef[] = [
     createFields: [
       profileRef,
       { name: 'period', label: 'Period (YYYY-MM)', type: 'text', required: true, placeholder: '2026-09' },
-      { name: 'quality_score', label: 'Quality 0–100', type: 'int', required: true },
+      { name: 'quality_score', label: 'Quality 0–100', type: 'int', hint: 'Leave empty to derive from receiving inspections on this supplier’s POs (qty-weighted; conditional = ½).' },
       { name: 'delivery_score', label: 'Delivery 0–100', type: 'int', hint: 'Leave empty to derive from goods-receipt dates vs PO expected dates.' },
       { name: 'price_score', label: 'Price 0–100', type: 'int', hint: 'Leave empty to derive from this period’s PO prices vs the 12-month price paid to all suppliers for the same items.' },
       { name: 'service_score', label: 'Service 0–100', type: 'int', required: true },

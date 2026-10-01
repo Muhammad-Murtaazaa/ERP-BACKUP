@@ -152,10 +152,12 @@ export function registerQualityRoutes(app: Express): void {
   // Inspection Lots
   app.get('/api/quality/lots', authenticate, requirePermission(Permission.QUALITY_INSPECT), async (req: Request, res: Response) => {
     const lotsRes = await db.query(
-      `SELECT ql.*, i.name as item_name, i.code as item_code, u.name as inspector_name 
+      `SELECT ql.*, i.name as item_name, i.code as item_code, u.name as inspector_name, sp.name AS supplier_name, po.po_number
        FROM quality_inspection_lots ql 
        JOIN items i ON i.id = ql.item_id 
        LEFT JOIN users u ON u.id = ql.inspector_id 
+       LEFT JOIN parties sp ON sp.id = ql.party_id
+       LEFT JOIN purchase_orders po ON po.id = ql.purchase_order_id
        WHERE ql.organization_id = $1 
        ORDER BY ql.created_at DESC`,
       [req.session!.organization_id]
@@ -188,7 +190,8 @@ export function registerQualityRoutes(app: Express): void {
   });
 
   app.post('/api/quality/lots', authenticate, requirePermission(Permission.QUALITY_INSPECT), async (req: Request, res: Response) => {
-    const { lot_number, source_type, source_id, item_id, batch_number, quantity } = req.body;
+    const { lot_number, item_id, batch_number, quantity, purchase_order_id } = req.body;
+    let { source_type, source_id } = req.body;
 
     if (!item_id || !quantity) {
       return res.status(400).json({
@@ -197,14 +200,31 @@ export function registerQualityRoutes(app: Express): void {
       } satisfies StandardErrorResponse);
     }
 
+    // Receiving inspection against a purchase order: the lot carries the supplier for SUP quality scoring.
+    let partyId: string | null = null;
+    if (purchase_order_id) {
+      const po = (
+        await db.query(
+          `SELECT po.id, po.party_id, EXISTS (SELECT 1 FROM purchase_order_lines l WHERE l.purchase_order_id = po.id AND l.item_id = $3) AS has_item
+           FROM purchase_orders po WHERE po.id = $1 AND po.organization_id = $2`,
+          [purchase_order_id, req.session!.organization_id, item_id],
+        )
+      ).rows[0];
+      if (!po) return res.status(404).json({ success: false, error: { code: ErrorCode.RESOURCE_NOT_FOUND, message: 'Purchase order not found', correlation_id: req.correlationId } } satisfies StandardErrorResponse);
+      if (!po.has_item) return res.status(400).json({ success: false, error: { code: ErrorCode.VALIDATION_FAILED, message: 'The item is not on that purchase order', correlation_id: req.correlationId, details: { field: 'item_id' } } } as any);
+      partyId = po.party_id;
+      source_type = 'GRN';
+      source_id = po.id;
+    }
+
     const id = crypto.randomUUID();
     const lotNum = lot_number || (await nextDocumentNumber(db, req.session!.organization_id, 'LOT'));
     const qtyStr = new Money(quantity).toFixed(8);
 
     await db.query(
       `INSERT INTO quality_inspection_lots (
-        id, organization_id, legal_entity_id, lot_number, source_type, source_id, item_id, batch_number, quantity, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'PENDING')`,
+        id, organization_id, legal_entity_id, lot_number, source_type, source_id, item_id, batch_number, quantity, status, party_id, purchase_order_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'PENDING', $10, $11)`,
       [
         id,
         req.session!.organization_id,
@@ -215,12 +235,14 @@ export function registerQualityRoutes(app: Express): void {
         item_id,
         batch_number || null,
         qtyStr,
+        partyId,
+        partyId ? source_id : null,
       ]
     );
 
     return res.status(201).json({
       success: true,
-      data: { id, lot_number: lotNum, item_id, quantity: qtyStr, status: 'PENDING' },
+      data: { id, lot_number: lotNum, item_id, quantity: qtyStr, status: 'PENDING', party_id: partyId, purchase_order_id: partyId ? source_id : null },
       meta: { correlation_id: req.correlationId, timestamp: new Date().toISOString() },
     } satisfies StandardSuccessResponse<any>);
   });
