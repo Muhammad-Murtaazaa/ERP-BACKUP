@@ -162,4 +162,33 @@ describe('COM API', () => {
     expect(after.map((r: any) => r.status)).toEqual(['RECOGNISED', 'RECOGNISED', 'PENDING', 'PENDING']);
     expect(after[0].journal_number).toBeTruthy();
   });
+
+  it('cancelling a deferred plan settles unearned revenue: earned pro rata, rest to customer credit or forfeited', async () => {
+    const net = async (subId: string, code: string) =>
+      Number((await db.query(`SELECT COALESCE(SUM(jl.base_credit - jl.base_debit),0)::text n FROM journal_lines jl JOIN journals j ON j.id = jl.journal_id JOIN accounts a ON a.id = jl.account_id WHERE a.code = $1 AND (j.source_id = $2 OR j.source_id IN (SELECT id FROM com_revenue_schedule WHERE subscription_id = $2))`, [code, subId])).rows[0].n);
+    const s = await sub({ plan_id: plan('AMC-PLUS').id, start_date: '2026-08-15' });
+    await makeRequest('POST', `/api/com/subscriptions/${s.id}/activate`, {}, acct);
+    await makeRequest('POST', '/api/com/billing-run', { as_of: '2026-08-15' }, acct);
+    expect((await makeRequest('POST', `/api/com/subscriptions/${s.id}/cancel`, { cancel_reason: 'moved', effective_date: '2099-01-01' }, acct)).status).toBe(400);
+    const c = await makeRequest('POST', `/api/com/subscriptions/${s.id}/cancel`, { cancel_reason: 'moved', effective_date: '2026-09-15', unearned_treatment: 'REFUND' }, acct);
+    expect(c.status, JSON.stringify(c.body)).toBe(200);
+    expect(c.body.data.result.deferred).toMatchObject({ earned: '1956.52', unearned: '7826.09', treatment: 'REFUND' });
+    expect(await net(s.id, '211010')).toBe(0); // nothing left deferred
+    expect(await net(s.id, '411007')).toBeCloseTo(2217.39 + 1956.52, 2); // Aug + half of Sep
+    expect(await net(s.id, '211006')).toBe(7826.09); // owed back to the customer
+    const sched = (await makeRequest('GET', `/api/com/subscriptions/${s.id}`, undefined, acct)).body.data.revenue_schedule;
+    expect(sched.map((r: any) => r.status)).toEqual(['RECOGNISED', 'RELEASED', 'RELEASED', 'RELEASED']);
+    expect((await makeRequest('POST', `/api/com/subscriptions/${s.id}/cancel`, { cancel_reason: 'again' }, acct)).status).toBe(409);
+    await makeRequest('POST', '/api/com/revenue/recognize', { as_of: '2026-12-31' }, acct); // released lines are never recognised again
+    expect(await net(s.id, '411007')).toBeCloseTo(2217.39 + 1956.52, 2);
+
+    const f = await sub({ plan_id: plan('AMC-PLUS').id, start_date: '2026-09-01' });
+    await makeRequest('POST', `/api/com/subscriptions/${f.id}/activate`, {}, acct);
+    await makeRequest('POST', '/api/com/billing-run', { as_of: '2026-09-01' }, acct);
+    const cf = await makeRequest('POST', `/api/com/subscriptions/${f.id}/cancel`, { cancel_reason: 'breach', effective_date: '2026-09-30', unearned_treatment: 'FORFEIT' }, acct);
+    expect(cf.body.data.result.deferred.treatment).toBe('FORFEIT');
+    expect(await net(f.id, '211010')).toBe(0);
+    expect(await net(f.id, '211006')).toBe(0);
+    expect(await net(f.id, '411007')).toBe(12000); // whole quarter forfeited to revenue
+  });
 });

@@ -113,7 +113,11 @@ const tabs: TabDef[] = [
       { id: 'activate', label: 'Activate', variant: 'primary', when: ['DRAFT'], fields: [{ name: 'create_service_contract', label: 'Also create AMC service contract', type: 'select', options: [{ value: 'true', label: 'Yes — create AMC contract in Field Service' }, { value: 'false', label: 'No' }], default: 'true' }], transform: (p) => ({ create_service_contract: p.create_service_contract === 'true' || p.create_service_contract === true }) },
       { id: 'pause', label: 'Pause', when: ['ACTIVE'], confirm: 'Paused periods are not billed retroactively.' },
       { id: 'resume', label: 'Resume', variant: 'primary', when: ['PAUSED'] },
-      { id: 'cancel', label: 'Cancel', variant: 'destructive', when: ['DRAFT', 'ACTIVE', 'PAUSED'], fields: [{ name: 'cancel_reason', label: 'Reason', type: 'textarea', required: true }] },
+      { id: 'cancel', label: 'Cancel', variant: 'destructive', when: ['DRAFT', 'ACTIVE', 'PAUSED'], fields: [
+          { name: 'cancel_reason', label: 'Reason', type: 'textarea', required: true },
+          { name: 'effective_date', label: 'Effective date', type: 'date', default: today() },
+          { name: 'unearned_treatment', label: 'Unearned prepaid balance', type: 'select', options: [{ value: 'REFUND', label: 'Owe back to customer (credit 211006)' }, { value: 'FORFEIT', label: 'Forfeit to revenue (per contract terms)' }], default: 'REFUND' },
+        ], confirm: 'Quarterly/annual plans: revenue earned to the effective date is recognised pro rata by days; the unearned remainder is credited to the customer or forfeited, in one journal.' },
     ],
   },
   {

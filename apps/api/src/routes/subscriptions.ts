@@ -101,6 +101,49 @@ export async function recognizeRevenue(ctx: Ctx, asOf: string, subscriptionId?: 
   return { recognised_lines: due.length, recognised_amount: total.toFixed(2) };
 }
 
+/**
+ * On cancellation, settles the subscription's PENDING deferred-revenue lines as of `asOf` in one journal
+ * (idempotent by source key): due lines are recognised normally, the current line is earned pro rata by days,
+ * and the unearned remainder moves to customer credit (211006, REFUND) or to revenue (FORFEIT).
+ */
+export async function releaseDeferredOnCancel(ctx: Ctx, sub: { id: string; number: string }, asOf: string, treatment: 'REFUND' | 'FORFEIT') {
+  await recognizeRevenue(ctx, asOf, sub.id);
+  const lines = (
+    await ctx.tx.query(
+      `SELECT r.id, r.amount::text, r.month_start, r.recognize_on, bp.period_start FROM com_revenue_schedule r JOIN com_billing_periods bp ON bp.id = r.billing_period_id
+       WHERE r.subscription_id = $1 AND r.organization_id = $2 AND r.status = 'PENDING' ORDER BY r.month_start FOR UPDATE OF r`,
+      [sub.id, ctx.org],
+    )
+  ).rows;
+  let earned = Money.zero();
+  let unearned = Money.zero();
+  const day = 86400000;
+  for (const l of lines) {
+    const amt = new Money(l.amount).round(2);
+    const segStart = Math.max(Date.parse(toIsoDate(l.month_start)), Date.parse(toIsoDate(l.period_start)));
+    const segEnd = Date.parse(toIsoDate(l.recognize_on));
+    const t = Date.parse(asOf);
+    let e = Money.zero();
+    if (t >= segStart) e = amt.mul(Math.round((Math.min(t, segEnd) - segStart) / day) + 1).div(Math.round((segEnd - segStart) / day) + 1).round(2);
+    earned = earned.add(e);
+    unearned = unearned.add(amt.sub(e));
+    await ctx.tx.query(`UPDATE com_revenue_schedule SET status = 'RELEASED', released_amount = $2, recognised_at = NOW() WHERE id = $1`, [l.id, amt.sub(e).toFixed(8)]);
+  }
+  const total = earned.add(unearned);
+  if (!total.isPositive()) return { earned: '0.00', unearned: '0.00', treatment, journal_id: null };
+  const jl: any[] = [{ account_code: '211010', debit: total.toFixed(8), description: `Deferred revenue settled on cancellation ${sub.number}` }];
+  const toRevenue = treatment === 'FORFEIT' ? earned.add(unearned) : earned;
+  if (toRevenue.isPositive()) jl.push({ account_code: '411007', credit: toRevenue.toFixed(8), description: `Subscription revenue ${sub.number} (${treatment === 'FORFEIT' ? 'earned + forfeited' : 'earned to cancellation'})` });
+  if (treatment === 'REFUND' && unearned.isPositive()) jl.push({ account_code: '211006', credit: unearned.toFixed(8), description: `Unearned subscription balance owed to customer ${sub.number}` });
+  const j = await postJournal(ctx.tx, auditLogger, outboxService, {
+    organizationId: ctx.org, legalEntityId: ctx.le, userId: ctx.user, postingDate: asOf, purpose: AccountingPurpose.REVENUE_RECOGNITION,
+    description: `Subscription ${sub.number} cancelled — deferred revenue settled (${treatment})`, sourceType: 'COM_CANCEL', sourceId: sub.id, sourceKey: `COM_CANCEL:${sub.id}`,
+    numberPrefix: 'JV-REV', correlationId: ctx.req.correlationId, lines: jl,
+  });
+  await ctx.tx.query(`UPDATE com_revenue_schedule SET journal_id = $2 WHERE subscription_id = $1 AND status = 'RELEASED' AND journal_id IS NULL`, [sub.id, j?.journalId ?? null]);
+  return { earned: earned.toFixed(2), unearned: unearned.toFixed(2), treatment, journal_id: j?.journalId ?? null };
+}
+
 /** Bills every due period of one subscription inside the caller's unit of work (API run or automation job). */
 export async function billSubscription(ctx: Ctx, id: string, asOf: string, maxPeriods = 12) {
   const s = await loadRow(ctx.tx, 'com_subscriptions', id, ctx.org, 'Subscription', true);
@@ -271,10 +314,14 @@ export function registerSubscriptionRoutes(app: Express): void {
         from: ['DRAFT', 'ACTIVE', 'PAUSED'],
         to: 'CANCELLED',
         permission: Permission.SUBSCRIPTION_MANAGE,
-        fields: { cancel_reason: { type: 'text', required: true } },
+        fields: { cancel_reason: { type: 'text', required: true }, unearned_treatment: { type: 'enum', values: ['REFUND', 'FORFEIT'] }, effective_date: { type: 'date' } },
         run: async (ctx, row, i) => {
           if (row.service_contract_id) await ctx.tx.query(`UPDATE srv_contracts SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1 AND status IN ('DRAFT','ACTIVE')`, [row.service_contract_id]);
-          return { set: { cancel_reason: i.cancel_reason, cancelled_at: new Date().toISOString(), next_bill_date: null } };
+          const treatment = (i.unearned_treatment || 'REFUND') as 'REFUND' | 'FORFEIT';
+          const asOf = i.effective_date ? toIsoDate(i.effective_date) : todayIso();
+          if (asOf > todayIso()) throw validationError('effective_date cannot be in the future', { field: 'effective_date' });
+          const deferred = await releaseDeferredOnCancel(ctx, row, asOf, treatment);
+          return { set: { cancel_reason: i.cancel_reason, cancelled_at: new Date().toISOString(), next_bill_date: null, unearned_treatment: treatment }, data: { deferred } };
         },
       },
     },
