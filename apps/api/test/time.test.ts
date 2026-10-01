@@ -91,4 +91,27 @@ describe('TIM API', () => {
     expect(onLeave.body.error.message).toMatch(/leave/);
     expect((await makeRequest('GET', '/api/time/summary', undefined, tech)).status).toBe(200);
   });
+
+  it('self-service scope: a technician only sees and submits their own time and leave', async () => {
+    const own = (await db.query(`SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id WHERE u.email = 'tech@omnysync.internal'`)).rows[0];
+    expect(own).toBeTruthy();
+    const other = (await db.query(`SELECT id FROM employees WHERE employee_number = 'EMP-101'`)).rows[0];
+    const r = await makeRequest('POST', '/api/time/timesheets', { employee_id: other.id, week_start: '2026-10-05', cost_rate: '700' }, tech);
+    expect(r.status).toBe(403);
+    expect(r.body.error.code).toBe('FORBIDDEN_SCOPE');
+    expect((await makeRequest('POST', '/api/time/leave', { employee_id: other.id, leave_type: 'CASUAL', start_date: '2026-10-20', end_date: '2026-10-20' }, tech)).body.error.code).toBe('FORBIDDEN_SCOPE');
+    const mine = await makeRequest('POST', '/api/time/timesheets', { employee_id: own.id, week_start: '2026-10-05', cost_rate: '700' }, tech);
+    expect(mine.status).toBe(201);
+    expect((await makeRequest('POST', `/api/time/timesheets/${mine.body.data.id}/entries`, { work_date: '2026-10-06', start_time: '09:00', end_time: '13:00', activity: 'AC service' }, tech)).status).toBe(201);
+    const list = (await makeRequest('GET', '/api/time/timesheets', undefined, tech)).body.data;
+    expect(list.length).toBeGreaterThanOrEqual(1);
+    expect(list.every((x: any) => x.employee_id === own.id)).toBe(true);
+    const hrSheet = (await makeRequest('GET', '/api/time/timesheets', undefined, hr)).body.data.find((x: any) => x.employee_id !== own.id);
+    expect(hrSheet).toBeTruthy();
+    expect((await makeRequest('GET', `/api/time/timesheets/${hrSheet.id}`, undefined, tech)).status).toBe(404);
+    expect((await makeRequest('POST', `/api/time/timesheets/${hrSheet.id}/entries`, { work_date: '2026-09-29', start_time: '09:00', end_time: '10:00' }, tech)).status).toBe(403);
+    expect((await makeRequest('POST', `/api/time/timesheets/${hrSheet.id}/submit`, {}, tech)).status).toBe(404);
+    // HR (approver) still sees everyone.
+    expect((await makeRequest('GET', '/api/time/timesheets', undefined, hr)).body.data.some((x: any) => x.employee_id === own.id)).toBe(true);
+  });
 });

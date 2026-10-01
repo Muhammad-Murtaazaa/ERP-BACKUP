@@ -153,6 +153,16 @@ registerSeeder('TIM', async (q, c) => {
       [c.org, c.le, num, first, last, email, joined],
     );
   }
+  // Self-service link: the demo technician login owns employee EMP-105.
+  const tech = (await q.query(`SELECT u.id, u.name FROM users u JOIN memberships m ON m.user_id = u.id WHERE m.organization_id = $1 AND u.email = 'tech@omnysync.internal'`, [c.org])).rows[0];
+  if (tech) {
+    const [first, ...rest] = String(tech.name || 'Field Technician').split(' ');
+    await q.query(
+      `INSERT INTO employees (id, organization_id, legal_entity_id, employee_number, first_name, last_name, email, employment_type, joining_date, status, user_id)
+       VALUES (gen_random_uuid(), $1, $2, 'EMP-105', $3, $4, 'tech@omnysync.internal', 'FULL_TIME', '2024-06-01', 'ACTIVE', $5) ON CONFLICT (legal_entity_id, employee_number) DO NOTHING`,
+      [c.org, c.le, first, rest.join(' ') || '-', tech.id],
+    );
+  }
 });
 
 registerSeeder('SUP', async (q, c) => {

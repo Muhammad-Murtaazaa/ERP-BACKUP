@@ -18,6 +18,17 @@ import { postJournal } from '../lib/posting.js';
 import { getSetting } from './config.js';
 
 const VIEW = [Permission.TIME_VIEW, Permission.TIME_SUBMIT, Permission.TIME_APPROVE];
+
+/** Self-service users can submit time but neither approve nor post: they are limited to their own employee record. */
+export function isSelfService(perms: readonly string[]): boolean {
+  return perms.includes(Permission.TIME_SUBMIT) && !perms.includes(Permission.TIME_APPROVE) && !perms.includes(Permission.TIME_POST);
+}
+const ownScope = (req: Request) => (isSelfService(req.session!.permissions) ? { sql: 't.employee_id IN (SELECT id FROM employees WHERE user_id = $SCOPE)', value: req.session!.user_id } : null);
+async function assertOwnEmployee(ctx: { tx: any; req: Request; user: string; org: string }, employeeId: string) {
+  if (!isSelfService(ctx.req.session!.permissions)) return;
+  const r = await ctx.tx.query(`SELECT 1 FROM employees WHERE id = $1 AND organization_id = $2 AND user_id = $3`, [employeeId, ctx.org, ctx.user]);
+  if (!r.rows[0]) throw new ApiError(403, ErrorCode.FORBIDDEN_SCOPE, 'You can only record time and leave for your own employee record', { field: 'employee_id' });
+}
 export const OVERTIME_MULTIPLIER = '1.5';
 
 const addDays = (iso: string, n: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
@@ -83,7 +94,9 @@ export function registerTimeRoutes(app: Express): void {
     detail: async (q, row) => ({
       entries: (await q.query(`SELECT te.*, p.code AS project_code, p.name AS project_name FROM tim_entries te LEFT JOIN projects p ON p.id = te.project_id WHERE te.timesheet_id = $1 ORDER BY te.work_date, te.start_time`, [row.id])).rows,
     }),
+    rowScope: ownScope,
     beforeCreate: async (ctx, v) => {
+      await assertOwnEmployee(ctx, v.employee_id);
       if (dow(v.week_start) !== 1) throw validationError('week_start must be a Monday', { field: 'week_start' });
       const dup = await ctx.tx.query(`SELECT number FROM tim_timesheets WHERE organization_id = $1 AND employee_id = $2 AND week_start = $3`, [ctx.org, v.employee_id, v.week_start]);
       if (dup.rows[0]) throw new ApiError(409, ErrorCode.DUPLICATE_RESOURCE, `Timesheet ${dup.rows[0].number} already exists for that week`);
@@ -142,6 +155,7 @@ export function registerTimeRoutes(app: Express): void {
   app.post('/api/time/timesheets/:id/entries', authenticate, requireAnyPermission(Permission.TIME_SUBMIT), requireModule('TIM'), async (req: Request, res: Response) => {
     const out = await unitOfWork(req, async (ctx) => {
       const sheet = await loadRow(ctx.tx, 'tim_timesheets', req.params.id, ctx.org, 'Timesheet', true);
+      await assertOwnEmployee(ctx, sheet.employee_id);
       if (!['DRAFT', 'REJECTED'].includes(sheet.status)) throw new ApiError(409, ErrorCode.INVALID_STATE, `Timesheet is ${sheet.status}; entries are locked`);
       const date = dateOnly(req.body?.work_date, 'work_date');
       const ws = toIsoDate(sheet.week_start);
@@ -182,6 +196,7 @@ export function registerTimeRoutes(app: Express): void {
       const e = (await ctx.tx.query(`SELECT * FROM tim_entries WHERE id::text = $1 AND organization_id = $2`, [req.params.id, ctx.org])).rows[0];
       if (!e) throw notFound('Time entry');
       const sheet = await loadRow(ctx.tx, 'tim_timesheets', e.timesheet_id, ctx.org, 'Timesheet', true);
+      await assertOwnEmployee(ctx, sheet.employee_id);
       if (!['DRAFT', 'REJECTED'].includes(sheet.status)) throw new ApiError(409, ErrorCode.INVALID_STATE, `Timesheet is ${sheet.status}; entries are locked`);
       await ctx.tx.query(`DELETE FROM tim_entries WHERE id = $1`, [e.id]);
       await audit(ctx, 'TIME_ENTRY_REMOVED', 'TIME_SHEET', sheet.id, { date: toIsoDate(e.work_date), hours: e.hours }, undefined);
@@ -214,7 +229,9 @@ export function registerTimeRoutes(app: Express): void {
     search: ['e.first_name', 'e.last_name', 'e.employee_number'],
     filters: ['employee_id', 'leave_type'],
     orderBy: 't.start_date DESC',
+    rowScope: ownScope,
     beforeCreate: async (ctx, v) => {
+      await assertOwnEmployee(ctx, v.employee_id);
       if (v.end_date < v.start_date) throw validationError('end_date must be on or after start_date', { field: 'end_date' });
       await ctx.tx.query(`SELECT id FROM employees WHERE id = $1 FOR UPDATE`, [v.employee_id]);
       const ov = (await ctx.tx.query(`SELECT start_date, end_date, status FROM tim_leave_requests WHERE employee_id = $1 AND status IN ('REQUESTED','APPROVED') AND start_date <= $3 AND end_date >= $2 LIMIT 1`, [v.employee_id, v.start_date, v.end_date])).rows[0];

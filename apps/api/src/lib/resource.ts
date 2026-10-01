@@ -89,6 +89,11 @@ export interface ResourceSpec {
   commands?: Record<string, CommandSpec>;
   /** Extra detail payload (children) for GET /:id. */
   detail?: (q: DbClient, row: any, org: string) => Promise<Record<string, unknown>>;
+  /**
+   * Optional row-level scope for self-service users. Return null for full access, or a SQL predicate
+   * over alias `t` using `$SCOPE` for the single bound value (e.g. the session user id).
+   */
+  rowScope?: (req: Request) => { sql: string; value: unknown } | null;
 }
 
 const IDENT = /^[a-z_][a-z0-9_]*$/;
@@ -184,6 +189,13 @@ export async function loadRow(q: DbClient, table: string, id: unknown, org: stri
   return r.rows[0];
 }
 
+async function assertInScope(spec: ResourceSpec, ctx: Ctx, id: string) {
+  const sc = spec.rowScope?.(ctx.req);
+  if (!sc) return;
+  const r = await ctx.tx.query(`SELECT 1 FROM ${spec.table} t WHERE t.organization_id = $1 AND t.id::text = $2 AND (${sc.sql.replace(/\$SCOPE/g, '$3')})`, [ctx.org, id, sc.value]);
+  if (!r.rows[0]) throw notFound(spec.label);
+}
+
 export function defineResource(app: Express, spec: ResourceSpec): void {
   if (!IDENT.test(spec.table)) throw new Error('Illegal table');
   const statusCol = spec.statusColumn === false ? null : spec.statusColumn || 'status';
@@ -215,6 +227,11 @@ export function defineResource(app: Express, spec: ResourceSpec): void {
         where.push(`t.${f}::text = ANY($${params.length}::text[])`);
       }
     }
+    const sc = spec.rowScope?.(req);
+    if (sc) {
+      params.push(sc.value);
+      where.push(`(${sc.sql.replace(/\$SCOPE/g, `$${params.length}`)})`);
+    }
     const base = `FROM ${spec.table} t ${joins} WHERE ${where.join(' AND ')}`;
     const count = await db.query(`SELECT COUNT(*)::int AS n ${base}`, params);
     const rows = await db.query(`SELECT ${select} ${base} ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${offset}`, params);
@@ -223,7 +240,11 @@ export function defineResource(app: Express, spec: ResourceSpec): void {
 
   app.get(`${spec.path}/:id`, authenticate, guard(spec.view), async (req: Request, res: Response) => {
     const org = req.session!.organization_id;
-    const r = await db.query(`SELECT ${select} FROM ${spec.table} t ${joins} WHERE t.organization_id = $1 AND t.id::text = $2`, [org, req.params.id]);
+    const sc = spec.rowScope?.(req);
+    const r = await db.query(
+      `SELECT ${select} FROM ${spec.table} t ${joins} WHERE t.organization_id = $1 AND t.id::text = $2${sc ? ` AND (${sc.sql.replace(/\$SCOPE/g, '$3')})` : ''}`,
+      sc ? [org, req.params.id, sc.value] : [org, req.params.id],
+    );
     if (!r.rows[0]) throw notFound(spec.label);
     const extra = spec.detail ? await spec.detail(db, r.rows[0], org) : {};
     return ok(req, res, { ...r.rows[0], ...extra });
@@ -260,6 +281,7 @@ export function defineResource(app: Express, spec: ResourceSpec): void {
     app.post(`${spec.path}/:id/update`, authenticate, guard(spec.update || spec.create || spec.view), modCmd, async (req: Request, res: Response) => {
       const out = await unitOfWork(req, async (ctx) => {
         const row = await loadRow(ctx.tx, spec.table, req.params.id, ctx.org, spec.label, true);
+        await assertInScope(spec, ctx, row.id);
         const rev = int(req.body?.revision, 'revision', { min: 1 });
         if (Number(row.revision) !== rev) {
           throw new ApiError(409, ErrorCode.STALE_REVISION, `${spec.label} was changed by someone else (revision ${row.revision}); reload and retry`, { current_revision: row.revision });
@@ -289,6 +311,7 @@ export function defineResource(app: Express, spec: ResourceSpec): void {
     app.post(`${spec.path}/:id/${name}`, authenticate, guard(cmd.permission || spec.update || spec.create || spec.view), modCmd, async (req: Request, res: Response) => {
       const out = await unitOfWork(req, async (ctx) => {
         const row = await loadRow(ctx.tx, spec.table, req.params.id, ctx.org, spec.label, true);
+        await assertInScope(spec, ctx, row.id);
         if (statusCol && cmd.from.length && !cmd.from.includes(row[statusCol])) {
           throw new ApiError(409, ErrorCode.INVALID_STATE, `${spec.label} cannot ${name} from ${row[statusCol]} (allowed from: ${cmd.from.join(', ')})`, {
             current: row[statusCol],
