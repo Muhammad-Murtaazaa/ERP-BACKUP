@@ -53,6 +53,40 @@ export async function deliveryPerformance(q: DbClient, org: string, partyId: str
   return { total, onTime, score: total ? Math.round((onTime / total) * 100) : null };
 }
 
+/** Price score from a price index (supplier ÷ market): at or below market = 100, each 1% above costs 2 points. */
+export function priceScoreFromIndex(index: number): number {
+  return Math.max(0, Math.min(100, Math.round(100 - (index - 1) * 200)));
+}
+
+/**
+ * Price index for a supplier's POs dated in a YYYY-MM period: quantity-weighted supplier price ÷ the
+ * quantity-weighted average price paid to all suppliers for the same items over the trailing 12 months.
+ */
+export async function pricePerformance(q: DbClient, org: string, partyId: string, period: string) {
+  const end = `${period}-01`;
+  const r = await q.query(
+    `WITH mine AS (
+       SELECT l.item_id, SUM(l.quantity) qty, SUM(l.quantity * l.unit_price) val
+       FROM purchase_order_lines l JOIN purchase_orders po ON po.id = l.purchase_order_id
+       WHERE po.organization_id = $1 AND po.party_id = $2 AND po.status NOT IN ('DRAFT','CANCELLED') AND to_char(po.po_date, 'YYYY-MM') = $3
+       GROUP BY l.item_id),
+     market AS (
+       SELECT l.item_id, SUM(l.quantity * l.unit_price) / NULLIF(SUM(l.quantity), 0) avg_price
+       FROM purchase_order_lines l JOIN purchase_orders po ON po.id = l.purchase_order_id
+       WHERE po.organization_id = $1 AND po.status NOT IN ('DRAFT','CANCELLED')
+         AND po.po_date >= ($4::date - INTERVAL '11 months') AND po.po_date < ($4::date + INTERVAL '1 month')
+       GROUP BY l.item_id)
+     SELECT COALESCE(SUM(m.val), 0)::text paid, COALESCE(SUM(m.qty * k.avg_price), 0)::text benchmark, COUNT(*)::int items
+     FROM mine m JOIN market k ON k.item_id = m.item_id`,
+    [org, partyId, period, end],
+  );
+  const row = r.rows[0];
+  const bench = Number(row.benchmark);
+  if (!row.items || !(bench > 0)) return { index: null as number | null, score: null as number | null, items: 0 };
+  const index = Math.round((Number(row.paid) / bench) * 10000) / 10000;
+  return { index, score: priceScoreFromIndex(index), items: row.items };
+}
+
 export function registerSupplierRoutes(app: Express): void {
   defineResource(app, {
     path: '/api/sup/profiles',
@@ -167,7 +201,7 @@ export function registerSupplierRoutes(app: Express): void {
       period: { type: 'string', required: true, max: 7, pattern: /^\d{4}-(0[1-9]|1[0-2])$/ },
       quality_score: { type: 'int', required: true, min: 0, max: 100 },
       delivery_score: { type: 'int', min: 0, max: 100 },
-      price_score: { type: 'int', required: true, min: 0, max: 100 },
+      price_score: { type: 'int', min: 0, max: 100 },
       service_score: { type: 'int', required: true, min: 0, max: 100 },
       comments: { type: 'text' },
     },
@@ -188,6 +222,12 @@ export function registerSupplierRoutes(app: Express): void {
         if (perf.score == null) throw validationError('No receipts against POs due in this period — enter a delivery score', { field: 'delivery_score' });
         v.delivery_score = perf.score;
       }
+      const price = await pricePerformance(ctx.tx, ctx.org, prof.party_id, v.period);
+      if (v.price_score == null) {
+        if (price.score == null) throw validationError('No purchase orders in this period to benchmark — enter a price score', { field: 'price_score' });
+        v.price_score = price.score;
+      }
+      v.price_index = price.index == null ? null : price.index.toFixed(4);
       v.on_time_receipts = perf.onTime;
       v.total_receipts = perf.total;
       Object.assign(v, weightedScore({ quality: v.quality_score, delivery: v.delivery_score, price: v.price_score, service: v.service_score }));

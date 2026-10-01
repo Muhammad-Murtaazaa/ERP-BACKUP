@@ -81,4 +81,31 @@ describe('SUP API', () => {
     const sum = (await makeRequest('GET', '/api/sup/summary', undefined, controller)).body.data;
     expect(sum.certificates.expired).toBeGreaterThanOrEqual(1);
   });
+
+  it('price score: derived from PO prices vs the 12-month market price for the same items when omitted', async () => {
+    const { priceScoreFromIndex } = await import('../src/routes/supplier.js');
+    expect([priceScoreFromIndex(0.9), priceScoreFromIndex(1), priceScoreFromIndex(1.1), priceScoreFromIndex(1.6)]).toEqual([100, 100, 80, 0]);
+    const prof = (await db.query(`SELECT id FROM sup_profiles WHERE party_id = $1`, [vendor.id])).rows[0];
+    const other = (await db.query(
+      `INSERT INTO parties (id, organization_id, legal_entity_id, code, name, party_type) VALUES (gen_random_uuid(), '10000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000001', 'V-SUPCHEAP', 'Budget Coils', 'VENDOR') RETURNING id`,
+    )).rows[0];
+    const item = (await makeRequest('POST', '/api/items', { code: 'COIL-PX', name: 'Evaporator coil', item_type: 'INVENTORY', uom: 'EA', unit_price: '200', unit_cost: '100' }, admin)).body.data;
+    const buy = async (party: string, price: string) => {
+      const po = await makeRequest('POST', '/api/procurement/orders', { party_id: party, po_date: '2026-08-10', lines: [{ item_id: item.id, quantity: '10', unit_price: price }] }, controller);
+      expect(po.status).toBe(201);
+      expect((await makeRequest('POST', `/api/procurement/orders/${po.body.data.id}/approve`, {}, admin)).status).toBe(200);
+    };
+    await buy(vendor.id, '110');
+    await buy(other.id, '90');
+    // Draft POs are ignored by the benchmark.
+    await makeRequest('POST', '/api/procurement/orders', { party_id: other.id, po_date: '2026-08-11', lines: [{ item_id: item.id, quantity: '100', unit_price: '1' }] }, controller);
+    const sc = await makeRequest('POST', '/api/sup/scorecards', { profile_id: prof.id, period: '2026-08', quality_score: 90, delivery_score: 80, service_score: 70 }, admin);
+    expect(sc.status).toBe(201);
+    expect(Number(sc.body.data.price_index)).toBe(1.1); // 1100 paid vs 1000 at the market average of 100
+    expect(sc.body.data.price_score).toBe(80);
+    // A month with no purchases needs a manual price score.
+    const none = await makeRequest('POST', '/api/sup/scorecards', { profile_id: prof.id, period: '2026-05', quality_score: 90, delivery_score: 80, service_score: 70 }, admin);
+    expect(none.status).toBe(400);
+    expect(none.body.error.details?.field ?? none.body.error.field).toBe('price_score');
+  });
 });
