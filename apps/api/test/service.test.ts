@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { bootstrap, login, makeRequest, db } from './harness.js';
 import { addBusinessMinutes, businessMinutesBetween, overlaps, slaState } from '../src/domain/sla.js';
-import { assertEntitlement, signoffHash } from '../src/routes/service.js';
+import { assertEntitlement, signoffHash, utcOffsetMinutes } from '../src/routes/service.js';
+import { getSetting } from '../src/routes/config.js';
 
 const H = { start: '09:00', end: '18:00', days: [1, 2, 3, 4, 5, 6], offsetMinutes: 300 };
 const pkt = (s: string) => new Date(`${s}+05:00`);
@@ -235,5 +236,21 @@ describe('SRV API: intake → dispatch → execute → bill', () => {
     const foreign = await makeRequest('POST', '/api/srv/cases', { party_id: '00000000-0000-0000-0000-000000000000', title: 'x' }, service);
     expect(foreign.status).toBe(400); // assertOrgRef: foreign/missing reference is a field error, never a leak
     expect(foreign.body.error.details.field).toBe('party_id');
+  });
+
+  it('org time zone setting drives the SLA offset; string settings round-trip (regression: JSON.parse crash)', async () => {
+    expect(utcOffsetMinutes('Asia/Karachi')).toBe(300);
+    expect(utcOffsetMinutes('UTC')).toBe(0);
+    expect(utcOffsetMinutes('America/New_York', new Date('2026-01-15T12:00:00Z'))).toBe(-300);
+    expect(utcOffsetMinutes('America/New_York', new Date('2026-07-15T12:00:00Z'))).toBe(-240);
+    expect((await makeRequest('POST', '/api/config/settings/org.timezone', { value: 'Mars/Olympus', version: 0 }, admin)).status).toBe(400);
+    expect((await makeRequest('POST', '/api/config/settings/org.timezone', { value: 'Asia/Dubai', version: 0, reason: 'Gulf branch' }, admin)).status).toBe(200);
+    const org = (await db.query(`SELECT id FROM organizations ORDER BY created_at LIMIT 1`)).rows[0].id;
+    expect(await getSetting(db as any, org, 'org.timezone')).toBe('Asia/Dubai');
+    const list = await makeRequest('GET', '/api/config/settings', undefined, admin);
+    expect(list.status).toBe(200);
+    expect(list.body.data.find((x: any) => x.key === 'org.timezone').value).toBe('Asia/Dubai');
+    expect((await makeRequest('GET', '/api/srv/board?date=2026-11-02', undefined, service)).status).toBe(200);
+    expect((await makeRequest('POST', '/api/config/settings/org.timezone', { value: 'Asia/Karachi', version: 1, reason: 'revert' }, admin)).status).toBe(200);
   });
 });

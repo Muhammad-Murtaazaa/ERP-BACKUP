@@ -20,11 +20,12 @@ export const SETTINGS: Record<string, { label: string; group: string; type: Sett
   'pos.max_cashier_discount_pct': { label: 'Cashier discount limit (%)', group: 'POS', type: { kind: 'decimal', min: '0', max: '100' }, default: '10', help: 'Above this a manager PIN is required.' },
   'inventory.costing_method': { label: 'Inventory costing method', group: 'Inventory', type: { kind: 'enum', values: ['STANDARD', 'MOVING_AVERAGE', 'FIFO'] }, default: 'STANDARD', help: 'MOVING_AVERAGE re-computes unit cost on each receipt; FIFO values issues at the oldest receipt layers (ADR-016).' },
   'inventory.allow_negative_stock': { label: 'Allow negative stock', group: 'Inventory', type: { kind: 'bool' }, default: false, help: 'Never recommended; issues are blocked when off.' },
-  'service.business_hours': { label: 'Service SLA business hours', group: 'Service', type: { kind: 'hours' }, default: { start: '09:00', end: '18:00', days: [1, 2, 3, 4, 5, 6] }, help: 'SLA clocks only run inside these hours (Asia/Karachi).' },
+  'service.business_hours': { label: 'Service SLA business hours', group: 'Service', type: { kind: 'hours' }, default: { start: '09:00', end: '18:00', days: [1, 2, 3, 4, 5, 6] }, help: 'SLA clocks only run inside these hours, in the organisation time zone.' },
   'service.default_labour_rate': { label: 'Default technician labour rate (PKR/h)', group: 'Service', type: { kind: 'decimal', min: '0', max: '1000000' }, default: '2500', help: 'Used when billing approved service time.' },
   'time.daily_overtime_after_hours': { label: 'Overtime after (hours/day)', group: 'Time', type: { kind: 'decimal', min: '1', max: '24' }, default: '8', help: 'Hours beyond this are overtime.' },
   'tax.default_output_code': { label: 'Default output tax code', group: 'Tax', type: { kind: 'text', max: 32 }, default: 'GST18', help: 'Applied when an item has no tax rate.' },
   'grc.risk_appetite': { label: 'Risk appetite (max acceptable residual score)', group: 'Risk', type: { kind: 'int', min: 1, max: 25 }, default: 8, help: 'Risks above this residual score (likelihood × impact) cannot be accepted without escalation.' },
+  'org.timezone': { label: 'Organisation time zone', group: 'Organisation', type: { kind: 'enum', values: ['Asia/Karachi', 'Asia/Dubai', 'Asia/Riyadh', 'Asia/Kolkata', 'Europe/London', 'UTC', 'America/New_York'] }, default: 'Asia/Karachi', help: 'Local day and business-hour SLA clocks (SRV) use this zone.' },
   'finance.require_journal_approval': { label: 'Manual journals need approval', group: 'Finance', type: { kind: 'bool' }, default: true, help: 'Maker-checker on manual vouchers.' },
 };
 
@@ -63,7 +64,7 @@ export async function getSetting<T = unknown>(q: { query: typeof db.query }, org
   const r = await q.query(`SELECT value FROM org_settings WHERE organization_id = $1 AND setting_key = $2`, [org, key]);
   const v = r.rows[0]?.value;
   if (v === undefined) return SETTINGS[key]?.default as T;
-  return (typeof v === 'string' ? JSON.parse(v) : v) as T;
+  return v as T; // JSONB is decoded by the driver; re-parsing a string setting threw (e.g. tax.default_output_code)
 }
 
 const ROLE_NAMES = Object.values(UserRole) as string[];

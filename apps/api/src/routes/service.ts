@@ -22,9 +22,21 @@ const VIEW = [Permission.SERVICE_VIEW, Permission.SERVICE_MANAGE, Permission.SER
 const PRIORITY_FACTOR: Record<string, number> = { CRITICAL: 0.25, HIGH: 0.5, MEDIUM: 1, LOW: 2 };
 const DEFAULT_RESPONSE_H: Record<string, number> = { CRITICAL: 2, HIGH: 4, MEDIUM: 8, LOW: 24 };
 
+/** UTC offset (minutes) of an IANA zone at an instant, via Intl (DST-aware for that instant). */
+export function utcOffsetMinutes(timeZone: string, at: Date = new Date()): number {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(at).map((p) => [p.type, p.value]));
+  const local = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), Number(parts.second));
+  return Math.round((local - Math.floor(at.getTime() / 1000) * 1000) / 60000);
+}
+const fmtOffset = (m: number) => `${m < 0 ? '-' : '+'}${String(Math.floor(Math.abs(m) / 60)).padStart(2, '0')}:${String(Math.abs(m) % 60).padStart(2, '0')}`;
+
+async function orgOffset(q: any, org: string): Promise<number> {
+  return utcOffsetMinutes(await getSetting<string>(q, org, 'org.timezone'));
+}
+
 async function businessHours(q: any, org: string): Promise<BusinessHours> {
   const h = await getSetting<any>(q, org, 'service.business_hours');
-  return { start: h.start, end: h.end, days: h.days, holidays: Array.isArray(h.holidays) ? h.holidays : [], offsetMinutes: 300 };
+  return { start: h.start, end: h.end, days: h.days, holidays: Array.isArray(h.holidays) ? h.holidays : [], offsetMinutes: await orgOffset(q, org) };
 }
 
 /** Entitlement check (SRV-004): contract must be ACTIVE, belong to the party and cover the date. */
@@ -542,9 +554,11 @@ export function registerServiceRoutes(app: Express): void {
   // Dispatch board: technicians with their jobs in a day window (local PKT day).
   app.get('/api/srv/board', authenticate, requireAnyPermission(...VIEW), async (req: Request, res: Response) => {
     const org = req.session!.organization_id;
-    const day = typeof req.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date) ? req.query.date : todayIso();
-    const from = new Date(Date.parse(`${day}T00:00:00+05:00`)).toISOString();
-    const to = new Date(Date.parse(`${day}T00:00:00+05:00`) + 86400000).toISOString();
+    const off = await orgOffset(db, org);
+    const localToday = new Date(Date.now() + off * 60000).toISOString().slice(0, 10);
+    const day = typeof req.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date) ? req.query.date : localToday;
+    const from = new Date(Date.parse(`${day}T00:00:00${fmtOffset(off)}`)).toISOString();
+    const to = new Date(Date.parse(`${day}T00:00:00${fmtOffset(off)}`) + 86400000).toISOString();
     const techs = (await db.query(`SELECT id, code, name, skills, zone FROM srv_technicians WHERE organization_id = $1 AND status = 'ACTIVE' ORDER BY name`, [org])).rows;
     const jobs = (
       await db.query(
