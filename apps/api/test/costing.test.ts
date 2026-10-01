@@ -79,6 +79,8 @@ describe('inventory costing method', () => {
     const cur = (await makeRequest('GET', '/api/config/settings', undefined, admin)).body.data.find((x: any) => x.key === 'inventory.costing_method');
     const r = await makeRequest('POST', '/api/config/settings/inventory.costing_method', { value: 'FIFO', version: cur.version, reason: 'Auditor prefers FIFO' }, admin);
     expect(r.status).toBe(200);
+    // Stock already on hand gets an OPENING layer at the current item cost.
+    expect(r.body.data.fifo_layers.opened).toEqual(expect.arrayContaining([{ item: 'CAP-MA', quantity: '20.0000', unit_cost: '124.0000' }, { item: 'CAP-STD', quantity: '10.0000', unit_cost: '100.0000' }]));
     const it2 = await newItem('CAP-FIFO');
     await receive(it2.id, '10', '100');
     await receive(it2.id, '10', '130');
@@ -103,5 +105,31 @@ describe('inventory costing method', () => {
     const so = await makeRequest('POST', '/api/sales/orders', { party_id: customer.id, order_date: '2026-09-04', lines: [{ item_id: it2.id, quantity: '1', unit_price: '500' }] }, controller);
     await makeRequest('POST', `/api/sales/orders/${so.body.data.id}/confirm`, {}, controller);
     expect((await makeRequest('POST', `/api/sales/orders/${so.body.data.id}/fulfill`, { shipment_date: '2026-09-04' }, admin)).status).toBe(409);
+  });
+
+  it('FIFO opening layers: consumed first, reconcile is idempotent, trims layers after a non-FIFO interlude', async () => {
+    const ma = (await db.query(`SELECT id FROM items WHERE code = 'CAP-MA'`)).rows[0];
+    const ship = async (qty: string) => {
+      const so = await makeRequest('POST', '/api/sales/orders', { party_id: customer.id, order_date: '2026-09-05', lines: [{ item_id: ma.id, quantity: qty, unit_price: '500' }] }, controller);
+      await makeRequest('POST', `/api/sales/orders/${so.body.data.id}/confirm`, {}, controller);
+      expect((await makeRequest('POST', `/api/sales/orders/${so.body.data.id}/fulfill`, { shipment_date: '2026-09-05' }, admin)).status).toBe(200);
+      return Number((await db.query(`SELECT unit_cost::text c FROM stock_movements WHERE reference_id = $1`, [so.body.data.id])).rows[0].c);
+    };
+    await receive(ma.id, '5', '200'); // newer layer
+    expect(await ship('20')).toBe(124); // the opening layer goes first
+    const layers = await makeRequest('GET', `/api/inventory/fifo/layers?item_id=${ma.id}`, undefined, admin);
+    expect(layers.body.data.map((l: any) => [l.layer_source, Number(l.qty_remaining), Number(l.unit_cost)])).toEqual([['RECEIPT', 5, 200]]);
+    const again = await makeRequest('POST', '/api/inventory/fifo/reconcile-layers', {}, admin);
+    expect(again.status).toBe(200);
+    expect(again.body.data).toEqual({ opened: [], trimmed: [] });
+    // Issue 2 under STANDARD (layers untouched), then return to FIFO: the stale surplus is trimmed.
+    const v = async () => (await makeRequest('GET', '/api/config/settings', undefined, admin)).body.data.find((x: any) => x.key === 'inventory.costing_method').version;
+    expect((await makeRequest('POST', '/api/config/settings/inventory.costing_method', { value: 'STANDARD', version: await v(), reason: 'test' }, admin)).status).toBe(200);
+    expect((await makeRequest('POST', '/api/inventory/fifo/reconcile-layers', {}, admin)).status).toBe(409);
+    await ship('2');
+    const back = await makeRequest('POST', '/api/config/settings/inventory.costing_method', { value: 'FIFO', version: await v(), reason: 'back' }, admin);
+    expect(back.body.data.fifo_layers.trimmed).toEqual(expect.arrayContaining([{ item: 'CAP-MA', quantity: '2.0000' }]));
+    const left = (await db.query(`SELECT SUM(qty_remaining)::text q FROM stock_cost_layers WHERE item_id = $1`, [ma.id])).rows[0].q;
+    expect(Number(left)).toBe(3);
   });
 });

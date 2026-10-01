@@ -1,8 +1,8 @@
 import React from 'react';
-import { Badge } from '@omnysync/ui';
+import { Alert, Badge, Button, Table } from '@omnysync/ui';
 import { ModuleWorkspace, TabDef } from '../kit/ModuleWorkspace.js';
 import { ApiClient } from '../../api/client.js';
-import { fmtQty } from '../../lib/format.js';
+import { fmtMoney, fmtQty } from '../../lib/format.js';
 import { itemRef, opts, warehouseRef } from './shared.js';
 
 const binRef = (name: string, label: string) => ({ name, label, type: 'ref' as const, required: true, ref: { endpoint: '/wms/bins', label: (r: any) => `${r.warehouse_code} / ${r.bin_code}`, description: (r: any) => `${r.bin_type} · ${fmtQty(r.total_qty)} units` } });
@@ -36,6 +36,54 @@ const PickLines: React.FC<{ row: any; reload: () => void }> = ({ row, reload }) 
           </li>
         ))}
       </ul>
+    </div>
+  );
+};
+
+/** FIFO cost layers (ADR-016 addendum): open layers per item, with the reconcile tool for opening stock. */
+const CostLayers: React.FC<{ reloadKey: number; notify: (k: 'success' | 'danger' | 'info' | 'warning', t: string) => void }> = ({ reloadKey, notify }) => {
+  const [rows, setRows] = React.useState<any[] | null>(null);
+  const [err, setErr] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState(false);
+  const load = React.useCallback(() => {
+    ApiClient.get<any>('/inventory/fifo/layers').then((r: any) => setRows(r.data ?? r)).catch((e) => setErr(e.message));
+  }, []);
+  React.useEffect(load, [load, reloadKey]);
+  const reconcile = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r: any = await ApiClient.post('/inventory/fifo/reconcile-layers', {});
+      const d = r.data ?? r;
+      notify('success', d.opened.length || d.trimmed.length ? `Opened ${d.opened.length} opening layer(s), trimmed ${d.trimmed.length} item(s).` : 'Layers already match on-hand stock.');
+      load();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const total = (rows || []).reduce((a, r) => a + Number(r.remaining_value), 0);
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-slate-600">Open FIFO layers (oldest first, consumed in this order). Only maintained when the costing method is FIFO. Total layered value <span className="font-semibold">{fmtMoney(total.toFixed(2))}</span>.</p>
+        <Button variant="secondary" onClick={reconcile} disabled={busy}>{busy ? 'Reconciling…' : 'Reconcile layers with on-hand'}</Button>
+      </div>
+      {err && <Alert variant="danger">{err}</Alert>}
+      <Table
+        columns={[
+          { key: 'item_code', header: 'Item', render: (r: any) => <span><span className="font-mono">{r.item_code}</span> · {r.item_name}</span> },
+          { key: 'received_date', header: 'Layer date', render: (r: any) => String(r.received_date).slice(0, 10) },
+          { key: 'layer_source', header: 'Source', render: (r: any) => <Badge variant={r.layer_source === 'OPENING' ? 'warning' : 'info'}>{r.layer_source}</Badge> },
+          { key: 'qty_remaining', header: 'Remaining', render: (r: any) => `${fmtQty(r.qty_remaining)} / ${fmtQty(r.qty_original)}` },
+          { key: 'unit_cost', header: 'Unit cost', render: (r: any) => fmtMoney(r.unit_cost) },
+          { key: 'remaining_value', header: 'Value', render: (r: any) => fmtMoney(r.remaining_value) },
+        ]}
+        data={rows || []}
+        keyExtractor={(r: any) => r.id}
+        emptyMessage={rows ? 'No open layers — switch inventory.costing_method to FIFO to start layering.' : 'Loading…'}
+      />
     </div>
   );
 };
@@ -119,6 +167,7 @@ const tabs: TabDef[] = [
     createLabel: 'New bin',
     createFields: [warehouseRef(), { name: 'bin_code', label: 'Bin code', type: 'text', required: true, placeholder: 'A-02-01' }, { name: 'bin_type', label: 'Type', type: 'select', required: true, options: opts('PICK', 'BULK', 'STAGING', 'QUARANTINE') }, { name: 'capacity_qty', label: 'Capacity (units)', type: 'decimal' }],
   },
+  { id: 'cost-layers', label: 'FIFO cost layers', render: (ctx) => <CostLayers {...ctx} /> },
 ];
 
 export const WmsView: React.FC = () => (

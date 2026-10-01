@@ -12,6 +12,7 @@ import { ApiError, notFound, validationError } from '../lib/errors.js';
 import { audit, unitOfWork } from '../lib/resource.js';
 import { arrayOf, int, oneOf, optionalStr, str } from '../lib/validate.js';
 import { MODULES, moduleStates, validateModuleTransition } from '../lib/modules.js';
+import { reconcileFifoLayers } from '../lib/stock.js';
 
 type SettingType = { kind: 'int'; min: number; max: number } | { kind: 'decimal'; min: string; max: string } | { kind: 'enum'; values: string[] } | { kind: 'bool' } | { kind: 'hours' } | { kind: 'text'; max: number };
 export const SETTINGS: Record<string, { label: string; group: string; type: SettingType; default: unknown; help: string }> = {
@@ -198,6 +199,12 @@ export function registerConfigRoutes(app: Express): void {
         ctx.org, key, next, cur ? JSON.stringify(cur.value) : null, JSON.stringify(value), reason, ctx.user,
       ]);
       await audit(ctx, 'SETTING_CHANGED', 'SETTING', ctx.org, { key, value: cur?.value ?? SETTINGS[key].default }, { key, value, version: next, reason });
+      // Switching to FIFO seeds opening layers for stock already on hand (ADR-016 addendum).
+      if (key === 'inventory.costing_method' && value === 'FIFO') {
+        const fifo_layers = await reconcileFifoLayers(ctx.tx, ctx.org, new Date(Date.now() + 5 * 3600000).toISOString().slice(0, 10));
+        if (fifo_layers.opened.length || fifo_layers.trimmed.length) await audit(ctx, 'FIFO_LAYERS_RECONCILED', 'SETTING', ctx.org, undefined, fifo_layers);
+        return { key, value, version: next, fifo_layers };
+      }
       return { key, value, version: next };
     });
     return ok(req, res, out);

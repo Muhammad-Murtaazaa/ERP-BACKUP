@@ -3,6 +3,7 @@ import { DbClient } from '@omnysync/platform';
 import { Money } from '@omnysync/financial-engine';
 import { ErrorCode } from '@omnysync/contracts';
 import { ApiError, validationError } from './errors.js';
+import { toIsoDate } from './validate.js';
 
 /**
  * Stock ledger service. Every quantity change goes through here so that:
@@ -202,4 +203,55 @@ export async function postStockMovement(q: DbClient, input: StockMoveInput): Pro
     );
   }
   return { id, total_value: totalValue, unit_cost: unitCost, on_hand_after: after.toFixed(8) };
+}
+
+/**
+ * Aligns FIFO layers with on-hand stock (org-wide, per item) — idempotent. Missing quantity opens an
+ * OPENING layer at the item's current unit cost, dated at the item's first movement / before its oldest
+ * open layer (so it is consumed first); surplus layer quantity left over from issues made under another costing method is trimmed
+ * oldest-first. Valuation-neutral: no stock movement or journal is created.
+ */
+export async function reconcileFifoLayers(q: DbClient, organizationId: string, asOf: string) {
+  const rows = (
+    await q.query(
+      `SELECT i.id, i.code, COALESCE(i.unit_cost, 0)::text AS unit_cost,
+              COALESCE((SELECT SUM(quantity) FROM stock_movements sm WHERE sm.organization_id = $1 AND sm.item_id = i.id), 0)::text AS on_hand,
+              COALESCE((SELECT SUM(qty_remaining) FROM stock_cost_layers l WHERE l.organization_id = $1 AND l.item_id = i.id), 0)::text AS layered,
+              (SELECT MIN(received_date) FROM stock_cost_layers l WHERE l.organization_id = $1 AND l.item_id = i.id AND l.qty_remaining > 0) AS oldest,
+              (SELECT MIN(movement_date) FROM stock_movements sm WHERE sm.organization_id = $1 AND sm.item_id = i.id) AS first_movement
+       FROM items i WHERE i.organization_id = $1
+         AND (EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.organization_id = $1 AND sm.item_id = i.id) OR EXISTS (SELECT 1 FROM stock_cost_layers l WHERE l.organization_id = $1 AND l.item_id = i.id AND l.qty_remaining > 0))
+       ORDER BY i.code FOR UPDATE OF i`,
+      [organizationId],
+    )
+  ).rows;
+  const opened: { item: string; quantity: string; unit_cost: string }[] = [];
+  const trimmed: { item: string; quantity: string }[] = [];
+  for (const r of rows) {
+    const onHandQty = Money.max(new Money(r.on_hand), Money.zero());
+    const gap = onHandQty.sub(r.layered);
+    if (gap.isPositive()) {
+      // Opening stock pre-dates everything still layered: date it at the item's first movement (or the day before its oldest open layer).
+      const cands = [asOf];
+      if (r.first_movement) cands.push(toIsoDate(r.first_movement));
+      if (r.oldest) cands.push(new Date(Date.parse(toIsoDate(r.oldest)) - 86400000).toISOString().slice(0, 10));
+      const d = cands.sort()[0];
+      await q.query(
+        `INSERT INTO stock_cost_layers (organization_id, item_id, stock_movement_id, received_date, qty_original, qty_remaining, unit_cost, layer_source) VALUES ($1,$2,$3,$4,$5,$5,$6,'OPENING')`,
+        [organizationId, r.id, crypto.randomUUID(), d, gap.toFixed(8), new Money(r.unit_cost).toFixed(8)],
+      );
+      opened.push({ item: r.code, quantity: gap.toFixed(4), unit_cost: new Money(r.unit_cost).toFixed(4) });
+    } else if (gap.isNegative()) {
+      let excess = gap.abs();
+      const layers = (await q.query(`SELECT id, qty_remaining::text FROM stock_cost_layers WHERE organization_id = $1 AND item_id = $2 AND qty_remaining > 0 ORDER BY received_date, seq FOR UPDATE`, [organizationId, r.id])).rows;
+      for (const l of layers) {
+        if (!excess.isPositive()) break;
+        const take = Money.min(excess, new Money(l.qty_remaining));
+        await q.query(`UPDATE stock_cost_layers SET qty_remaining = qty_remaining - $1 WHERE id = $2`, [take.toFixed(8), l.id]);
+        excess = excess.sub(take);
+      }
+      trimmed.push({ item: r.code, quantity: gap.abs().toFixed(4) });
+    }
+  }
+  return { opened, trimmed };
 }

@@ -9,7 +9,7 @@ import { assertOrgRef, requireOrgRow } from '../lib/scope.js';
 import { transition } from '../lib/state.js';
 import { postJournal } from '../lib/posting.js';
 import { nextDocumentNumber } from '../lib/numbering.js';
-import { lockItems, onHand, postStockMovement } from '../lib/stock.js';
+import { costingMethod, lockItems, onHand, postStockMovement, reconcileFifoLayers } from '../lib/stock.js';
 
 export const INVENTORY_READ = [
   Permission.INVENTORY_MANAGE,
@@ -109,6 +109,31 @@ export function registerInventoryRoutes(app: Express): void {
   });
 
   // ---------- Stock on hand (org-wide or per warehouse) ----------
+  // ---------- FIFO cost layers (ADR-016 addendum) ----------
+  app.get('/api/inventory/fifo/layers', authenticate, invRead, async (req: Request, res: Response) => {
+    const itemId = optionalUuid(req.query.item_id, 'item_id');
+    const r = await db.query(
+      `SELECT l.id, l.item_id, i.code AS item_code, i.name AS item_name, l.received_date, l.layer_source, l.qty_original::text, l.qty_remaining::text, l.unit_cost::text,
+              (l.qty_remaining * l.unit_cost)::text AS remaining_value
+       FROM stock_cost_layers l JOIN items i ON i.id = l.item_id
+       WHERE l.organization_id = $1 AND l.qty_remaining > 0 AND ($2::uuid IS NULL OR l.item_id = $2::uuid)
+       ORDER BY i.code, l.received_date, l.seq LIMIT 500`,
+      [req.session!.organization_id, itemId ?? null],
+    );
+    return ok(req, res, r.rows);
+  });
+
+  app.post('/api/inventory/fifo/reconcile-layers', authenticate, requirePermission(Permission.INVENTORY_MANAGE), async (req: Request, res: Response) => {
+    const org = req.session!.organization_id;
+    const out = await db.transaction(async (tx) => {
+      if ((await costingMethod(tx, org)) !== 'FIFO') throw new ApiError(409, ErrorCode.INVALID_STATE, 'Costing method is not FIFO; layers are only maintained under FIFO');
+      const r = await reconcileFifoLayers(tx, org, todayIso());
+      if (r.opened.length || r.trimmed.length) await audit(req, tx, 'FIFO_LAYERS_RECONCILED', 'INVENTORY', org, undefined, r);
+      return r;
+    });
+    return ok(req, res, out);
+  });
+
   app.get('/api/inventory/stock', authenticate, invRead, async (req: Request, res: Response) => {
     const org = req.session!.organization_id;
     const warehouse_id = optionalUuid(req.query.warehouse_id, 'warehouse_id');
