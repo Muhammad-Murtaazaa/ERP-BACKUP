@@ -3,7 +3,12 @@
  * technicians cannot overlap for the vehicle or the technician (CAPACITY_CONFLICT) and a vehicle
  * in maintenance cannot be booked. Fuel logs must move the odometer forward (monotonic, bounded
  * jump), compute km/l, and post once: DR 521011 fuel / CR 111001 cash or 211003 accrued (account).
+ * Sending a vehicle to maintenance opens a corrective maintenance work order (EAM) against the
+ * vehicle's equipment record (created on first use); it cannot return to service until that work
+ * order is completed or cancelled.
  */
+import crypto from 'node:crypto';
+import { nextDocumentNumber } from '../lib/numbering.js';
 import type { Express, Request, Response } from 'express';
 import { Permission, ErrorCode, AccountingPurpose } from '@omnysync/contracts';
 import { Money } from '@omnysync/financial-engine';
@@ -56,6 +61,9 @@ export function registerFleetRoutes(app: Express): void {
     filters: ['fuel_type'],
     orderBy: 't.code',
     detail: async (q, row) => ({
+      maintenance_work_order: row.maintenance_work_order_id
+        ? (await q.query(`SELECT id, work_order_number, status, priority, description, total_cost FROM maintenance_work_orders WHERE id = $1`, [row.maintenance_work_order_id])).rows[0] ?? null
+        : null,
       fuel: (await q.query(`SELECT * FROM flt_fuel_logs WHERE vehicle_id = $1 ORDER BY log_date DESC, odometer_km DESC LIMIT 20`, [row.id])).rows,
       assignments: (await q.query(`SELECT a.*, tech.name AS technician_name FROM flt_assignments a JOIN srv_technicians tech ON tech.id = a.technician_id WHERE a.vehicle_id = $1 ORDER BY a.start_at DESC LIMIT 20`, [row.id])).rows,
     }),
@@ -65,8 +73,45 @@ export function registerFleetRoutes(app: Express): void {
       if (dup.rows[0]) throw new ApiError(409, ErrorCode.DUPLICATE_RESOURCE, `Vehicle ${dup.rows[0].code} already uses that code or registration`, { field: 'registration' });
     },
     commands: {
-      maintenance: { from: ['ACTIVE'], to: 'IN_MAINTENANCE', permission: Permission.FLEET_MANAGE, fields: { status_note: { type: 'text', required: true } }, run: async (_c, _r, i) => ({ set: { status_note: i.status_note } }) },
-      reactivate: { from: ['IN_MAINTENANCE'], to: 'ACTIVE', permission: Permission.FLEET_MANAGE },
+      maintenance: {
+        from: ['ACTIVE'],
+        to: 'IN_MAINTENANCE',
+        permission: Permission.FLEET_MANAGE,
+        fields: { status_note: { type: 'text', required: true }, priority: { type: 'enum', values: ['LOW', 'MEDIUM', 'HIGH', 'EMERGENCY'] } },
+        run: async (ctx, row, i) => {
+          let equipmentId = row.maintenance_equipment_id as string | null;
+          if (!equipmentId) {
+            equipmentId = crypto.randomUUID();
+            await ctx.tx.query(
+              `INSERT INTO maintenance_equipment (id, organization_id, legal_entity_id, equipment_code, name, category, criticality, serial_number) VALUES ($1,$2,$3,$4,$5,'VEHICLE','HIGH',$6)`,
+              [equipmentId, ctx.org, ctx.le, `FLT-${row.code}`, `${row.code} · ${row.make_model || row.registration}`, row.registration],
+            );
+          }
+          const woId = crypto.randomUUID();
+          const woNum = await nextDocumentNumber(ctx.tx, ctx.org, 'WO');
+          await ctx.tx.query(
+            `INSERT INTO maintenance_work_orders (id, organization_id, legal_entity_id, work_order_number, equipment_id, order_type, priority, status, description, start_date, created_by)
+             VALUES ($1,$2,$3,$4,$5,'CORRECTIVE',$6,'SCHEDULED',$7,CURRENT_DATE,$8)`,
+            [woId, ctx.org, ctx.le, woNum, equipmentId, i.priority || 'MEDIUM', `Fleet ${row.code} (${row.registration}): ${i.status_note}`, ctx.user],
+          );
+          await ctx.tx.query(`UPDATE maintenance_equipment SET status = 'UNDER_MAINTENANCE', updated_at = NOW() WHERE id = $1`, [equipmentId]);
+          return { set: { status_note: i.status_note, maintenance_equipment_id: equipmentId, maintenance_work_order_id: woId }, data: { work_order_number: woNum } };
+        },
+      },
+      reactivate: {
+        from: ['IN_MAINTENANCE'],
+        to: 'ACTIVE',
+        permission: Permission.FLEET_MANAGE,
+        run: async (ctx, row) => {
+          if (row.maintenance_work_order_id) {
+            const wo = (await ctx.tx.query(`SELECT work_order_number, status FROM maintenance_work_orders WHERE id = $1 AND organization_id = $2`, [row.maintenance_work_order_id, ctx.org])).rows[0];
+            if (wo && !['COMPLETED', 'CANCELLED'].includes(wo.status)) {
+              throw new ApiError(409, ErrorCode.INVALID_STATE, `Maintenance work order ${wo.work_order_number} is ${wo.status.toLowerCase()} — complete or cancel it first`, { work_order_number: wo.work_order_number });
+            }
+          }
+          return { set: { maintenance_work_order_id: null } };
+        },
+      },
       retire: {
         from: ['ACTIVE', 'IN_MAINTENANCE'],
         to: 'RETIRED',

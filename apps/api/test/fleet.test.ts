@@ -38,6 +38,14 @@ describe('FLT API', () => {
     expect(tClash.body.error.code).toBe('CAPACITY_CONFLICT');
     expect((await makeRequest('POST', '/api/flt/assignments', { vehicle_id: v1.id, technician_id: t2.id, start_at: '2026-11-10T12:00:00Z', end_at: '2026-11-10T14:00:00Z' }, service)).status).toBe(201);
     expect((await makeRequest('POST', `/api/flt/vehicles/${v2.id}/maintenance`, { status_note: 'Brake pads' }, service)).status).toBe(200);
+    // A corrective EAM work order is opened; the van cannot return to service until it is completed.
+    const linked = (await db.query(`SELECT v.maintenance_work_order_id, w.status, w.order_type, w.description, e.category FROM flt_vehicles v JOIN maintenance_work_orders w ON w.id = v.maintenance_work_order_id JOIN maintenance_equipment e ON e.id = w.equipment_id WHERE v.id = $1`, [v2.id])).rows[0];
+    expect(linked).toMatchObject({ status: 'SCHEDULED', order_type: 'CORRECTIVE', category: 'VEHICLE' });
+    expect(linked.description).toMatch(/Brake pads/);
+    const early = await makeRequest('POST', `/api/flt/vehicles/${v2.id}/reactivate`, {}, service);
+    expect(early.status).toBe(409);
+    expect(early.body.error.message).toMatch(/complete or cancel/);
+    expect((await makeRequest('GET', `/api/flt/vehicles/${v2.id}`, undefined, service)).body.data.maintenance_work_order.status).toBe('SCHEDULED');
     expect((await makeRequest('POST', '/api/flt/assignments', { vehicle_id: v2.id, technician_id: t2.id, start_at: '2026-11-11T04:00:00Z', end_at: '2026-11-11T05:00:00Z' }, service)).status).toBe(409);
     expect((await makeRequest('POST', `/api/flt/vehicles/${v1.id}/retire`, { status_note: 'x' }, service)).status).toBe(409); // future bookings
     expect((await makeRequest('POST', '/api/flt/vehicles', { code: 'VAN-09', registration: 'leb-21-4410', make_model: 'Dup' }, service)).status).toBe(409); // registration case-insensitive dup
@@ -63,5 +71,22 @@ describe('FLT API', () => {
     const veh = (await makeRequest('GET', `/api/flt/vehicles/${v.id}`, undefined, tech)).body.data;
     expect(Number(veh.odometer_km)).toBe(48900);
     expect(veh.fuel).toHaveLength(2);
+  });
+
+  it('maintenance link: completing the EAM work order lets the vehicle return; the equipment record is reused', async () => {
+    const admin = await login('admin@omnysync.internal');
+    const v = (await db.query(`SELECT id, maintenance_work_order_id, maintenance_equipment_id FROM flt_vehicles WHERE status = 'IN_MAINTENANCE' AND maintenance_work_order_id IS NOT NULL LIMIT 1`)).rows[0];
+    expect(v).toBeTruthy();
+    const done = await makeRequest('POST', `/api/maintenance/work-orders/${v.maintenance_work_order_id}/complete`, { completion_date: '2026-10-01', downtime_hours: 4 }, admin);
+    expect(done.status).toBe(200);
+    const back = await makeRequest('POST', `/api/flt/vehicles/${v.id}/reactivate`, {}, service);
+    expect(back.status).toBe(200);
+    expect(back.body.data.status).toBe('ACTIVE');
+    const again = await makeRequest('POST', `/api/flt/vehicles/${v.id}/maintenance`, { status_note: 'AC compressor noise', priority: 'HIGH' }, service);
+    expect(again.status).toBe(200);
+    const row = (await db.query(`SELECT maintenance_equipment_id, maintenance_work_order_id FROM flt_vehicles WHERE id = $1`, [v.id])).rows[0];
+    expect(row.maintenance_equipment_id).toBe(v.maintenance_equipment_id);
+    expect(row.maintenance_work_order_id).not.toBe(v.maintenance_work_order_id);
+    expect((await db.query(`SELECT COUNT(*)::int n FROM maintenance_equipment WHERE equipment_code LIKE 'FLT-%' AND id = $1`, [v.maintenance_equipment_id])).rows[0].n).toBe(1);
   });
 });

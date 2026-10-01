@@ -39,6 +39,16 @@ const tabs: TabDef[] = [
     ],
     detailExtra: (row) => (
       <div className="flex flex-col gap-3">
+        {row.maintenance_work_order && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-950/40">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold">Maintenance work order {row.maintenance_work_order.work_order_number}</span>
+              <Badge variant={row.maintenance_work_order.status === 'COMPLETED' ? 'success' : 'warning'}>{row.maintenance_work_order.status}</Badge>
+            </div>
+            <div className="mt-1 text-muted-foreground">{row.maintenance_work_order.description}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Complete it under Maintenance → Work orders before putting the vehicle back in service.</div>
+          </div>
+        )}
         <div className="text-sm font-semibold">Recent fuel</div>
         <Table columns={[{ key: 'log_date', header: 'Date', render: (r: any) => String(r.log_date).slice(0, 10) }, { key: 'odometer_km', header: 'Odometer', align: 'right' }, { key: 'litres', header: 'Litres', align: 'right' }, { key: 'km_per_litre', header: 'km/L', align: 'right' }, { key: 'amount', header: 'Amount', align: 'right', render: (r: any) => fmtMoney(r.amount) }, { key: 'status', header: 'Status', render: (r: any) => <Badge variant={r.status === 'POSTED' ? 'success' : r.status === 'VOID' ? 'neutral' : 'info'}>{r.status}</Badge> }]} data={row.fuel || []} keyExtractor={(r: any) => r.id} emptyMessage="No fuel logged." />
         <div className="text-sm font-semibold">Assignments</div>
@@ -58,7 +68,7 @@ const tabs: TabDef[] = [
     ],
     editFields: [{ name: 'make_model', label: 'Make / model', type: 'text' }, { name: 'insurance_expiry', label: 'Insurance expiry', type: 'date' }, { name: 'fitness_expiry', label: 'Fitness expiry', type: 'date' }],
     actions: [
-      { id: 'maintenance', label: 'Send to maintenance', when: ['ACTIVE'], fields: [{ name: 'status_note', label: 'What needs fixing', type: 'textarea', required: true }] },
+      { id: 'maintenance', label: 'Send to maintenance', when: ['ACTIVE'], fields: [{ name: 'status_note', label: 'What needs fixing', type: 'textarea', required: true }, { name: 'priority', label: 'Priority', type: 'select', options: opts('LOW', 'MEDIUM', 'HIGH', 'EMERGENCY'), hint: 'Opens a corrective work order in Maintenance.' }] },
       { id: 'reactivate', label: 'Back in service', variant: 'primary', when: ['IN_MAINTENANCE'] },
       { id: 'retire', label: 'Retire', variant: 'destructive', when: ['ACTIVE', 'IN_MAINTENANCE'], fields: [{ name: 'status_note', label: 'Reason', type: 'textarea', required: true }] },
     ],
