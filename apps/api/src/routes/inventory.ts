@@ -114,8 +114,8 @@ export function registerInventoryRoutes(app: Express): void {
     const itemId = optionalUuid(req.query.item_id, 'item_id');
     const r = await db.query(
       `SELECT l.id, l.item_id, i.code AS item_code, i.name AS item_name, l.received_date, l.layer_source, l.qty_original::text, l.qty_remaining::text, l.unit_cost::text,
-              (l.qty_remaining * l.unit_cost)::text AS remaining_value
-       FROM stock_cost_layers l JOIN items i ON i.id = l.item_id
+              (l.qty_remaining * l.unit_cost)::text AS remaining_value, w.code AS warehouse_code
+       FROM stock_cost_layers l JOIN items i ON i.id = l.item_id LEFT JOIN warehouses w ON w.id = l.warehouse_id
        WHERE l.organization_id = $1 AND l.qty_remaining > 0 AND ($2::uuid IS NULL OR l.item_id = $2::uuid)
        ORDER BY i.code, l.received_date, l.seq LIMIT 500`,
       [req.session!.organization_id, itemId ?? null],
@@ -308,7 +308,7 @@ export function registerInventoryRoutes(app: Express): void {
       const itemRows = await lockItems(tx, org, lines.map((l: any) => l.item_id));
       // Stock leaves the source warehouse on shipment (availability enforced).
       for (const l of lines) {
-        await postStockMovement(tx, {
+        const mv = await postStockMovement(tx, {
           organizationId: org,
           legalEntityId: req.session!.legal_entity_id,
           itemId: l.item_id,
@@ -321,6 +321,8 @@ export function registerInventoryRoutes(app: Express): void {
           referenceId: t.id,
           description: `Transfer ${t.transfer_number} shipped`,
         });
+        // FIFO: the destination layer is opened at the cost the stock actually left the source at.
+        await tx.query(`UPDATE stock_transfer_items SET unit_cost_out = $2 WHERE id = $1`, [l.id, mv.unit_cost]);
       }
       await tx.query(`UPDATE stock_transfer_items SET shipped_qty = requested_qty WHERE transfer_id = $1`, [t.id]);
       await audit(req, tx, 'TRANSFER_SHIPPED', 'STOCK_TRANSFER', t.id, { status: 'DRAFT' }, { status: 'IN_TRANSIT' });
@@ -352,7 +354,7 @@ export function registerInventoryRoutes(app: Express): void {
           movementType: 'TRANSFER_IN',
           movementDate: toIsoDate(t.transfer_date),
           quantity: new Money(l.shipped_qty).toFixed(8),
-          unitCost: itemRows.get(l.item_id).unit_cost,
+          unitCost: l.unit_cost_out ?? itemRows.get(l.item_id).unit_cost,
           referenceType: 'STOCK_TRANSFER',
           referenceId: t.id,
           description: `Transfer ${t.transfer_number} received`,

@@ -21,7 +21,8 @@ import { toIsoDate } from './validate.js';
  * Transfers are valuation-neutral and leave the layers untouched.
  */
 
-const LAYER_NEUTRAL = new Set(['TRANSFER_OUT', 'TRANSFER_IN']);
+/** No movement type is layer-neutral any more: transfers move layers between warehouses (migration 046). */
+const LAYER_NEUTRAL = new Set<string>([]);
 
 export interface StockMoveResult {
   id: string;
@@ -148,8 +149,9 @@ export async function postStockMovement(q: DbClient, input: StockMoveInput): Pro
     const layers = (
       await q.query(
         `SELECT id, qty_remaining::text, unit_cost::text FROM stock_cost_layers WHERE organization_id = $1 AND item_id = $2 AND qty_remaining > 0
+           AND ($3::uuid IS NULL OR warehouse_id = $3::uuid OR warehouse_id IS NULL)
          ORDER BY received_date, seq FOR UPDATE`,
-        [input.organizationId, input.itemId],
+        [input.organizationId, input.itemId, input.warehouseId ?? null],
       )
     ).rows;
     const r = fifoConsume(layers, qty.abs().toFixed(8), input.unitCost);
@@ -180,8 +182,8 @@ export async function postStockMovement(q: DbClient, input: StockMoveInput): Pro
   );
   if (fifo && qty.isPositive()) {
     await q.query(
-      `INSERT INTO stock_cost_layers (organization_id, item_id, stock_movement_id, received_date, qty_original, qty_remaining, unit_cost) VALUES ($1,$2,$3,$4,$5,$5,$6)`,
-      [input.organizationId, input.itemId, id, input.movementDate, qty.toFixed(8), unitCost],
+      `INSERT INTO stock_cost_layers (organization_id, item_id, stock_movement_id, received_date, qty_original, qty_remaining, unit_cost, warehouse_id) VALUES ($1,$2,$3,$4,$5,$5,$6,$7)`,
+      [input.organizationId, input.itemId, id, input.movementDate, qty.toFixed(8), unitCost, input.warehouseId ?? null],
     );
   }
   for (const t of takes) {

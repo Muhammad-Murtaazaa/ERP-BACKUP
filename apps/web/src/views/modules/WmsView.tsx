@@ -67,13 +67,14 @@ const CostLayers: React.FC<{ reloadKey: number; notify: (k: 'success' | 'danger'
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-slate-600">Open FIFO layers (oldest first, consumed in this order). Only maintained when the costing method is FIFO. Total layered value <span className="font-semibold">{fmtMoney(total.toFixed(2))}</span>.</p>
+        <p className="text-sm text-slate-600">Open FIFO layers per warehouse (oldest first, consumed in this order; transfers carry the shipped cost). Only maintained when the costing method is FIFO. Total layered value <span className="font-semibold">{fmtMoney(total.toFixed(2))}</span>.</p>
         <Button variant="secondary" onClick={reconcile} disabled={busy}>{busy ? 'Reconciling…' : 'Reconcile layers with on-hand'}</Button>
       </div>
       {err && <Alert variant="danger">{err}</Alert>}
       <Table
         columns={[
           { key: 'item_code', header: 'Item', render: (r: any) => <span><span className="font-mono">{r.item_code}</span> · {r.item_name}</span> },
+          { key: 'warehouse_code', header: 'Warehouse', render: (r: any) => r.warehouse_code || <span className="text-slate-500">any (org-wide)</span> },
           { key: 'received_date', header: 'Layer date', render: (r: any) => String(r.received_date).slice(0, 10) },
           { key: 'layer_source', header: 'Source', render: (r: any) => <Badge variant={r.layer_source === 'OPENING' ? 'warning' : 'info'}>{r.layer_source}</Badge> },
           { key: 'qty_remaining', header: 'Remaining', render: (r: any) => `${fmtQty(r.qty_remaining)} / ${fmtQty(r.qty_original)}` },

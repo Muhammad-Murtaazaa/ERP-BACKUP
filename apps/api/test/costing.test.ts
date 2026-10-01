@@ -132,4 +132,38 @@ describe('inventory costing method', () => {
     const left = (await db.query(`SELECT SUM(qty_remaining)::text q FROM stock_cost_layers WHERE item_id = $1`, [ma.id])).rows[0].q;
     expect(Number(left)).toBe(3);
   });
+
+  it('FIFO per warehouse: issues consume their warehouse’s layers; transfers carry the shipped cost (GL-neutral)', async () => {
+    const wh = async (code: string) => (await makeRequest('POST', '/api/inventory/warehouses', { code, name: `Branch ${code}` }, admin)).body.data;
+    const [wa, wb] = [await wh('FIFO-A'), await wh('FIFO-B')];
+    const it3 = await newItem('CAP-WH');
+    const recv = async (w: string, qty: string, price: string, date: string) => {
+      const po = await makeRequest('POST', '/api/procurement/orders', { party_id: vendor.id, po_date: date, lines: [{ item_id: it3.id, quantity: qty, unit_price: price }] }, controller);
+      await makeRequest('POST', `/api/procurement/orders/${po.body.data.id}/approve`, {}, admin);
+      expect((await makeRequest('POST', `/api/procurement/orders/${po.body.data.id}/receive`, { receipt_date: date, warehouse_id: w }, controller)).status).toBe(200);
+    };
+    await recv(wa.id, '10', '100', '2026-09-02');
+    await recv(wb.id, '10', '150', '2026-09-03');
+    const sell = async (w: string, qty: string) => {
+      const so = await makeRequest('POST', '/api/sales/orders', { party_id: customer.id, order_date: '2026-09-06', warehouse_id: w, lines: [{ item_id: it3.id, quantity: qty, unit_price: '500' }] }, controller);
+      await makeRequest('POST', `/api/sales/orders/${so.body.data.id}/confirm`, {}, controller);
+      const f = await makeRequest('POST', `/api/sales/orders/${so.body.data.id}/fulfill`, { shipment_date: '2026-09-06', warehouse_id: w }, admin);
+      expect(f.status, JSON.stringify(f.body)).toBe(200);
+      return (await db.query(`SELECT unit_cost::text c, total_value::text v FROM stock_movements WHERE reference_id = $1`, [so.body.data.id])).rows[0];
+    };
+    const s1 = await sell(wb.id, '5');
+    expect(Number(s1.c)).toBe(150); // org-wide FIFO would have taken branch A's older 100 layer
+    const tr = await makeRequest('POST', '/api/inventory/transfers', { source_warehouse_id: wa.id, destination_warehouse_id: wb.id, transfer_date: '2026-09-05', items: [{ item_id: it3.id, requested_qty: '4' }] }, admin);
+    expect(tr.status).toBe(201);
+    await makeRequest('POST', `/api/inventory/transfers/${tr.body.data.id}/ship`, {}, admin);
+    await makeRequest('POST', `/api/inventory/transfers/${tr.body.data.id}/receive`, {}, admin);
+    const mv = (await db.query(`SELECT quantity::text q, unit_cost::text c FROM stock_movements WHERE reference_id = $1 ORDER BY quantity`, [tr.body.data.id])).rows;
+    expect(mv.map((m: any) => [Number(m.q), Number(m.c)])).toEqual([[-4, 100], [4, 100]]);
+    const s2 = await sell(wb.id, '9'); // 5 × 150 (09-03) + 4 × 100 (transferred 09-05)
+    expect(Number(s2.v)).toBe(-1150);
+    const layers = (await db.query(`SELECT warehouse_id, SUM(qty_remaining)::text q, SUM(qty_remaining * unit_cost)::text v FROM stock_cost_layers WHERE item_id = $1 AND qty_remaining > 0 GROUP BY warehouse_id`, [it3.id])).rows;
+    expect(layers.map((l: any) => [l.warehouse_id, Number(l.q), Number(l.v)])).toEqual([[wa.id, 6, 600]]);
+    const ledger = (await db.query(`SELECT SUM(total_value)::text v FROM stock_movements WHERE item_id = $1`, [it3.id])).rows[0].v;
+    expect(Number(ledger)).toBe(600); // stock ledger value == remaining layers
+  });
 });
