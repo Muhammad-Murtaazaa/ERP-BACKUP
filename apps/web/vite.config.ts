@@ -20,4 +20,14 @@ export default defineConfig({
       '@omnysync/ui': path.resolve(__dirname, '../../packages/ui/src'),
     },
   },
+  build: {
+    target: 'esnext',
+    minify: 'esbuild',
+    sourcemap: false,
+    cssMinify: true,
+    chunkSizeWarningLimit: 2000,
+    rollupOptions: {
+      maxParallelFileOps: 2,
+    },
+  },
 });

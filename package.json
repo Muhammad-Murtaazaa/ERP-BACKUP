@@ -9,8 +9,8 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "start": "node apps/api/dist/index.js",
-    "start:prod": "node apps/api/dist/index.js",
+    "start": "node --max-old-space-size=380 apps/api/dist/index.js",
+    "start:prod": "node --max-old-space-size=380 apps/api/dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
