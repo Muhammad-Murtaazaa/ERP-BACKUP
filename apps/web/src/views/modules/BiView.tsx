@@ -174,9 +174,191 @@ const Explorer: React.FC = () => {
   );
 };
 
+
+type BW = { key: string; dataset: string; chart: string; measure: string; title: string };
+const CHART_OPTS = ['BAR', 'LINE', 'TABLE', 'KPI'];
+let bwSeq = 0;
+const bwKey = () => `w${++bwSeq}`;
+const selCls = 'h-8 rounded-md border border-[#C9CFDB] px-2 bg-white text-sm';
+
+/** Visual dashboard builder: drag datasets onto the canvas, drag cards to reorder, live previews. Saved through the same validated API. */
+const Builder: React.FC<{ notify: (k: any, t: string) => void }> = ({ notify }) => {
+  const [sets, setSets] = useState<any[]>([]);
+  const [boards, setBoards] = useState<any[]>([]);
+  const [sel, setSel] = useState<string>('');
+  const [widgets, setWidgets] = useState<BW[]>([]);
+  const [preview, setPreview] = useState<Record<string, any>>({});
+  const [drag, setDrag] = useState<{ kind: 'dataset' | 'card'; id: string } | null>(null);
+  const [over, setOver] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [newCode, setNewCode] = useState('');
+  const [newName, setNewName] = useState('');
+  const loadBoards = () => ApiClient.get('/bi/dashboards?status=ACTIVE').then((r: any) => setBoards(r));
+  useEffect(() => {
+    ApiClient.get('/bi/datasets').then((r: any) => setSets(r));
+    loadBoards();
+  }, []);
+  useEffect(() => {
+    const b = boards.find((x) => x.id === sel);
+    const list = b ? (typeof b.widgets === 'string' ? JSON.parse(b.widgets) : b.widgets) : [];
+    setWidgets(list.map((w: any) => ({ key: bwKey(), dataset: w.dataset, chart: w.chart, measure: w.measure, title: w.title })));
+    setErr(null);
+  }, [sel, boards]);
+  useEffect(() => {
+    for (const code of new Set(widgets.map((w) => w.dataset))) {
+      if (preview[code] !== undefined) continue;
+      setPreview((p) => ({ ...p, [code]: null }));
+      ApiClient.get(`/bi/datasets/${code}/query`).then((r: any) => setPreview((p) => ({ ...p, [code]: r }))).catch((e: any) => setPreview((p) => ({ ...p, [code]: { error: e.message } })));
+    }
+  }, [widgets]);
+  const ds = (code: string) => sets.find((s) => s.code === code);
+  const add = (code: string, before?: string) => {
+    const d = ds(code);
+    if (!d || !d.readable) return;
+    if (widgets.length >= 12) return setErr('A dashboard can hold at most 12 widgets.');
+    const w: BW = { key: bwKey(), dataset: code, chart: d.dimension === 'month' ? 'LINE' : 'BAR', measure: d.measures[0], title: d.name };
+    setWidgets((ws) => {
+      const i = before ? ws.findIndex((x) => x.key === before) : -1;
+      return i < 0 ? [...ws, w] : [...ws.slice(0, i), w, ...ws.slice(i)];
+    });
+  };
+  const move = (key: string, before: string | null) =>
+    setWidgets((ws) => {
+      const w = ws.find((x) => x.key === key);
+      if (!w || key === before) return ws;
+      const rest = ws.filter((x) => x.key !== key);
+      const i = before ? rest.findIndex((x) => x.key === before) : -1;
+      return i < 0 ? [...rest, w] : [...rest.slice(0, i), w, ...rest.slice(i)];
+    });
+  const shift = (key: string, d: number) =>
+    setWidgets((ws) => {
+      const i = ws.findIndex((x) => x.key === key);
+      const j = i + d;
+      if (i < 0 || j < 0 || j >= ws.length) return ws;
+      const out = [...ws];
+      [out[i], out[j]] = [out[j], out[i]];
+      return out;
+    });
+  const patch = (key: string, p: Partial<BW>) => setWidgets((ws) => ws.map((w) => (w.key === key ? { ...w, ...p } : w)));
+  const drop = (target: string | null) => {
+    if (!drag) return;
+    if (drag.kind === 'dataset') add(drag.id, target ?? undefined);
+    else move(drag.id, target);
+    setDrag(null);
+    setOver(null);
+  };
+  const payload = () => widgets.map(({ dataset, chart, measure, title }) => ({ dataset, chart, measure, title }));
+  const save = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      if (sel) {
+        const b = boards.find((x) => x.id === sel);
+        await ApiClient.post(`/bi/dashboards/${sel}/update`, { widgets: payload(), revision: b.revision });
+        notify('success', `${b.name} saved`);
+      } else {
+        const r: any = await ApiClient.post('/bi/dashboards', { code: newCode.trim().toUpperCase(), name: newName.trim(), visibility: 'PRIVATE', widgets: payload() });
+        notify('success', `${r.name} created`);
+        setSel(r.id);
+      }
+      await loadBoards();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4">
+      <Card className="p-3 flex flex-col gap-2 self-start">
+        <div className="text-xs font-semibold text-[#46536B]">Datasets — drag onto the canvas</div>
+        {sets.map((s) => (
+          <div
+            key={s.code}
+            draggable={s.readable}
+            onDragStart={() => setDrag({ kind: 'dataset', id: s.code })}
+            onDragEnd={() => { setDrag(null); setOver(null); }}
+            className={`flex items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-sm ${s.readable ? 'cursor-grab border-[#E3E6EE] bg-white hover:border-[#5940B8]' : 'opacity-50 cursor-not-allowed border-dashed border-[#E3E6EE]'}`}
+            title={s.readable ? s.description : 'No access to this dataset'}
+          >
+            <span className="truncate">{s.name}</span>
+            <button type="button" aria-label={`Add ${s.name}`} disabled={!s.readable} onClick={() => add(s.code)} className="h-6 w-6 shrink-0 rounded text-[#5940B8] hover:bg-[#EFEBFB] disabled:opacity-40">+</button>
+          </div>
+        ))}
+      </Card>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="font-medium">Dashboard</span>
+            <select className="h-9 rounded-md border border-[#C9CFDB] px-2 bg-white" value={sel} onChange={(e) => setSel(e.target.value)}>
+              <option value="">＋ New dashboard</option>
+              {boards.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </label>
+          {!sel && (
+            <>
+              <div className="w-36"><Input label="Code" value={newCode} placeholder="OPS-DAILY" onChange={(e) => setNewCode(e.target.value)} /></div>
+              <div className="w-56"><Input label="Name" value={newName} placeholder="Operations daily" onChange={(e) => setNewName(e.target.value)} /></div>
+            </>
+          )}
+          <Button onClick={save} disabled={busy || !widgets.length || (!sel && (!newCode.trim() || !newName.trim()))}>{busy ? 'Saving…' : sel ? 'Save layout' : 'Create dashboard'}</Button>
+          <span className="text-xs text-[#46536B]">{widgets.length}/12 widgets</span>
+        </div>
+        {err && <Alert variant="danger" title="Couldn’t save">{err}</Alert>}
+        <div
+          onDragOver={(e) => { e.preventDefault(); setOver('__end'); }}
+          onDrop={(e) => { e.preventDefault(); drop(null); }}
+          className={`grid grid-cols-1 xl:grid-cols-2 gap-3 rounded-lg border-2 border-dashed p-3 min-h-64 ${over === '__end' && drag ? 'border-[#5940B8] bg-[#F7F5FE]' : 'border-[#E3E6EE]'}`}
+        >
+          {!widgets.length && <p className="col-span-full py-16 text-center text-sm text-[#46536B]">Drag a dataset here (or press + next to it) to add your first widget.</p>}
+          {widgets.map((w, i) => {
+            const d = ds(w.dataset);
+            const pv = preview[w.dataset];
+            return (
+              <div
+                key={w.key}
+                draggable
+                onDragStart={(e) => { e.stopPropagation(); setDrag({ kind: 'card', id: w.key }); }}
+                onDragEnd={() => { setDrag(null); setOver(null); }}
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setOver(w.key); }}
+                onDrop={(e) => { e.preventDefault(); e.stopPropagation(); drop(w.key); }}
+                className={`rounded-lg border bg-white p-3 flex flex-col gap-2 ${over === w.key && drag ? 'border-[#5940B8] ring-2 ring-[#5940B8]/20' : 'border-[#E3E6EE]'}`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="cursor-grab select-none text-[#9AA3B5]" aria-hidden>⠿</span>
+                  <input aria-label="Widget title" className="flex-1 min-w-0 rounded border border-transparent px-1 text-sm font-semibold hover:border-[#E3E6EE] focus:border-[#5940B8] focus:outline-none" value={w.title} onChange={(e) => patch(w.key, { title: e.target.value })} />
+                  <button type="button" aria-label="Move up" disabled={i === 0} onClick={() => shift(w.key, -1)} className="h-6 w-6 rounded hover:bg-[#F2F4F8] disabled:opacity-30">↑</button>
+                  <button type="button" aria-label="Move down" disabled={i === widgets.length - 1} onClick={() => shift(w.key, 1)} className="h-6 w-6 rounded hover:bg-[#F2F4F8] disabled:opacity-30">↓</button>
+                  <button type="button" aria-label="Remove widget" onClick={() => setWidgets((ws) => ws.filter((x) => x.key !== w.key))} className="h-6 w-6 rounded text-[#B42318] hover:bg-[#FEF3F2]">✕</button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <select aria-label="Chart" className={selCls} value={w.chart} onChange={(e) => patch(w.key, { chart: e.target.value })}>{CHART_OPTS.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+                  <select aria-label="Measure" className={selCls} value={w.measure} onChange={(e) => patch(w.key, { measure: e.target.value })}>{(d?.measures || [w.measure]).map((m: string) => <option key={m} value={m}>{m.replace(/_/g, ' ')}</option>)}</select>
+                  <span className="self-center text-xs text-[#46536B]">{d?.name || w.dataset}</span>
+                </div>
+                {pv === undefined || pv === null ? (
+                  <p className="py-6 text-center text-xs text-[#46536B]">Loading preview…</p>
+                ) : pv.error ? (
+                  <Alert variant="warning">{pv.error}</Alert>
+                ) : (
+                  <Widget w={{ ...w, dimension: pv.dimension, measures: pv.measures, rows: pv.rows }} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const tabs: TabDef[] = [
   { id: 'dashboards', label: 'Dashboards', render: ({ reloadKey }) => <Dashboards reloadKey={reloadKey} /> },
   { id: 'explore', label: 'Dataset explorer', render: () => <Explorer /> },
+  { id: 'builder', label: 'Builder', render: ({ notify }) => <Builder notify={notify} /> },
   {
     id: 'manage',
     label: 'Manage dashboards',
@@ -196,7 +378,7 @@ const tabs: TabDef[] = [
       { name: 'name', label: 'Name', type: 'text', required: true },
       { name: 'description', label: 'Description', type: 'textarea' },
       { name: 'visibility', label: 'Visibility', type: 'select', options: [{ value: 'PRIVATE', label: 'Private (only me)' }, { value: 'SHARED', label: 'Shared (organisation)' }], default: 'PRIVATE' },
-      { name: 'widgets', label: 'Widgets (JSON)', type: 'json', required: true, default: '[{"dataset":"revenue_by_month","chart":"LINE"},{"dataset":"ar_aging","chart":"BAR"}]', hint: 'Datasets: see Dataset explorer. Charts: BAR, LINE, TABLE, KPI. Validated server-side.' },
+      { name: 'widgets', label: 'Widgets (JSON)', type: 'json', required: true, default: '[{"dataset":"revenue_by_month","chart":"LINE"},{"dataset":"ar_aging","chart":"BAR"}]', hint: 'Easier: use the Builder tab (drag and drop). Charts: BAR, LINE, TABLE, KPI. Validated server-side.' },
     ],
     editFields: [
       { name: 'name', label: 'Name', type: 'text' },
