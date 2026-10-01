@@ -4,6 +4,8 @@
  * at most once (unique key + invoice source key), catches up missed periods (bounded), skips
  * paused / cancelled subscriptions and never bills past end_date. Each subscription bills in its
  * own unit of work, so one failure (e.g. a closed period) does not block the rest of the run.
+ * Revenue: monthly plans recognise on invoice (411007). Quarterly / annual invoices credit
+ * Deferred Revenue (211010) and are recognised by days per calendar month (ADR-015 addendum).
  */
 import type { Express, Request, Response } from 'express';
 import { Permission, ErrorCode, AccountingPurpose } from '@omnysync/contracts';
@@ -16,6 +18,8 @@ import { requireModule } from '../lib/modules.js';
 import { dateOnly, int, todayIso, toIsoDate } from '../lib/validate.js';
 import { createPostedSourceInvoice } from '../lib/ar-invoice.js';
 import { nextDocumentNumber } from '../lib/numbering.js';
+import { postJournal } from '../lib/posting.js';
+import { auditLogger, outboxService } from '../context.js';
 
 const VIEW = [Permission.SUBSCRIPTION_VIEW, Permission.SUBSCRIPTION_MANAGE, Permission.SUBSCRIPTION_BILL];
 export const MONTHS: Record<string, number> = { MONTHLY: 1, QUARTERLY: 3, ANNUAL: 12 };
@@ -38,6 +42,64 @@ export function mrr(price: string, qty: number, discountPct: string, interval: s
   return periodNet(price, qty, discountPct).div(MONTHS[interval]).round(2);
 }
 
+/**
+ * Allocates an amount over [start, end] (inclusive) to calendar months by days; the last month
+ * absorbs rounding so the lines always sum to the amount.
+ */
+export function allocateByMonth(start: string, end: string, amount: string): { month_start: string; month_end: string; amount: string }[] {
+  const day = 86400000;
+  const s = Date.parse(`${start}T00:00:00Z`);
+  const e = Date.parse(`${end}T00:00:00Z`);
+  const total = Math.round((e - s) / day) + 1;
+  const out: { month_start: string; month_end: string; amount: string }[] = [];
+  let cursor = s;
+  let allocated = Money.zero();
+  while (cursor <= e) {
+    const d = new Date(cursor);
+    const mStart = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+    const mEnd = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0);
+    const segEnd = Math.min(mEnd, e);
+    const days = Math.round((segEnd - cursor) / day) + 1;
+    const last = segEnd === e;
+    const amt = last ? new Money(amount).sub(allocated) : new Money(amount).mul(days).div(total).round(2);
+    allocated = allocated.add(amt);
+    out.push({ month_start: new Date(mStart).toISOString().slice(0, 10), month_end: new Date(mEnd).toISOString().slice(0, 10), amount: amt.toFixed(2) });
+    cursor = segEnd + day;
+  }
+  return out;
+}
+
+/** Recognises due deferred revenue lines (recognize_on ≤ asOf) — one journal per line, idempotent by source key. */
+export async function recognizeRevenue(ctx: Ctx, asOf: string, subscriptionId?: string) {
+  const due = (
+    await ctx.tx.query(
+      `SELECT r.*, s.number AS sub_number FROM com_revenue_schedule r JOIN com_subscriptions s ON s.id = r.subscription_id
+       WHERE r.organization_id = $1 AND r.status = 'PENDING' AND r.recognize_on <= $2 AND ($3::uuid IS NULL OR r.subscription_id = $3::uuid)
+       ORDER BY r.recognize_on, s.number FOR UPDATE OF r`,
+      [ctx.org, asOf, subscriptionId ?? null],
+    )
+  ).rows;
+  let total = Money.zero();
+  for (const r of due) {
+    const amt = new Money(r.amount).round(2);
+    let journalId: string | null = null;
+    if (amt.isPositive()) {
+      const j = await postJournal(ctx.tx, auditLogger, outboxService, {
+        organizationId: ctx.org, legalEntityId: ctx.le, userId: ctx.user, postingDate: toIsoDate(r.recognize_on), purpose: AccountingPurpose.REVENUE_RECOGNITION,
+        description: `Revenue recognised ${r.sub_number} ${toIsoDate(r.month_start).slice(0, 7)}`, sourceType: 'COM_REVENUE', sourceId: r.id, sourceKey: `COM_REV:${r.id}`,
+        numberPrefix: 'JV-REV', correlationId: ctx.req.correlationId,
+        lines: [
+          { account_code: '211010', debit: amt.toFixed(8), description: `Deferred revenue released ${r.sub_number}` },
+          { account_code: '411007', credit: amt.toFixed(8), description: `Subscription revenue ${r.sub_number}` },
+        ],
+      });
+      journalId = j?.journalId ?? null;
+      total = total.add(amt);
+    }
+    await ctx.tx.query(`UPDATE com_revenue_schedule SET status = 'RECOGNISED', journal_id = $2, recognised_at = NOW() WHERE id = $1`, [r.id, journalId]);
+  }
+  return { recognised_lines: due.length, recognised_amount: total.toFixed(2) };
+}
 
 /** Bills every due period of one subscription inside the caller's unit of work (API run or automation job). */
 export async function billSubscription(ctx: Ctx, id: string, asOf: string, maxPeriods = 12) {
@@ -65,14 +127,25 @@ export async function billSubscription(ctx: Ctx, id: string, asOf: string, maxPe
     }
     const ins = await ctx.tx.query(`INSERT INTO com_billing_periods (organization_id, subscription_id, period_start, period_end, net_amount) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (subscription_id, period_start) DO NOTHING RETURNING id`, [ctx.org, s.id, next, pEnd, net.toFixed(8)]);
     if (ins.rows[0] && net.isPositive()) {
+      const deferred = step > 1;
       const qty = new Money(s.quantity).toFixed(4);
       const unit = net.div(s.quantity).round(4).toFixed(4);
       const inv = await createPostedSourceInvoice(ctx, {
         party_id: s.party_id, invoice_date: next <= asOf ? next : asOf, due_days: 15,
-        lines: [{ item_id: plan.item_id, description: `${plan.name} ${next} – ${pEnd}`, quantity: qty, unit_price: unit, tax_rate: new Money(plan.tax_rate).toFixed(3), revenue_account_code: '411007' }],
+        lines: [{ item_id: plan.item_id, description: `${plan.name} ${next} – ${pEnd}`, quantity: qty, unit_price: unit, tax_rate: new Money(plan.tax_rate).toFixed(3), revenue_account_code: deferred ? '211010' : '411007' }],
         sourceType: 'SUBSCRIPTION', sourceId: s.id, sourceKey: `COM:${s.id}:${next}`, notes: `Subscription ${s.number}`, purpose: AccountingPurpose.SUBSCRIPTION_INVOICE, prefix: 'INV',
       });
       await ctx.tx.query(`UPDATE com_billing_periods SET ar_invoice_id = $2 WHERE id = $1`, [ins.rows[0].id, inv?.id ?? null]);
+      if (deferred && inv) {
+        // The invoice line nets to qty × rounded unit price; allocate exactly what was credited to 211010.
+        const billedNet = new Money(unit).mul(qty).round(2).toFixed(2);
+        for (const m of allocateByMonth(next, pEnd, billedNet)) {
+          await ctx.tx.query(
+            `INSERT INTO com_revenue_schedule (organization_id, subscription_id, billing_period_id, month_start, recognize_on, amount) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (billing_period_id, month_start) DO NOTHING`,
+            [ctx.org, s.id, ins.rows[0].id, m.month_start, m.month_end, m.amount],
+          );
+        }
+      }
       if (inv) invoices.push(inv.invoice_number);
     }
     next = addMonths(next, step);
@@ -146,6 +219,7 @@ export function registerSubscriptionRoutes(app: Express): void {
     filters: ['plan_id', 'party_id'],
     detail: async (q, row) => ({
       periods: (await q.query(`SELECT b.*, i.invoice_number FROM com_billing_periods b LEFT JOIN ar_invoices i ON i.id = b.ar_invoice_id WHERE b.subscription_id = $1 ORDER BY b.period_start DESC`, [row.id])).rows,
+      revenue_schedule: (await q.query(`SELECT r.id, r.month_start, r.recognize_on, r.amount, r.status, j.journal_number FROM com_revenue_schedule r LEFT JOIN journals j ON j.id = r.journal_id WHERE r.subscription_id = $1 ORDER BY r.month_start`, [row.id])).rows,
     }),
     beforeCreate: async (ctx, v) => {
       if (new Money(v.discount_pct).gte(100)) throw validationError('discount_pct must be below 100', { field: 'discount_pct' });
@@ -222,6 +296,12 @@ export function registerSubscriptionRoutes(app: Express): void {
       }
     }
     return ok(req, res, { as_of: asOf, processed: results.length, invoices: results.reduce((a, r) => a + (r.invoices?.length || 0), 0), failed: results.filter((r) => r.error).length, results });
+  });
+
+  app.post('/api/com/revenue/recognize', authenticate, requireAnyPermission(Permission.SUBSCRIPTION_BILL), requireModule('COM', 'command'), async (req: Request, res: Response) => {
+    const asOf = req.body?.as_of ? dateOnly(req.body.as_of, 'as_of') : todayIso();
+    const out = await unitOfWork(req, (ctx) => recognizeRevenue(ctx, asOf));
+    return ok(req, res, { as_of: asOf, ...out });
   });
 
   app.get('/api/com/summary', authenticate, requireAnyPermission(...VIEW), async (req: Request, res: Response) => {

@@ -14,7 +14,7 @@ import { nextDocumentNumber } from '../lib/numbering.js';
 import { toIsoDate } from '../lib/validate.js';
 import { bankGlLines } from '../routes/treasury.js';
 import { addMonthsIso } from './schedule.js';
-import { billSubscription } from '../routes/subscriptions.js';
+import { billSubscription, recognizeRevenue } from '../routes/subscriptions.js';
 
 export interface DetectedAlert {
   dedupe_key: string;
@@ -393,7 +393,17 @@ async function subscriptionBilling({ q, orgId, today, config, rule }: JobContext
       alerts.push({ dedupe_key: `COM_BILLING_FAIL:${s.id}`, category: 'FINANCE', severity: 'CRITICAL', title: `Subscription ${s.number} could not be billed`, body: String(e?.message || e), entity_type: 'SUBSCRIPTION', entity_id: s.id });
     }
   }
-  return { summary: { due: due.length, invoices, billed, rule: rule?.code }, alerts, resolveScope: 'COM_BILLING_FAIL:' };
+  // Then release deferred revenue that has come due (quarterly / annual plans).
+  let revenue: any = null;
+  const le = (await q.query(`SELECT legal_entity_id, created_by FROM com_subscriptions WHERE organization_id = $1 ORDER BY created_at LIMIT 1`, [orgId])).rows[0];
+  if (le) {
+    try {
+      revenue = await q.transaction((tx) => recognizeRevenue({ req: { correlationId: crypto.randomUUID() } as any, tx, org: orgId, le: le.legal_entity_id, user: le.created_by }, today));
+    } catch (e: any) {
+      alerts.push({ dedupe_key: 'COM_BILLING_FAIL:REVENUE', category: 'FINANCE', severity: 'CRITICAL', title: 'Deferred subscription revenue could not be recognised', body: String(e?.message || e), entity_type: 'SUBSCRIPTION', entity_id: null });
+    }
+  }
+  return { summary: { due: due.length, invoices, billed, revenue, rule: rule?.code }, alerts, resolveScope: 'COM_BILLING_FAIL:' };
 }
 
 export const JOB_HANDLERS: Record<string, (ctx: JobContext) => Promise<JobResult>> = {

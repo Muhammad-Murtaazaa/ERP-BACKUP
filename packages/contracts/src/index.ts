@@ -86,6 +86,7 @@ export const AccountingPurpose = {
   LOAN_DISBURSEMENT: 'LOAN_DISBURSEMENT',
   LOAN_REPAYMENT: 'LOAN_REPAYMENT',
   SUBSCRIPTION_INVOICE: 'SUBSCRIPTION_INVOICE',
+  REVENUE_RECOGNITION: 'REVENUE_RECOGNITION',
   TAX_SETTLEMENT: 'TAX_SETTLEMENT',
 } as const;
 export type AccountingPurpose = (typeof AccountingPurpose)[keyof typeof AccountingPurpose];

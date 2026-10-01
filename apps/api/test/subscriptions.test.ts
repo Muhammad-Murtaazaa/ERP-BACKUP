@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { bootstrap, login, makeRequest, db } from './harness.js';
-import { addMonths, mrr, periodNet } from '../src/routes/subscriptions.js';
+import { addMonths, allocateByMonth, mrr, periodNet } from '../src/routes/subscriptions.js';
 import { JOB_HANDLERS } from '../src/automation/jobs.js';
 import { ensureDefaultRules } from '../src/automation/engine.js';
 
@@ -12,6 +12,15 @@ describe('COM pure rules', () => {
     expect(periodNet('12000', 2, '10').toFixed(2)).toBe('21600.00');
     expect(mrr('12000', 1, '0', 'QUARTERLY').toFixed(2)).toBe('4000.00');
     expect(mrr('180000', 1, '0', 'ANNUAL').toFixed(2)).toBe('15000.00');
+  });
+  it('deferred revenue is allocated to calendar months by days and always sums to the billed amount', () => {
+    const a = allocateByMonth('2026-08-15', '2026-11-14', '12000.00');
+    expect(a.map((x) => [x.month_start, x.amount])).toEqual([['2026-08-01', '2217.39'], ['2026-09-01', '3913.04'], ['2026-10-01', '4043.48'], ['2026-11-01', '1826.09']]);
+    expect(a[0].month_end).toBe('2026-08-31');
+    const y = allocateByMonth('2026-01-01', '2026-12-31', '100.00');
+    expect(y.length).toBe(12);
+    expect(y.reduce((t, x) => t + Math.round(Number(x.amount) * 100), 0)).toBe(10000);
+    expect(allocateByMonth('2026-02-10', '2026-02-20', '50.00')).toEqual([{ month_start: '2026-02-01', month_end: '2026-02-28', amount: '50.00' }]);
   });
 });
 
@@ -129,5 +138,28 @@ describe('COM API', () => {
     const r3 = await JOB_HANDLERS.SUBSCRIPTION_BILLING(ctx);
     expect(r3.alerts.some((a) => a.dedupe_key === `COM_BILLING_FAIL:${bad.id}` && a.severity === 'CRITICAL')).toBe(true);
     await makeRequest('POST', `/api/com/subscriptions/${bad.id}/cancel`, { cancel_reason: 'cleanup' }, acct);
+  });
+
+  it('quarterly plans defer revenue to 211010 and recognise it monthly by days, once', async () => {
+    const s = await sub({ plan_id: plan('AMC-PLUS').id, start_date: '2026-08-15' });
+    expect((await makeRequest('POST', `/api/com/subscriptions/${s.id}/activate`, {}, acct)).status).toBe(200);
+    const run = await makeRequest('POST', '/api/com/billing-run', { as_of: '2026-08-15' }, acct);
+    expect(run.body.data.results.find((r: any) => r.subscription === s.number).invoices.length).toBe(1);
+    const credits = async (code: string, sourceType: string) =>
+      Number((await db.query(`SELECT COALESCE(SUM(jl.base_credit),0)::text c FROM journal_lines jl JOIN journals j ON j.id = jl.journal_id JOIN accounts a ON a.id = jl.account_id WHERE j.source_type = $3 AND a.code = $1 AND (j.source_id = $2 OR j.source_id IN (SELECT id FROM com_revenue_schedule WHERE subscription_id = $2))`, [code, s.id, sourceType])).rows[0].c);
+    expect(await credits('211010', 'SUBSCRIPTION')).toBe(12000);
+    expect(await credits('411007', 'SUBSCRIPTION')).toBe(0);
+    const sched = (await makeRequest('GET', `/api/com/subscriptions/${s.id}`, undefined, acct)).body.data.revenue_schedule;
+    expect(sched.map((r: any) => Number(r.amount))).toEqual([2217.39, 3913.04, 4043.48, 1826.09]);
+    expect((await makeRequest('POST', '/api/com/revenue/recognize', { as_of: '2026-09-30' }, viewer)).status).toBe(403);
+    const r1 = await makeRequest('POST', '/api/com/revenue/recognize', { as_of: '2026-09-30' }, acct);
+    expect(r1.status).toBe(200);
+    expect(await credits('411007', 'COM_REVENUE')).toBe(6130.43);
+    const r2 = await makeRequest('POST', '/api/com/revenue/recognize', { as_of: '2026-09-30' }, acct);
+    expect(r2.body.data.recognised_lines).toBe(0);
+    expect(await credits('411007', 'COM_REVENUE')).toBe(6130.43);
+    const after = (await makeRequest('GET', `/api/com/subscriptions/${s.id}`, undefined, acct)).body.data.revenue_schedule;
+    expect(after.map((r: any) => r.status)).toEqual(['RECOGNISED', 'RECOGNISED', 'PENDING', 'PENDING']);
+    expect(after[0].journal_number).toBeTruthy();
   });
 });

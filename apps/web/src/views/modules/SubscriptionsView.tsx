@@ -12,6 +12,20 @@ const BillingRun: React.FC<{ notify: (k: any, t: string) => void }> = ({ notify 
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<any | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [rev, setRev] = useState<any | null>(null);
+  const recognise = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await ApiClient.post('/com/revenue/recognize', { as_of: asOf });
+      setRev(r);
+      notify('success', `Recognised ${r.recognised_lines} month(s) of deferred revenue`);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const run = async () => {
     setBusy(true);
     setErr(null);
@@ -27,11 +41,13 @@ const BillingRun: React.FC<{ notify: (k: any, t: string) => void }> = ({ notify 
   };
   return (
     <div className="flex flex-col gap-4 max-w-4xl">
-      <p className="text-sm text-[#5B6472]">Bills every active subscription whose next bill date is on or before the run date, in advance, one invoice per period (DR receivables / CR subscription revenue 411007 + output tax). Re-running is safe: a period is never billed twice, and a failure on one subscription (e.g. a closed period) does not block the others.</p>
+      <p className="text-sm text-[#5B6472]">Bills every active subscription whose next bill date is on or before the run date, in advance, one invoice per period (DR receivables / CR revenue 411007 for monthly plans, or Deferred Revenue 211010 for quarterly / annual plans, + output tax). Deferred revenue is released month by month (by days) with “Recognise revenue”; the daily COM-BILLING job does both. Re-running is safe: a period is never billed twice, and a failure on one subscription (e.g. a closed period) does not block the others.</p>
       <div className="flex items-end gap-3">
         <Input label="Bill up to" type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} />
         <Button onClick={run} disabled={busy}>{busy ? 'Running…' : 'Run billing'}</Button>
+        <Button variant="secondary" onClick={recognise} disabled={busy}>Recognise revenue</Button>
       </div>
+      {rev && <Alert variant="success">{`Up to ${rev.as_of}: ${rev.recognised_lines} schedule line(s), PKR ${rev.recognised_amount} moved from deferred to subscription revenue.`}</Alert>}
       {err && <Alert variant="danger">{err}</Alert>}
       {result && (
         <Table
@@ -82,6 +98,12 @@ const tabs: TabDef[] = [
       <div className="flex flex-col gap-2">
         <div className="text-sm font-semibold">Billed periods</div>
         <Table columns={[{ key: 'period_start', header: 'From', render: (r: any) => String(r.period_start).slice(0, 10) }, { key: 'period_end', header: 'To', render: (r: any) => String(r.period_end).slice(0, 10) }, { key: 'net_amount', header: 'Net', align: 'right', render: (r: any) => fmtMoney(r.net_amount) }, { key: 'invoice_number', header: 'Invoice' }]} data={row.periods || []} keyExtractor={(r: any) => r.id} emptyMessage="Not billed yet." />
+        {(row.revenue_schedule || []).length > 0 && (
+          <>
+            <div className="text-sm font-semibold">Revenue recognition (deferred)</div>
+            <Table columns={[{ key: 'month_start', header: 'Month', render: (r: any) => String(r.month_start).slice(0, 7) }, { key: 'amount', header: 'Amount', align: 'right', render: (r: any) => fmtMoney(r.amount) }, { key: 'status', header: 'Status', render: (r: any) => <Badge size="sm" variant={r.status === 'RECOGNISED' ? 'success' : 'neutral'}>{r.status}</Badge> }, { key: 'journal_number', header: 'Journal' }]} data={row.revenue_schedule} keyExtractor={(r: any) => r.id} />
+          </>
+        )}
       </div>
     ),
     createLabel: 'New subscription',
