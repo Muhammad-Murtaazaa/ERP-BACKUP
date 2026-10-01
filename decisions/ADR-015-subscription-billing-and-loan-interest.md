@@ -33,3 +33,20 @@ Status: accepted • 1 October 2026
 - Known gaps:
   - Cancelling mid-period doesn't credit or reverse unrecognised revenue. The remaining lines keep recognising.
   - There is no mid-period upgrade proration.
+
+## Addendum 2 (round 2, final): cancellation, plan changes, loan automation and accrual
+
+- **Cancellation (migration 041).** Cancelling a quarterly or annual plan settles its PENDING schedule lines as of `effective_date` (today or earlier) in one journal with key `COM_CANCEL:<id>`:
+  - Lines that are already due are recognised as normal.
+  - The current line is earned pro rata by days.
+  - The unearned remainder goes to **211006 Customer Advances** (`REFUND`, the default) or to revenue (`FORFEIT`).
+  - Settled lines are marked `RELEASED` and are never recognised again.
+- **Plan change (migration 044).** `POST /api/com/subscriptions/:id/change-plan` works within the same billing cycle:
+  - **Upgrade:** invoices `(new − old) × remaining/total days` of the current billed period at once, as an `UPGRADE` billing period. It is deferred and scheduled for quarterly and annual plans, and the plan switches immediately.
+  - **Downgrade:** is queued (`pending_plan_id`) and applied by the billing run on the next bill date. No credit notes are issued.
+  - Only one change per day is allowed.
+- **Loans (migrations 040, 045).**
+  - The `LND-LATE-FEES` A3 job assesses late fees daily.
+  - With `lnd.interest_basis = ACCRUAL`, the job (or `POST /api/lnd/interest/accrue`) first accrues each instalment's interest on its due date: DR 112005 / CR 411006, once per instalment.
+  - Collections credit 112005 for accrued instalments, and 411006 only for instalments that were not accrued.
+  - CASH stays the default.

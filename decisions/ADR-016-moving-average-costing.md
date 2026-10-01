@@ -30,3 +30,21 @@ All issues already value at `items.unit_cost`, so they now cost at the current a
 - Known gaps:
   - Cycle-count adjustments still post their GL from the count sheet value (item cost); their movements consume layers by quantity.
   - There is no opening-layer migration tool and no FIFO cost on landed-cost or price-variance adjustments.
+
+## Addendum 2 (round 2, final): opening layers, per-warehouse layers, count valuation
+
+These close the FIFO gaps listed above (migrations 043, 046):
+
+- **Opening layers.** Switching `inventory.costing_method` to FIFO now calls `reconcileFifoLayers`, which aligns open layers with on-hand stock for each item:
+  - Missing quantity gets an `OPENING` layer at the item's current cost. The layer is dated at the item's first movement, or the day before its oldest open layer, so it is consumed first.
+  - Surplus layer quantity, left over from issues made under another method, is trimmed oldest-first.
+  - It is valuation-neutral: no movement and no journal are created.
+  - The same tool is available as `POST /api/inventory/fifo/reconcile-layers` (FIFO only, otherwise 409), and is idempotent.
+- **Per-warehouse layers.**
+  - Inbound movements open a layer in their warehouse.
+  - Issues consume that warehouse's layers plus warehouse-agnostic (`NULL`) layers, i.e. legacy and opening layers.
+  - Transfers are no longer layer-neutral. The shipment consumes source layers, and its cost is stored on `stock_transfer_items.unit_cost_out`. The receipt opens a destination layer at that cost, so the stock ledger stays equal to the layers and the GL stays neutral.
+- **Cycle counts.** The adjustment journal now posts at the summed `total_value` of the variance movements (the FIFO layer cost), and the count's `total_variance_value` is updated to match.
+- **Remaining limits:**
+  - Opening and legacy layers are warehouse-agnostic.
+  - There is no FIFO on landed-cost or price-variance adjustments.

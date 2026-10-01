@@ -61,7 +61,7 @@
   - Decimal-safe display: 107 `parseFloat` uses replaced.
   - `Column.accessor` is now rendered; 52 columns previously showed raw fields.
 
-## Overnight pass, round 2 (same branch, 2026-10-01 03:57–05:30 PKT)
+## Overnight pass, round 2 (same branch, 2026-10-01 03:57–~07:00 PKT)
 Shared **resource kit** (`apps/api/src/lib/resource.ts`, ADR-012) and **ModuleWorkspace** UI (`apps/web/src/views/kit/ModuleWorkspace.tsx`). Every new module gets the same things: list/search/filter/paging, Drawer forms with Comboboxes, optimistic `revision` checks, state-machine commands with SoD, audit and outbox events, `requireModule` lifecycle guards, org-scoped refs (a foreign or missing ref returns 400 with `details.field`), and an idempotent seeder.
 
 | Code | Module | Migration | Status | Built, and tested in `apps/api/test/*` |
@@ -70,69 +70,78 @@ Shared **resource kit** (`apps/api/src/lib/resource.ts`, ADR-012) and **ModuleWo
 | TAX | Tax Compliance | 016 | Built | Tax codes and rates by date, return periods, filing lock |
 | WMS | Warehouse Execution | 017 | Built | Putaway/pick tasks, wave picking, bin capacity |
 | AUT | Automation | 018 | Built | Event-triggered rules alongside scheduled rules; visual rule builder (Workflow Studio). Actions are ALERT/TASK only (ADR-013) |
-| SRV | Field Service | 019 | Built | Cases, SLA business-hours clock, dispatch, work orders, parts issue with stock and COGS, billing, contracts/PM |
+| SRV | Field Service | 019 | Built | Cases, SLA business-hours clock (org.timezone, Intl), dispatch board, work orders, parts issue with stock and COGS, billing, contracts/PM, SRV-SLA-PM job |
 | CRM | CRM & Pipeline | 020 | Built | Leads, opportunities, kanban, win → SRV installation case, event rule |
-| TIM | Time & Attendance | 021 | Built | Timesheets with overlap guard, overtime, approval SoD, period-guarded posting, leave |
-| SUP | Supplier Management | 022 | Built | Onboarding, blocking (PO create refuses blocked suppliers), scorecards |
+| TIM | Time & Attendance | 021, 034 | Built | Timesheets with overlap guard, overtime, approval SoD, period-guarded posting, leave; employee↔user link with technician self-service scope (own rows, picker, summary) |
+| SUP | Supplier Management | 022, 036, 042 | Built | Onboarding, blocking (PO create refuses blocked suppliers), scorecards with delivery (receipts vs expected), price (PO vs 12-month market index) and quality (QM usage decisions on the supplier's PO lots) derived when omitted |
 | LOG | Logistics | 023 | Built | Carriers, shipments, freight posting |
-| BI | BI Dashboards | 024 | Built | 8 governed datasets, dashboards, widgets |
-| DOC | Documents | 025 | Built | Versions with SHA-256 tamper check, legal hold, retention purge |
-| FLT | Fleet | 026 | Built | Vehicles, conflict-free assignments, odometer-checked fuel posting |
-| COM | Subscriptions & AMC | 027 | Built | Plans; idempotent catch-up billing run (unique subscription + period); prorated final period; per-subscription isolation; optional AMC contract in SRV; MRR/ARR |
-| EPM | Budgets & Planning | 028 | Built | Versioned P&L budgets by account and month; SoD approval; BUDGET_LOCKED; revise → v+1; budget vs actual from posted journals |
-| LND | Customer Financing | 029 | Built | Annuity and equal-principal schedules (last instalment absorbs rounding); maker-checker; one-time disbursement; interest-first repayments; payoff closes |
+| BI | BI Dashboards | 024 | Built | 8 governed datasets, dashboards, widgets; visual drag-and-drop builder (palette → canvas, drag/keyboard reorder, live previews, validated save) |
+| DOC | Documents | 025 | Built | Versions with SHA-256 tamper check, legal hold, retention purge; per-type searchable link picker with record labels; binary download tested |
+| FLT | Fleet | 026, 037 | Built | Vehicles, conflict-free assignments, odometer-checked fuel posting; send-to-maintenance opens an EAM corrective work order, reactivation blocked until it is closed |
+| COM | Subscriptions & AMC | 027, 033, 038, 041, 044 | Built | Plans; idempotent billing (run + COM-BILLING job); quarterly/annual revenue deferral and monthly recognition; cancellation settles unearned revenue (refund credit or forfeit); mid-term upgrade proration / queued downgrade; optional AMC contract in SRV; MRR/ARR |
+| EPM | Budgets & Planning | 028 | Built | Versioned P&L budgets by account and month; SoD approval; BUDGET_LOCKED; revise → v+1; budget vs actual; PO budget control on approval (OFF/WARN/BLOCK) |
+| LND | Customer Financing | 029, 039, 040, 045 | Built | Annuity and equal-principal schedules; maker-checker; disbursement; late fees (flat, grace days, fee → interest → principal) + LND-LATE-FEES job; optional accrual-basis interest (112005); payoff closes |
 | GRC | Risk & Compliance | 030 | Built | Risk register (inherent/residual, appetite-gated acceptance); evidence-based control tests (FAIL → deficient + incident); incidents with SoD close; heatmap |
-| TAL | Recruitment | 031 | Built | Approved requisitions with salary band; candidates; pipeline; scored interviews gate offers; hire → employee record; capacity guard |
-| INV | Moving-average costing | 032 | Built | `inventory.costing_method = MOVING_AVERAGE` re-costs on purchase receipt with an `item_cost_changes` audit trail; issues and COGS use the average |
+| TAL | Recruitment | 031 | Built | Approved requisitions with salary band; candidates with CV/documents via DOC; pipeline; scored interviews gate offers; hire → employee record; capacity guard |
+| INV | Costing: moving average + FIFO | 032, 035, 043, 046 | Built | `inventory.costing_method` STANDARD / MOVING_AVERAGE / FIFO. FIFO: per-warehouse layers, opening layers on switch + reconcile tool, transfers carry shipped cost, every issue (sales, POS, SRV, MFG, EAM, QM scrap, counts) posts GL at the issued value; layers view in WMS |
 
-### Honest partials
-- **FIFO costing** is not implemented. Only STANDARD and MOVING_AVERAGE exist, and moving average re-costs only on PO receipts. Transfers, counts and returns use the current average.
-- **TIM:** technicians can create timesheets for any employee, because employees have no link to a user.
-- **SUP:** scorecard quality, price and service scores are entered manually; only delivery is derived from receipts.
-- **BI:** the 8 datasets are fixed in code, and widgets are edited as JSON. There is no drag-and-drop builder.
-- **DOC:** the entity link is a raw id in the UI. Binary download has no API test (makeRequest parses only JSON), but the tamper 500 and purged 410 cases are tested.
-- **FLT:** maintenance is a vehicle status only and is not linked to PM work orders.
-- **SRV:** the SLA clock uses a fixed +05:00 offset, which is correct for PKT because it has no DST.
-- **EPM:** the fiscal year is the calendar year. Budgets cover P&L accounts only; there is no cost-centre dimension and no PO budget-availability check.
-- **LND:** interest is recognised on a cash basis when it is collected. There is no accrual, penalty interest or restructuring.
-- **COM:** billing is in advance on the anniversary. There is no mid-period upgrade proration and no automatic scheduled run; it is triggered manually or via the API.
-- **TAL:** there is no candidate self-service portal and no CV file upload (DOC could hold the files).
+### Honest partials (final, round 2)
+- **FIFO:** opening and legacy layers are warehouse-agnostic (any warehouse can consume them). There is no FIFO on landed-cost or price-variance adjustments.
+- **SUP:** the service score is still manual. Quality is derived only from lots created against a PO; manual and production lots carry no supplier.
+- **BI:** the 8 datasets are fixed in code. The builder is UI-only over the existing validated API; its reorder logic is unit-tested, and the drag-and-drop flow was verified with a Playwright run, not an automated suite.
+- **DOC:** the link-targets endpoint exposes record labels to DOC_MANAGE users only.
+- **SRV:** the timezone offset is taken when the SLA is calculated, so it is approximate across a DST change. PKT has no DST.
+- **EPM:** the fiscal year is the calendar year and there are no cost-centre dimensions. The PO check covers non-inventory expense lines on accounts that have budget lines.
+- **LND:** the late fee is flat only. There is no penalty interest or restructuring. Accrual is per instalment on its due date, not daily.
+- **COM:** a plan change must keep the billing cycle. Downgrades issue no credit, and the cancellation refund is a liability (211006), not an automatic credit note. Monthly plans recognise revenue on the invoice.
+- **TAL:** there is no candidate self-service portal.
+- **Navigation:** the sidebar hides the 17 new module workspaces plus Automation and Audit from users who lack the read permission. The legacy core screens (POS, sales, purchasing, QM, PM, HRM, payroll, treasury, …) are not gated yet; such users see the screen with 403 error states.
 
-## Verified Capabilities (actual command output, 2026-10-01 05:2x PKT)
-- `npx vitest run`: **26 files, 240 tests, all passing**.
+### Bugs found and fixed in round 2
+- Settings: the list and `getSetting` crashed or mis-parsed string-valued JSONB settings.
+- TIM seeder: it assumed `users.organization_id`; it now joins memberships.
+- TAL candidate drawer: it showed `[object Object]` for applications.
+- **Pre-existing since master:** the QM, Projects, Fixed Assets and Plant Maintenance screens always showed empty lists, because `ApiClient` already unwraps `data`. This is fixed with an `asRows` helper and a test.
+- **Pre-existing:** the Projects screen called the non-existent `/finance/periods`; the 404 aborted the whole load.
+- BI views: fetch errors became unhandled rejections (for example, technicians with no BI permission).
 
-  | New test file (round 2) | Tests |
+## Verified Capabilities (actual command output, 2026-10-01 ~06:50 PKT)
+- `npx vitest run`: **29 files, 267 tests, all passing**.
+
+  | Test file (round 2) | Tests |
   | --- | --- |
   | `partials.test.ts` (ADM/CFG/TAX/WMS/AUT) | 12 |
-  | `service.test.ts` | 10 |
+  | `service.test.ts` | 11 |
   | `crm.test.ts` | 5 |
-  | `time.test.ts` | 4 |
-  | `supplier.test.ts` | 4 |
+  | `time.test.ts` | 5 |
+  | `supplier.test.ts` | 6 |
   | `logistics.test.ts` | 2 |
   | `bi.test.ts` | 5 |
-  | `documents.test.ts` | 3 |
-  | `fleet.test.ts` | 3 |
-  | `subscriptions.test.ts` | 6 |
-  | `budgets.test.ts` | 4 |
-  | `lending.test.ts` | 5 |
+  | `documents.test.ts` | 4 |
+  | `fleet.test.ts` | 4 |
+  | `subscriptions.test.ts` | 11 |
+  | `budgets.test.ts` | 5 |
+  | `lending.test.ts` | 8 |
   | `grc.test.ts` | 5 |
-  | `talent.test.ts` | 4 |
-  | `costing.test.ts` | 3 |
+  | `talent.test.ts` | 5 |
+  | `costing.test.ts` | 8 |
+  | web: `reorder`, `as-rows`, `nav-perms` | 2 + 1 + 3 |
 
 - `npx tsc --noEmit -p .` and `npm run lint`: 0 errors.
-- `npm run build`: exit 0, with **no chunk-size warning**. Views are `React.lazy`-split; the largest chunk is `index` at 207 kB (65 kB gzip), down from 680 kB.
-- Screenshots: `/workspace/erp-screens/after` has 74 PNGs, including 38 `mod-*` module shots.
+- `npm run build`: exit 0 with **no chunk-size warning**. The largest chunk is `index` at 208 kB (65 kB gzip).
+- Screenshots: `/workspace/erp-screens/after` holds 88 PNGs, 52 of them `mod-*` (mod-01…mod-34).
 
 ### Intentional test changes
 - `packages/platform/test/platform.test.ts`: the user count went from 7 to 10 (new personas: service, tech, hr).
-- `apps/api/test/automation.test.ts`: the rule count went from 11 to 12 (new `SRV-SLA-PM` job).
+- `apps/api/test/automation.test.ts`: the rule count went from 11 to 14 (new `SRV-SLA-PM`, `COM-BILLING` and `LND-LATE-FEES` jobs).
+- The test harness gained `send()` and response headers for the binary download test.
 
 ## Blockers
 - None for the build.
 - `npm audit` still reports 5 advisories, all in dev tooling: vite, esbuild, vite-node, vitest and @vitest/mocker. Every fix requires a major upgrade, so it was deferred. None of these packages ship in production bundles.
 
 ## Last Actual Checks
-- `npx vitest run`: 26 files, 240 passed.
+- `npx vitest run`: 29 files, 267 passed.
 - `npm run build`: exit 0, no warnings.
 - `npm run lint`: exit 0.
 
