@@ -144,6 +144,7 @@ export function registerProcurementRoutes(app: Express): void {
             referenceType: 'PURCHASE_ORDER',
             referenceId: po.id,
             description: `Goods receipt for ${po.po_number}`,
+            revalue: true,
           });
           const acc = item.inventory_account_id || defaultInv;
           byAccount.set(acc, (byAccount.get(acc) || Money.zero()).add(value));

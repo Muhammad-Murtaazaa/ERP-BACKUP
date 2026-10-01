@@ -1,0 +1,64 @@
+import { describe, it, expect, beforeAll } from 'vitest';
+import { bootstrap, login, makeRequest, db } from './harness.js';
+import { movingAverage } from '../src/lib/stock.js';
+
+describe('moving-average maths', () => {
+  it('weights by quantity and resets when stock is not positive', () => {
+    expect(Number(movingAverage('10', '100', '10', '130'))).toBe(115);
+    expect(Number(movingAverage('30', '100', '10', '140'))).toBe(110);
+    expect(Number(movingAverage('0', '100', '5', '90'))).toBe(90);
+    expect(Number(movingAverage('-2', '100', '5', '90'))).toBe(90);
+  });
+});
+
+describe('inventory costing method', () => {
+  let admin: string;
+  let controller: string;
+  let vendor: any;
+  let customer: any;
+  beforeAll(async () => {
+    await bootstrap();
+    [admin, controller] = await Promise.all(['admin', 'controller'].map((u) => login(`${u}@omnysync.internal`)));
+    vendor = (await makeRequest('GET', '/api/parties?type=VENDOR', undefined, admin)).body.data[0];
+    customer = (await db.query(`SELECT id FROM parties WHERE party_type IN ('CUSTOMER','BOTH') ORDER BY code LIMIT 1`)).rows[0];
+  });
+  const newItem = async (code: string) => (await makeRequest('POST', '/api/items', { code, name: `Capacitor ${code}`, item_type: 'INVENTORY', uom: 'EA', unit_price: '500', unit_cost: '100' }, admin)).body.data;
+  const receive = async (itemId: string, qty: string, price: string) => {
+    const po = await makeRequest('POST', '/api/procurement/orders', { party_id: vendor.id, po_date: '2026-09-01', lines: [{ item_id: itemId, quantity: qty, unit_price: price }] }, controller);
+    await makeRequest('POST', `/api/procurement/orders/${po.body.data.id}/approve`, {}, admin);
+    const r = await makeRequest('POST', `/api/procurement/orders/${po.body.data.id}/receive`, { receipt_date: '2026-09-02' }, controller);
+    expect(r.status).toBe(200);
+  };
+  const cost = async (id: string) => Number((await db.query(`SELECT unit_cost::text c FROM items WHERE id = $1`, [id])).rows[0].c);
+
+  it('STANDARD (default) keeps the item cost on receipt', async () => {
+    const it0 = await newItem('CAP-STD');
+    await receive(it0.id, '10', '130');
+    expect(await cost(it0.id)).toBe(100);
+    expect((await db.query(`SELECT COUNT(*)::int n FROM item_cost_changes WHERE item_id = $1`, [it0.id])).rows[0].n).toBe(0);
+  });
+
+  it('MOVING_AVERAGE re-costs on receipt, and later issues (COGS) use the average', async () => {
+    const r = await makeRequest('POST', '/api/config/settings/inventory.costing_method', { value: 'MOVING_AVERAGE', version: 0, reason: 'Volatile copper prices' }, admin);
+    expect(r.status).toBe(200);
+    const it1 = await newItem('CAP-MA');
+    await receive(it1.id, '10', '100'); // no prior stock -> 100
+    expect(await cost(it1.id)).toBe(100);
+    await receive(it1.id, '10', '130'); // (10×100 + 10×130) / 20
+    expect(await cost(it1.id)).toBe(115);
+    const hist = (await db.query(`SELECT qty_before::text, old_cost::text, receipt_cost::text, new_cost::text FROM item_cost_changes WHERE item_id = $1 ORDER BY created_at`, [it1.id])).rows;
+    expect(hist.map((h: any) => Number(h.new_cost))).toEqual([100, 115]);
+    expect(Number(hist[1].qty_before)).toBe(10);
+    // Ship 4 units: stock movement and COGS valued at 115.
+    const so = await makeRequest('POST', '/api/sales/orders', { party_id: customer.id, order_date: '2026-09-03', lines: [{ item_id: it1.id, quantity: '4', unit_price: '500' }] }, controller);
+    await makeRequest('POST', `/api/sales/orders/${so.body.data.id}/confirm`, {}, controller);
+    const f = await makeRequest('POST', `/api/sales/orders/${so.body.data.id}/fulfill`, { shipment_date: '2026-09-03' }, admin);
+    expect(f.status).toBe(200);
+    const mv = (await db.query(`SELECT unit_cost::text c, total_value::text v FROM stock_movements WHERE item_id = $1 AND quantity < 0`, [it1.id])).rows[0];
+    expect(Number(mv.c)).toBe(115);
+    expect(Number(mv.v)).toBe(-460);
+    // Remaining 16 @ 115 + 4 @ 160 -> (1840 + 640) / 20 = 124
+    await receive(it1.id, '4', '160');
+    expect(await cost(it1.id)).toBe(124);
+  });
+});
