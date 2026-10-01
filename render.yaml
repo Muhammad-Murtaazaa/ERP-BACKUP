@@ -23,3 +23,5 @@ services:
         value: "true"
       - key: KEEP_ALIVE_INTERVAL_MINUTES
         value: "10"
+      - key: OMNYSYNC_SESSION_SECRET
+        generateValue: true
