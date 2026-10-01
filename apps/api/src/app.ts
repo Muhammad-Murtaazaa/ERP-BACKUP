@@ -32,6 +32,7 @@ import { registerBiRoutes } from './routes/bi.js';
 import { registerDocumentRoutes } from './routes/documents.js';
 import { registerFleetRoutes } from './routes/fleet.js';
 import { registerSubscriptionRoutes } from './routes/subscriptions.js';
+import { registerBudgetRoutes } from './routes/budgets.js';
 
 export function createApp() {
   const app = express();
@@ -110,6 +111,7 @@ export function createApp() {
   registerDocumentRoutes(app);
   registerFleetRoutes(app);
   registerSubscriptionRoutes(app);
+  registerBudgetRoutes(app);
 
   app.use('/api', (req: Request, res: Response) => {
     res.status(404).json({

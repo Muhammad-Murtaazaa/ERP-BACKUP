@@ -238,3 +238,21 @@ registerSeeder('COM', async (q, c) => {
     );
   }
 });
+
+registerSeeder('EPM', async (q, c) => {
+  const b = await q.query(
+    `INSERT INTO epm_budgets (organization_id, legal_entity_id, code, name, fiscal_year, scenario, version, notes, status, created_by) VALUES ($1,$2,'FY2026-OPS','FY2026 operating budget',2026,'BUDGET',1,'Demo budget — HVAC service revenue and core opex.','DRAFT',$3) ON CONFLICT (organization_id, code, version) DO NOTHING RETURNING id`,
+    [c.org, c.le, c.admin],
+  );
+  if (!b.rows[0]) return;
+  const annual: Record<string, number> = { '411001': 36000000, '411002': 24000000, '411007': 6000000, '511001': 21600000, '521001': 3600000, '521002': 14400000, '521003': 1800000, '521011': 2400000, '521012': 900000 };
+  for (const [code, amt] of Object.entries(annual)) {
+    const a = (await q.query(`SELECT id FROM accounts WHERE organization_id = $1 AND code = $2`, [c.org, code])).rows[0];
+    if (!a) continue;
+    for (let m = 1; m <= 12; m++) {
+      // Mild seasonality: HVAC demand peaks May–August.
+      const f = m >= 5 && m <= 8 ? 1.3 : m === 12 || m <= 2 ? 0.8 : 0.95;
+      await q.query(`INSERT INTO epm_budget_lines (organization_id, budget_id, account_id, period_month, amount) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, [c.org, b.rows[0].id, a.id, m, ((amt / 12) * (code.startsWith('4') || code === '511001' ? f : 1)).toFixed(2)]);
+    }
+  }
+});

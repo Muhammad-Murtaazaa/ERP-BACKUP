@@ -205,6 +205,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     Permission.BI_VIEW,
   ],
   [UserRole.ACCOUNTANT]: [
+    Permission.BUDGET_VIEW,
+    Permission.BUDGET_MANAGE,
     Permission.AUTOMATION_VIEW,
     Permission.FINANCE_COA_VIEW,
     Permission.FINANCE_JOURNAL_CREATE,
