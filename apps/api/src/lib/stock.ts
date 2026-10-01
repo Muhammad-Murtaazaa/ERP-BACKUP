@@ -12,7 +12,7 @@ import { ApiError, validationError } from './errors.js';
  *  - movements are append-only facts (DB trigger in migration 011).
  * Valuation uses items.unit_cost. With the org setting inventory.costing_method = MOVING_AVERAGE,
  * movements flagged `revalue` (purchase receipts) re-compute unit_cost as the weighted average of
- * on-hand value and the receipt, so later issues are costed at the moving average (ADR-0101,
+ * on-hand value and the receipt, so later issues are costed at the moving average (ADR-002,
  * ADR-016). STANDARD (default) leaves unit_cost untouched.
  */
 

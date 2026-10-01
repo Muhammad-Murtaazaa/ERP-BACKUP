@@ -2,7 +2,7 @@
 
 This register covers 699 module feature IDs. Planned means specified only; implementation/build, test run, country scope and reviewer evidence must be added when work occurs. None is marked passed.
 
-**Update 2026-10-01 (overnight build, branch `feat/overnight-enhancements`):** statuses below marked *Built + tested* or *Partial* cite the automated tests that exercise them (`npx vitest run`: 165 tests passing). They have **not** had a reviewer sign-off, so none is marked passed. All other IDs remain Planned.
+**Update 2026-10-01 (overnight build, branch `feat/overnight-enhancements`):** statuses below marked *Built + tested* or *Partial* cite the automated tests that exercise them (`npx vitest run`: 240 tests passing, round 2). They have **not** had a reviewer sign-off, so none is marked passed. All other IDs remain Planned.
 
 ## Engineering trace fields
 
@@ -31,13 +31,13 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | ADM-003 | [ADM — Assembly](modules/admin-demo.md) | Planned | Not yet implemented/tested |
 | ADM-004 | [ADM — Provisioning](modules/admin-demo.md) | Planned | Not yet implemented/tested |
 | ADM-005 | [ADM — Synthetic seed](modules/admin-demo.md) | Planned | Not yet implemented/tested |
-| ADM-006 | [ADM — Persona users](modules/admin-demo.md) | Planned | Not yet implemented/tested |
+| ADM-006 | [ADM — Persona users](modules/admin-demo.md) | Built + tested | persona users (admin…hr) with role guards; self-lockout / last-admin guards; apps/api/test/partials.test.ts |
 | ADM-007 | [ADM — Subdomains](modules/admin-demo.md) | Planned | Not yet implemented/tested |
 | ADM-008 | [ADM — Custom domains](modules/admin-demo.md) | Planned | Not yet implemented/tested |
 | ADM-009 | [ADM — TLS](modules/admin-demo.md) | Planned | Not yet implemented/tested |
 | ADM-010 | [ADM — Routing](modules/admin-demo.md) | Planned | Not yet implemented/tested |
-| ADM-011 | [ADM — Module enable](modules/admin-demo.md) | Planned | Not yet implemented/tested |
-| ADM-012 | [ADM — Module disable](modules/admin-demo.md) | Planned | Not yet implemented/tested |
+| ADM-011 | [ADM — Module enable](modules/admin-demo.md) | Built + tested | module enable with dependency checks; apps/api/test/partials.test.ts |
+| ADM-012 | [ADM — Module disable](modules/admin-demo.md) | Built + tested | module disable/draining/read_only; draining blocks new records only; apps/api/test/partials.test.ts |
 | ADM-013 | [ADM — Reset](modules/admin-demo.md) | Planned | Not yet implemented/tested |
 | ADM-014 | [ADM — Expiry](modules/admin-demo.md) | Planned | Not yet implemented/tested |
 | ADM-015 | [ADM — Cloning](modules/admin-demo.md) | Planned | Not yet implemented/tested |
@@ -45,7 +45,7 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | ADM-017 | [ADM — Releases](modules/admin-demo.md) | Planned | Not yet implemented/tested |
 | ADM-018 | [ADM — Fleet health](modules/admin-demo.md) | Planned | Not yet implemented/tested |
 | ADM-019 | [ADM — Support](modules/admin-demo.md) | Planned | Not yet implemented/tested |
-| ADM-020 | [ADM — Audit/cost](modules/admin-demo.md) | Planned | Not yet implemented/tested |
+| ADM-020 | [ADM — Audit/cost](modules/admin-demo.md) | Partial | all admin changes audited; no cost metering |
 | ADM-021 | [ADM — Portability](modules/admin-demo.md) | Planned | Not yet implemented/tested |
 | ADM-022 | [ADM — Domain retirement](modules/admin-demo.md) | Planned | Not yet implemented/tested |
 | AP-001 | [AP — Invoice capture](modules/ap-expenses.md) | Planned | Not yet implemented/tested |
@@ -112,12 +112,12 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | AST-018 | [AST — Maintenance costing](modules/assets-maintenance.md) | Planned | Not yet implemented/tested |
 | AST-019 | [AST — Reliability](modules/assets-maintenance.md) | Planned | Not yet implemented/tested |
 | AST-020 | [AST — Asset reconciliation](modules/assets-maintenance.md) | Planned | Not yet implemented/tested |
-| AUT-001 | [AUT — Builder](modules/automation-ai.md) | Planned | Not yet implemented/tested |
+| AUT-001 | [AUT — Builder](modules/automation-ai.md) | Built + tested | visual rule builder (trigger, conditions, ALERT/TASK action) in Workflow Studio; apps/api/test/partials.test.ts |
 | AUT-002 | [AUT — Versioning](modules/automation-ai.md) | Partial | rule version incremented on every change and stored on each run; apps/api/test/automation.test.ts |
-| AUT-003 | [AUT — Event triggers](modules/automation-ai.md) | Planned | Not yet implemented/tested |
+| AUT-003 | [AUT — Event triggers](modules/automation-ai.md) | Built + tested | event-triggered rules on outbox events, exactly-once delivery; apps/api/test/partials.test.ts, apps/api/test/crm.test.ts |
 | AUT-004 | [AUT — Schedules](modules/automation-ai.md) | Built + tested | INTERVAL/DAILY/MONTHLY schedules, DST-safe, occurrence-keyed; apps/api/test/automation-schedule.test.ts, apps/api/test/automation.test.ts |
 | AUT-005 | [AUT — Approval steps](modules/automation-ai.md) | Partial | recurring journals require maker-checker approval before posting; apps/api/test/automation.test.ts |
-| AUT-006 | [AUT — Simulation](modules/automation-ai.md) | Planned | Not yet implemented/tested |
+| AUT-006 | [AUT — Simulation](modules/automation-ai.md) | Built + tested | rule simulation has no side effects; apps/api/test/partials.test.ts |
 | AUT-007 | [AUT — Durability](modules/automation-ai.md) | Built + tested | unique (rule, occurrence) runs, leases, dedupe incl. concurrent triggers; apps/api/test/automation.test.ts |
 | AUT-008 | [AUT — Action authority](modules/automation-ai.md) | Built + tested | AUTOMATION_VIEW/MANAGE/RUN permissions; payments never automated (A4); apps/api/test/automation.test.ts |
 | AUT-009 | [AUT — Retries](modules/automation-ai.md) | Built + tested | bounded exponential backoff retries the same occurrence, dead-letter to CRITICAL owner alert; apps/api/test/automation.test.ts |
@@ -136,25 +136,25 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | AUT-022 | [AUT — Savings](modules/automation-ai.md) | Planned | Not yet implemented/tested |
 | AUT-023 | [AUT — Retention](modules/automation-ai.md) | Planned | Not yet implemented/tested |
 | AUT-024 | [AUT — Pause switch](modules/automation-ai.md) | Built + tested | pause/resume kill switch per rule; paused rules never picked up; apps/api/test/automation.test.ts |
-| CRM-001 | [CRM — Lead capture](modules/crm.md) | Planned | Not yet implemented/tested |
-| CRM-002 | [CRM — Deduplication](modules/crm.md) | Planned | Not yet implemented/tested |
-| CRM-003 | [CRM — Accounts/contacts](modules/crm.md) | Planned | Not yet implemented/tested |
-| CRM-004 | [CRM — Qualification](modules/crm.md) | Planned | Not yet implemented/tested |
-| CRM-005 | [CRM — Pipeline](modules/crm.md) | Planned | Not yet implemented/tested |
-| CRM-006 | [CRM — Activities](modules/crm.md) | Planned | Not yet implemented/tested |
+| CRM-001 | [CRM — Lead capture](modules/crm.md) | Built + tested | lead capture with contact channel required; apps/api/test/crm.test.ts |
+| CRM-002 | [CRM — Deduplication](modules/crm.md) | Built + tested | dedupe across email case and phone formats; apps/api/test/crm.test.ts |
+| CRM-003 | [CRM — Accounts/contacts](modules/crm.md) | Partial | conversion creates customer party + opportunity atomically; apps/api/test/crm.test.ts |
+| CRM-004 | [CRM — Qualification](modules/crm.md) | Built + tested | only qualified leads convert; apps/api/test/crm.test.ts |
+| CRM-005 | [CRM — Pipeline](modules/crm.md) | Built + tested | pipeline with win/lost (reason required), stale edits refused; apps/api/test/crm.test.ts |
+| CRM-006 | [CRM — Activities](modules/crm.md) | Built + tested | activities require a target; apps/api/test/crm.test.ts |
 | CRM-007 | [CRM — Communications](modules/crm.md) | Planned | Not yet implemented/tested |
 | CRM-008 | [CRM — Campaigns](modules/crm.md) | Planned | Not yet implemented/tested |
 | CRM-009 | [CRM — Consent](modules/crm.md) | Planned | Not yet implemented/tested |
 | CRM-010 | [CRM — Lead routing](modules/crm.md) | Planned | Not yet implemented/tested |
 | CRM-011 | [CRM — Quote handoff](modules/crm.md) | Planned | Not yet implemented/tested |
-| CRM-012 | [CRM — Forecast](modules/crm.md) | Planned | Not yet implemented/tested |
+| CRM-012 | [CRM — Forecast](modules/crm.md) | Built + tested | weighted forecast exact; apps/api/test/crm.test.ts |
 | CRM-013 | [CRM — Territories](modules/crm.md) | Planned | Not yet implemented/tested |
 | CRM-014 | [CRM — Account health](modules/crm.md) | Planned | Not yet implemented/tested |
 | CRM-015 | [CRM — Renewals](modules/crm.md) | Planned | Not yet implemented/tested |
 | CRM-016 | [CRM — AI summaries](modules/crm.md) | Planned | Not yet implemented/tested |
 | CRM-017 | [CRM — Attribution](modules/crm.md) | Planned | Not yet implemented/tested |
 | CRM-018 | [CRM — Success plans](modules/crm.md) | Planned | Not yet implemented/tested |
-| CFG-001 | [CFG — Configuration layers](modules/customization-platform.md) | Planned | Not yet implemented/tested |
+| CFG-001 | [CFG — Configuration layers](modules/customization-platform.md) | Partial | org settings layer (typed, versioned, history); no multi-layer inheritance; apps/api/test/partials.test.ts |
 | CFG-002 | [CFG — Custom fields](modules/customization-platform.md) | Planned | Not yet implemented/tested |
 | CFG-003 | [CFG — Custom objects](modules/customization-platform.md) | Planned | Not yet implemented/tested |
 | CFG-004 | [CFG — Form layouts](modules/customization-platform.md) | Planned | Not yet implemented/tested |
@@ -163,9 +163,9 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | CFG-007 | [CFG — Templates](modules/customization-platform.md) | Planned | Not yet implemented/tested |
 | CFG-008 | [CFG — Navigation](modules/customization-platform.md) | Planned | Not yet implemented/tested |
 | CFG-009 | [CFG — Dashboards](modules/customization-platform.md) | Planned | Not yet implemented/tested |
-| CFG-010 | [CFG — Rules](modules/customization-platform.md) | Planned | Not yet implemented/tested |
-| CFG-011 | [CFG — Publish](modules/customization-platform.md) | Planned | Not yet implemented/tested |
-| CFG-012 | [CFG — Rollback](modules/customization-platform.md) | Planned | Not yet implemented/tested |
+| CFG-010 | [CFG — Rules](modules/customization-platform.md) | Built + tested | event rules with condition builder + simulation (Workflow Studio); apps/api/test/partials.test.ts |
+| CFG-011 | [CFG — Publish](modules/customization-platform.md) | Partial | settings publish with optimistic version and reason; apps/api/test/partials.test.ts |
+| CFG-012 | [CFG — Rollback](modules/customization-platform.md) | Partial | setting history kept (append-only); no one-click rollback |
 | CFG-013 | [CFG — Extension SDK](modules/customization-platform.md) | Planned | Not yet implemented/tested |
 | CFG-014 | [CFG — Compatibility](modules/customization-platform.md) | Planned | Not yet implemented/tested |
 | CFG-015 | [CFG — Config export](modules/customization-platform.md) | Planned | Not yet implemented/tested |
@@ -174,20 +174,20 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | CFG-018 | [CFG — Opening migration](modules/customization-platform.md) | Planned | Not yet implemented/tested |
 | CFG-019 | [CFG — Contextual help](modules/customization-platform.md) | Planned | Not yet implemented/tested |
 | CFG-020 | [CFG — Upgrade preview](modules/customization-platform.md) | Planned | Not yet implemented/tested |
-| DOC-001 | [DOC — Attachments](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
-| DOC-002 | [DOC — Versioned documents](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
+| DOC-001 | [DOC — Attachments](modules/documents-collaboration.md) | Built + tested | attachments with allow-list, magic bytes, size checks; apps/api/test/documents.test.ts |
+| DOC-002 | [DOC — Versioned documents](modules/documents-collaboration.md) | Built + tested | versions with SHA-256 integrity-checked download; apps/api/test/documents.test.ts |
 | DOC-003 | [DOC — Folders/tags](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
 | DOC-004 | [DOC — Comments](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
 | DOC-005 | [DOC — Mentions](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
 | DOC-006 | [DOC — Tasks](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
-| DOC-007 | [DOC — Review routing](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
+| DOC-007 | [DOC — Review routing](modules/documents-collaboration.md) | Built + tested | review routing with SoD, re-review on new version; apps/api/test/documents.test.ts |
 | DOC-008 | [DOC — Signatures](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
 | DOC-009 | [DOC — Templates](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
 | DOC-010 | [DOC — Generated PDFs](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
 | DOC-011 | [DOC — Search](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
 | DOC-012 | [DOC — Sharing](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
 | DOC-013 | [DOC — Access logs](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
-| DOC-014 | [DOC — Retention](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
+| DOC-014 | [DOC — Retention](modules/documents-collaboration.md) | Built + tested | retention + legal hold block deletion; purge keeps hash trail; apps/api/test/documents.test.ts |
 | DOC-015 | [DOC — Archiving](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
 | DOC-016 | [DOC — Notifications](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
 | DOC-017 | [DOC — Print queues](modules/documents-collaboration.md) | Planned | Not yet implemented/tested |
@@ -220,8 +220,8 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | GL-026 | [GL — Audit export](modules/finance-gl.md) | Planned | Not yet implemented/tested |
 | GL-027 | [GL — Rebuild balances](modules/finance-gl.md) | Planned | Not yet implemented/tested |
 | GL-028 | [GL — Policy versioning](modules/finance-gl.md) | Planned | Not yet implemented/tested |
-| FLT-001 | [FLT — Resource catalog](modules/fleet-rental.md) | Planned | Not yet implemented/tested |
-| FLT-002 | [FLT — Reservations](modules/fleet-rental.md) | Planned | Not yet implemented/tested |
+| FLT-001 | [FLT — Resource catalog](modules/fleet-rental.md) | Built + tested | vehicle register; apps/api/test/fleet.test.ts |
+| FLT-002 | [FLT — Reservations](modules/fleet-rental.md) | Built + tested | conflict-free vehicle/technician assignments; apps/api/test/fleet.test.ts |
 | FLT-003 | [FLT — Rental pricing](modules/fleet-rental.md) | Planned | Not yet implemented/tested |
 | FLT-004 | [FLT — Contracts](modules/fleet-rental.md) | Planned | Not yet implemented/tested |
 | FLT-005 | [FLT — Deposits](modules/fleet-rental.md) | Planned | Not yet implemented/tested |
@@ -229,26 +229,26 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | FLT-007 | [FLT — Returns](modules/fleet-rental.md) | Planned | Not yet implemented/tested |
 | FLT-008 | [FLT — Usage charges](modules/fleet-rental.md) | Planned | Not yet implemented/tested |
 | FLT-009 | [FLT — Damage claims](modules/fleet-rental.md) | Planned | Not yet implemented/tested |
-| FLT-010 | [FLT — Maintenance blocks](modules/fleet-rental.md) | Planned | Not yet implemented/tested |
-| FLT-011 | [FLT — Fuel/expenses](modules/fleet-rental.md) | Planned | Not yet implemented/tested |
-| FLT-012 | [FLT — Driver assignments](modules/fleet-rental.md) | Planned | Not yet implemented/tested |
+| FLT-010 | [FLT — Maintenance blocks](modules/fleet-rental.md) | Built + tested | maintenance status blocks booking; apps/api/test/fleet.test.ts |
+| FLT-011 | [FLT — Fuel/expenses](modules/fleet-rental.md) | Built + tested | odometer-checked fuel logs, km/l, post once with period guard; apps/api/test/fleet.test.ts |
+| FLT-012 | [FLT — Driver assignments](modules/fleet-rental.md) | Built + tested | driver (technician) assignments; apps/api/test/fleet.test.ts |
 | FLT-013 | [FLT — Telematics](modules/fleet-rental.md) | Planned | Not yet implemented/tested |
 | FLT-014 | [FLT — Extensions](modules/fleet-rental.md) | Planned | Not yet implemented/tested |
 | FLT-015 | [FLT — Billing](modules/fleet-rental.md) | Planned | Not yet implemented/tested |
-| FLT-016 | [FLT — Fleet metrics](modules/fleet-rental.md) | Planned | Not yet implemented/tested |
-| GRC-001 | [GRC — Controls](modules/governance-risk.md) | Planned | Not yet implemented/tested |
-| GRC-002 | [GRC — Risk register](modules/governance-risk.md) | Planned | Not yet implemented/tested |
+| FLT-016 | [FLT — Fleet metrics](modules/fleet-rental.md) | Partial | fleet KPIs (compliance due, fuel MTD, km/l) |
+| GRC-001 | [GRC — Controls](modules/governance-risk.md) | Built + tested | controls with evidence-based tests; FAIL→deficient + incident; apps/api/test/grc.test.ts |
+| GRC-002 | [GRC — Risk register](modules/governance-risk.md) | Built + tested | risk register inherent/residual, appetite-gated acceptance; apps/api/test/grc.test.ts |
 | GRC-003 | [GRC — Segregation review](modules/governance-risk.md) | Planned | Not yet implemented/tested |
 | GRC-004 | [GRC — Access certification](modules/governance-risk.md) | Planned | Not yet implemented/tested |
-| GRC-005 | [GRC — Audit evidence](modules/governance-risk.md) | Planned | Not yet implemented/tested |
+| GRC-005 | [GRC — Audit evidence](modules/governance-risk.md) | Partial | test evidence, sample/exceptions captured; apps/api/test/grc.test.ts |
 | GRC-006 | [GRC — Change review](modules/governance-risk.md) | Planned | Not yet implemented/tested |
 | GRC-007 | [GRC — Policies](modules/governance-risk.md) | Planned | Not yet implemented/tested |
-| GRC-008 | [GRC — Incidents](modules/governance-risk.md) | Planned | Not yet implemented/tested |
+| GRC-008 | [GRC — Incidents](modules/governance-risk.md) | Built + tested | incidents need root cause + action, SoD close; apps/api/test/grc.test.ts |
 | GRC-009 | [GRC — Findings](modules/governance-risk.md) | Planned | Not yet implemented/tested |
-| GRC-010 | [GRC — Holds](modules/governance-risk.md) | Planned | Not yet implemented/tested |
+| GRC-010 | [GRC — Holds](modules/governance-risk.md) | Built + tested | legal holds on documents; apps/api/test/documents.test.ts |
 | GRC-011 | [GRC — Classification](modules/governance-risk.md) | Planned | Not yet implemented/tested |
 | GRC-012 | [GRC — Privacy cases](modules/governance-risk.md) | Planned | Not yet implemented/tested |
-| GRC-013 | [GRC — Monitoring](modules/governance-risk.md) | Planned | Not yet implemented/tested |
+| GRC-013 | [GRC — Monitoring](modules/governance-risk.md) | Partial | heatmap, overdue tests, deficient controls KPIs |
 | GRC-014 | [GRC — Financial controls](modules/governance-risk.md) | Planned | Not yet implemented/tested |
 | GRC-015 | [GRC — Third-party risk](modules/governance-risk.md) | Planned | Not yet implemented/tested |
 | GRC-016 | [GRC — Continuity](modules/governance-risk.md) | Planned | Not yet implemented/tested |
@@ -297,8 +297,8 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | INV-009 | [INV — Quarantine](modules/inventory.md) | Planned | Not yet implemented/tested |
 | INV-010 | [INV — Negative stock](modules/inventory.md) | Planned | Not yet implemented/tested |
 | INV-011 | [INV — FIFO](modules/inventory.md) | Planned | Not yet implemented/tested |
-| INV-012 | [INV — Weighted average](modules/inventory.md) | Planned | Not yet implemented/tested |
-| INV-013 | [INV — Standard cost](modules/inventory.md) | Planned | Not yet implemented/tested |
+| INV-012 | [INV — Weighted average](modules/inventory.md) | Built + tested | moving-average costing on receipts, audit trail, COGS at average; apps/api/test/costing.test.ts |
+| INV-013 | [INV — Standard cost](modules/inventory.md) | Built + tested | standard cost default leaves cost unchanged; apps/api/test/costing.test.ts |
 | INV-014 | [INV — Specific identification](modules/inventory.md) | Planned | Not yet implemented/tested |
 | INV-015 | [INV — Landed cost](modules/inventory.md) | Planned | Not yet implemented/tested |
 | INV-016 | [INV — Transit](modules/inventory.md) | Planned | Not yet implemented/tested |
@@ -311,37 +311,37 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | INV-023 | [INV — Aging](modules/inventory.md) | Planned | Not yet implemented/tested |
 | INV-024 | [INV — Opening stock](modules/inventory.md) | Planned | Not yet implemented/tested |
 | LND-001 | [LND — Product policy](modules/lending-servicing.md) | Planned | Not yet implemented/tested |
-| LND-002 | [LND — Applications](modules/lending-servicing.md) | Planned | Not yet implemented/tested |
+| LND-002 | [LND — Applications](modules/lending-servicing.md) | Built + tested | applications with maker-checker approval; apps/api/test/lending.test.ts |
 | LND-003 | [LND — Identity checks](modules/lending-servicing.md) | Planned | Not yet implemented/tested |
 | LND-004 | [LND — Credit assessment](modules/lending-servicing.md) | Planned | Not yet implemented/tested |
 | LND-005 | [LND — Agreements](modules/lending-servicing.md) | Planned | Not yet implemented/tested |
-| LND-006 | [LND — Schedules](modules/lending-servicing.md) | Planned | Not yet implemented/tested |
-| LND-007 | [LND — Disbursement](modules/lending-servicing.md) | Planned | Not yet implemented/tested |
-| LND-008 | [LND — Collections](modules/lending-servicing.md) | Planned | Not yet implemented/tested |
-| LND-009 | [LND — Prepayment](modules/lending-servicing.md) | Planned | Not yet implemented/tested |
-| LND-010 | [LND — Delinquency](modules/lending-servicing.md) | Planned | Not yet implemented/tested |
+| LND-006 | [LND — Schedules](modules/lending-servicing.md) | Built + tested | annuity / equal-principal schedules, last instalment absorbs rounding; apps/api/test/lending.test.ts |
+| LND-007 | [LND — Disbursement](modules/lending-servicing.md) | Built + tested | one-time disbursement posting, approver≠disburser, period guard; apps/api/test/lending.test.ts |
+| LND-008 | [LND — Collections](modules/lending-servicing.md) | Built + tested | repayments interest-first oldest-first, duplicate ref refused; apps/api/test/lending.test.ts |
+| LND-009 | [LND — Prepayment](modules/lending-servicing.md) | Partial | early payoff via repayment of remaining schedule; no prepayment re-amortisation; apps/api/test/lending.test.ts |
+| LND-010 | [LND — Delinquency](modules/lending-servicing.md) | Partial | overdue amount and overdue loans reported; no delinquency buckets/penalties |
 | LND-011 | [LND — Restructuring](modules/lending-servicing.md) | Planned | Not yet implemented/tested |
 | LND-012 | [LND — Impairment](modules/lending-servicing.md) | Planned | Not yet implemented/tested |
 | LND-013 | [LND — Collateral](modules/lending-servicing.md) | Planned | Not yet implemented/tested |
 | LND-014 | [LND — Statements](modules/lending-servicing.md) | Planned | Not yet implemented/tested |
 | LND-015 | [LND — Regulatory data](modules/lending-servicing.md) | Planned | Not yet implemented/tested |
-| LND-016 | [LND — Closure](modules/lending-servicing.md) | Planned | Not yet implemented/tested |
+| LND-016 | [LND — Closure](modules/lending-servicing.md) | Built + tested | loan closes when fully repaid, receivable nets to zero; apps/api/test/lending.test.ts |
 | LOG-001 | [LOG — Containers](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
 | LOG-002 | [LOG — Goods linkage](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
-| LOG-003 | [LOG — Bookings](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
-| LOG-004 | [LOG — Milestones](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
+| LOG-003 | [LOG — Bookings](modules/logistics-trade.md) | Built + tested | shipment booking with unique tracking; apps/api/test/logistics.test.ts |
+| LOG-004 | [LOG — Milestones](modules/logistics-trade.md) | Built + tested | replay-safe milestone events, delivery after dispatch; apps/api/test/logistics.test.ts |
 | LOG-005 | [LOG — Maps](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
 | LOG-006 | [LOG — Acquisition](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
 | LOG-007 | [LOG — Trade documents](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
 | LOG-008 | [LOG — Incoterms](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
 | LOG-009 | [LOG — Classification](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
 | LOG-010 | [LOG — Clearance](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
-| LOG-011 | [LOG — Freight allocation](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
+| LOG-011 | [LOG — Freight allocation](modules/logistics-trade.md) | Partial | freight posting to AP with carrier party; no allocation to item cost; apps/api/test/logistics.test.ts |
 | LOG-012 | [LOG — Demurrage](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
 | LOG-013 | [LOG — Port handoff](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
-| LOG-014 | [LOG — Carrier choice](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
+| LOG-014 | [LOG — Carrier choice](modules/logistics-trade.md) | Partial | carrier master; manual choice |
 | LOG-015 | [LOG — Routes](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
-| LOG-016 | [LOG — Delivery proof](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
+| LOG-016 | [LOG — Delivery proof](modules/logistics-trade.md) | Built + tested | POD mandatory for delivery; apps/api/test/logistics.test.ts |
 | LOG-017 | [LOG — Claims](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
 | LOG-018 | [LOG — LC linkage](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
 | LOG-019 | [LOG — ETA alerts](modules/logistics-trade.md) | Planned | Not yet implemented/tested |
@@ -400,12 +400,12 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | PAY-024 | [PAY — Provider files](modules/payroll-benefits.md) | Planned | Not yet implemented/tested |
 | PAY-025 | [PAY — Simulation](modules/payroll-benefits.md) | Planned | Not yet implemented/tested |
 | PAY-026 | [PAY — Privacy](modules/payroll-benefits.md) | Planned | Not yet implemented/tested |
-| EPM-001 | [EPM — Budget versions](modules/planning-consolidation.md) | Planned | Not yet implemented/tested |
-| EPM-002 | [EPM — Plan dimensions](modules/planning-consolidation.md) | Planned | Not yet implemented/tested |
+| EPM-001 | [EPM — Budget versions](modules/planning-consolidation.md) | Built + tested | budget versions, revise→v+1, approval supersedes; apps/api/test/budgets.test.ts |
+| EPM-002 | [EPM — Plan dimensions](modules/planning-consolidation.md) | Partial | account × month only; no cost-centre/project dimension |
 | EPM-003 | [EPM — Drivers](modules/planning-consolidation.md) | Planned | Not yet implemented/tested |
 | EPM-004 | [EPM — Rolling forecast](modules/planning-consolidation.md) | Planned | Not yet implemented/tested |
 | EPM-005 | [EPM — Commitments](modules/planning-consolidation.md) | Planned | Not yet implemented/tested |
-| EPM-006 | [EPM — Variance](modules/planning-consolidation.md) | Planned | Not yet implemented/tested |
+| EPM-006 | [EPM — Variance](modules/planning-consolidation.md) | Built + tested | budget vs actual from posted journals, favourable sign, unbudgeted flag; apps/api/test/budgets.test.ts |
 | EPM-007 | [EPM — Cash planning](modules/planning-consolidation.md) | Planned | Not yet implemented/tested |
 | EPM-008 | [EPM — Workforce planning](modules/planning-consolidation.md) | Planned | Not yet implemented/tested |
 | EPM-009 | [EPM — Capital planning](modules/planning-consolidation.md) | Planned | Not yet implemented/tested |
@@ -525,15 +525,15 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | QLT-016 | [QLT — Certificates](modules/quality-plm.md) | Planned | Not yet implemented/tested |
 | QLT-017 | [QLT — Quality analytics](modules/quality-plm.md) | Planned | Not yet implemented/tested |
 | QLT-018 | [QLT — Regulated gate](modules/quality-plm.md) | Planned | Not yet implemented/tested |
-| TAL-001 | [TAL — Hiring requests](modules/recruitment-talent.md) | Planned | Not yet implemented/tested |
+| TAL-001 | [TAL — Hiring requests](modules/recruitment-talent.md) | Built + tested | requisitions with band and approval SoD; apps/api/test/talent.test.ts |
 | TAL-002 | [TAL — Career portal](modules/recruitment-talent.md) | Planned | Not yet implemented/tested |
-| TAL-003 | [TAL — Applicant tracking](modules/recruitment-talent.md) | Planned | Not yet implemented/tested |
-| TAL-004 | [TAL — Candidate dedupe](modules/recruitment-talent.md) | Planned | Not yet implemented/tested |
-| TAL-005 | [TAL — Interviews](modules/recruitment-talent.md) | Planned | Not yet implemented/tested |
-| TAL-006 | [TAL — Scorecards](modules/recruitment-talent.md) | Planned | Not yet implemented/tested |
-| TAL-007 | [TAL — Offers](modules/recruitment-talent.md) | Planned | Not yet implemented/tested |
+| TAL-003 | [TAL — Applicant tracking](modules/recruitment-talent.md) | Built + tested | applicant pipeline APPLIED→HIRED; apps/api/test/talent.test.ts |
+| TAL-004 | [TAL — Candidate dedupe](modules/recruitment-talent.md) | Built + tested | candidate dedupe by email (case-insensitive); apps/api/test/talent.test.ts |
+| TAL-005 | [TAL — Interviews](modules/recruitment-talent.md) | Built + tested | scored interviews (rounds, recommendation); apps/api/test/talent.test.ts |
+| TAL-006 | [TAL — Scorecards](modules/recruitment-talent.md) | Partial | 1–5 score + recommendation; no structured competency scorecard; apps/api/test/talent.test.ts |
+| TAL-007 | [TAL — Offers](modules/recruitment-talent.md) | Built + tested | offers gated by HIRE recommendation, band breach needs note; apps/api/test/talent.test.ts |
 | TAL-008 | [TAL — Checks](modules/recruitment-talent.md) | Planned | Not yet implemented/tested |
-| TAL-009 | [TAL — Hire conversion](modules/recruitment-talent.md) | Planned | Not yet implemented/tested |
+| TAL-009 | [TAL — Hire conversion](modules/recruitment-talent.md) | Built + tested | hire creates employee, fills seat, capacity guard; apps/api/test/talent.test.ts |
 | TAL-010 | [TAL — Goals](modules/recruitment-talent.md) | Planned | Not yet implemented/tested |
 | TAL-011 | [TAL — Review cycles](modules/recruitment-talent.md) | Planned | Not yet implemented/tested |
 | TAL-012 | [TAL — 360 feedback](modules/recruitment-talent.md) | Planned | Not yet implemented/tested |
@@ -545,9 +545,9 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | TAL-018 | [TAL — Succession](modules/recruitment-talent.md) | Planned | Not yet implemented/tested |
 | TAL-019 | [TAL — Merit reviews](modules/recruitment-talent.md) | Planned | Not yet implemented/tested |
 | TAL-020 | [TAL — Talent analysis](modules/recruitment-talent.md) | Planned | Not yet implemented/tested |
-| BI-001 | [BI — Datasets](modules/reporting-analytics.md) | Planned | Not yet implemented/tested |
-| BI-002 | [BI — Metrics](modules/reporting-analytics.md) | Planned | Not yet implemented/tested |
-| BI-003 | [BI — Dashboard builder](modules/reporting-analytics.md) | Planned | Not yet implemented/tested |
+| BI-001 | [BI — Datasets](modules/reporting-analytics.md) | Built + tested | 8 governed datasets with declared columns; apps/api/test/bi.test.ts |
+| BI-002 | [BI — Metrics](modules/reporting-analytics.md) | Partial | measures validated per dataset; revenue reconciles to ledger; apps/api/test/bi.test.ts |
+| BI-003 | [BI — Dashboard builder](modules/reporting-analytics.md) | Partial | dashboards with JSON widgets; no drag-and-drop builder |
 | BI-004 | [BI — Role templates](modules/reporting-analytics.md) | Planned | Not yet implemented/tested |
 | BI-005 | [BI — Report builder](modules/reporting-analytics.md) | Planned | Not yet implemented/tested |
 | BI-006 | [BI — Financial packs](modules/reporting-analytics.md) | Planned | Not yet implemented/tested |
@@ -557,12 +557,12 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | BI-010 | [BI — Drill-through](modules/reporting-analytics.md) | Planned | Not yet implemented/tested |
 | BI-011 | [BI — Saved views](modules/reporting-analytics.md) | Planned | Not yet implemented/tested |
 | BI-012 | [BI — Scheduled delivery](modules/reporting-analytics.md) | Planned | Not yet implemented/tested |
-| BI-013 | [BI — Exports](modules/reporting-analytics.md) | Planned | Not yet implemented/tested |
+| BI-013 | [BI — Exports](modules/reporting-analytics.md) | Built + tested | CSV export with formula neutralisation; apps/api/test/bi.test.ts |
 | BI-014 | [BI — Pivots](modules/reporting-analytics.md) | Planned | Not yet implemented/tested |
 | BI-015 | [BI — Forecast charts](modules/reporting-analytics.md) | Planned | Not yet implemented/tested |
 | BI-016 | [BI — Accessibility](modules/reporting-analytics.md) | Planned | Not yet implemented/tested |
 | BI-017 | [BI — Quality flags](modules/reporting-analytics.md) | Planned | Not yet implemented/tested |
-| BI-018 | [BI — Query policy](modules/reporting-analytics.md) | Planned | Not yet implemented/tested |
+| BI-018 | [BI — Query policy](modules/reporting-analytics.md) | Built + tested | row-level governance: hidden widgets for unauthorised viewers, private dashboards; apps/api/test/bi.test.ts |
 | BI-019 | [BI — Versioned output](modules/reporting-analytics.md) | Planned | Not yet implemented/tested |
 | BI-020 | [BI — Scaling](modules/reporting-analytics.md) | Planned | Not yet implemented/tested |
 | SAL-001 | [SAL — Price lists](modules/sales-orders.md) | Planned | Not yet implemented/tested |
@@ -585,35 +585,35 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | SAL-018 | [SAL — Sales analysis](modules/sales-orders.md) | Planned | Not yet implemented/tested |
 | SAL-019 | [SAL — Portal](modules/sales-orders.md) | Planned | Not yet implemented/tested |
 | SAL-020 | [SAL — Signature adapter](modules/sales-orders.md) | Planned | Not yet implemented/tested |
-| SRV-001 | [SRV — Case intake](modules/service-management.md) | Planned | Not yet implemented/tested |
-| SRV-002 | [SRV — Triage](modules/service-management.md) | Planned | Not yet implemented/tested |
-| SRV-003 | [SRV — SLAs](modules/service-management.md) | Planned | Not yet implemented/tested |
-| SRV-004 | [SRV — Entitlements](modules/service-management.md) | Planned | Not yet implemented/tested |
-| SRV-005 | [SRV — Dispatch](modules/service-management.md) | Planned | Not yet implemented/tested |
+| SRV-001 | [SRV — Case intake](modules/service-management.md) | Built + tested | idempotent case intake by channel ref; apps/api/test/service.test.ts |
+| SRV-002 | [SRV — Triage](modules/service-management.md) | Partial | priority/severity triage fields; no auto-triage |
+| SRV-003 | [SRV — SLAs](modules/service-management.md) | Built + tested | business-hours SLA clock (holidays, Sunday) and SLA state; apps/api/test/service.test.ts |
+| SRV-004 | [SRV — Entitlements](modules/service-management.md) | Built + tested | entitlement by status, customer and date window; apps/api/test/service.test.ts |
+| SRV-005 | [SRV — Dispatch](modules/service-management.md) | Built + tested | dispatch with double-booking guard (concurrent); apps/api/test/service.test.ts |
 | SRV-006 | [SRV — Appointments](modules/service-management.md) | Planned | Not yet implemented/tested |
-| SRV-007 | [SRV — Work orders](modules/service-management.md) | Planned | Not yet implemented/tested |
-| SRV-008 | [SRV — Parts](modules/service-management.md) | Planned | Not yet implemented/tested |
-| SRV-009 | [SRV — Time](modules/service-management.md) | Planned | Not yet implemented/tested |
+| SRV-007 | [SRV — Work orders](modules/service-management.md) | Built + tested | work orders with checklist gate, sign-off hash; apps/api/test/service.test.ts |
+| SRV-008 | [SRV — Parts](modules/service-management.md) | Built + tested | parts issue from stock with replay key and COGS; apps/api/test/service.test.ts |
+| SRV-009 | [SRV — Time](modules/service-management.md) | Built + tested | time logging with overlap guard, SoD approval; apps/api/test/service.test.ts |
 | SRV-010 | [SRV — Extra work](modules/service-management.md) | Planned | Not yet implemented/tested |
-| SRV-011 | [SRV — Acceptance](modules/service-management.md) | Planned | Not yet implemented/tested |
-| SRV-012 | [SRV — Warranty](modules/service-management.md) | Planned | Not yet implemented/tested |
-| SRV-013 | [SRV — Preventive service](modules/service-management.md) | Planned | Not yet implemented/tested |
+| SRV-011 | [SRV — Acceptance](modules/service-management.md) | Built + tested | customer sign-off hash binds the work, invalidated by later changes; apps/api/test/service.test.ts |
+| SRV-012 | [SRV — Warranty](modules/service-management.md) | Built + tested | warranty jobs bill nothing; apps/api/test/service.test.ts |
+| SRV-013 | [SRV — Preventive service](modules/service-management.md) | Built + tested | idempotent PM generation per contract occurrence; apps/api/test/service.test.ts |
 | SRV-014 | [SRV — Knowledge base](modules/service-management.md) | Planned | Not yet implemented/tested |
 | SRV-015 | [SRV — Portal](modules/service-management.md) | Planned | Not yet implemented/tested |
-| SRV-016 | [SRV — Escalation](modules/service-management.md) | Planned | Not yet implemented/tested |
-| SRV-017 | [SRV — Service billing](modules/service-management.md) | Planned | Not yet implemented/tested |
+| SRV-016 | [SRV — Escalation](modules/service-management.md) | Partial | SLA job raises alerts; no multi-level escalation matrix |
+| SRV-017 | [SRV — Service billing](modules/service-management.md) | Built + tested | bill once to AR via shared invoice service; apps/api/test/service.test.ts |
 | SRV-018 | [SRV — Offline drafts](modules/service-management.md) | Planned | Not yet implemented/tested |
 | SRV-019 | [SRV — Service metrics](modules/service-management.md) | Planned | Not yet implemented/tested |
-| SRV-020 | [SRV — Closure](modules/service-management.md) | Planned | Not yet implemented/tested |
+| SRV-020 | [SRV — Closure](modules/service-management.md) | Built + tested | close only after billing; apps/api/test/service.test.ts |
 | COM-001 | [COM — Channel catalog](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
 | COM-002 | [COM — Order connectors](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
 | COM-003 | [COM — Checkout](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
-| COM-004 | [COM — Plans](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
-| COM-005 | [COM — Lifecycle](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
+| COM-004 | [COM — Plans](modules/subscription-commerce.md) | Built + tested | plans with interval, price, tax, visits; apps/api/test/subscriptions.test.ts |
+| COM-005 | [COM — Lifecycle](modules/subscription-commerce.md) | Built + tested | lifecycle draft/active/paused/cancelled/ended, cancel reason, linked AMC contract; apps/api/test/subscriptions.test.ts |
 | COM-006 | [COM — Usage](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
 | COM-007 | [COM — Tiers](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
-| COM-008 | [COM — Proration](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
-| COM-009 | [COM — Recurring billing](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
+| COM-008 | [COM — Proration](modules/subscription-commerce.md) | Partial | final-period day proration; no mid-period upgrade proration; apps/api/test/subscriptions.test.ts |
+| COM-009 | [COM — Recurring billing](modules/subscription-commerce.md) | Built + tested | idempotent catch-up billing run, per-subscription isolation, period guard; apps/api/test/subscriptions.test.ts |
 | COM-010 | [COM — Trials](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
 | COM-011 | [COM — Collections](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
 | COM-012 | [COM — Dunning](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
@@ -622,37 +622,37 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | COM-015 | [COM — Chargebacks](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
 | COM-016 | [COM — Channel availability](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
 | COM-017 | [COM — Self-service](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
-| COM-018 | [COM — Commerce metrics](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
+| COM-018 | [COM — Commerce metrics](modules/subscription-commerce.md) | Built + tested | MRR/ARR, churn, billed this month; apps/api/test/subscriptions.test.ts |
 | COM-019 | [COM — Renewal forecast](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
 | COM-020 | [COM — Local gate](modules/subscription-commerce.md) | Planned | Not yet implemented/tested |
 | SUP-001 | [SUP — Supplier directory](modules/supplier-management.md) | Planned | Not yet implemented/tested |
-| SUP-002 | [SUP — Onboarding](modules/supplier-management.md) | Planned | Not yet implemented/tested |
-| SUP-003 | [SUP — Qualification](modules/supplier-management.md) | Planned | Not yet implemented/tested |
+| SUP-002 | [SUP — Onboarding](modules/supplier-management.md) | Built + tested | onboarding profile, one per vendor; apps/api/test/supplier.test.ts |
+| SUP-003 | [SUP — Qualification](modules/supplier-management.md) | Built + tested | qualification gated by certificates, submitter≠approver; apps/api/test/supplier.test.ts |
 | SUP-004 | [SUP — Tax registration](modules/supplier-management.md) | Planned | Not yet implemented/tested |
 | SUP-005 | [SUP — Bank verification](modules/supplier-management.md) | Planned | Not yet implemented/tested |
 | SUP-006 | [SUP — Risk assessments](modules/supplier-management.md) | Planned | Not yet implemented/tested |
-| SUP-007 | [SUP — Certificates](modules/supplier-management.md) | Planned | Not yet implemented/tested |
+| SUP-007 | [SUP — Certificates](modules/supplier-management.md) | Built + tested | certificates gate approval; apps/api/test/supplier.test.ts |
 | SUP-008 | [SUP — Contracts](modules/supplier-management.md) | Planned | Not yet implemented/tested |
 | SUP-009 | [SUP — Prices](modules/supplier-management.md) | Planned | Not yet implemented/tested |
-| SUP-010 | [SUP — Scorecards](modules/supplier-management.md) | Planned | Not yet implemented/tested |
+| SUP-010 | [SUP — Scorecards](modules/supplier-management.md) | Partial | weighted scorecards, one per period, delivery derived from receipts; quality/price/service manual; apps/api/test/supplier.test.ts |
 | SUP-011 | [SUP — Segmentation](modules/supplier-management.md) | Planned | Not yet implemented/tested |
 | SUP-012 | [SUP — Portal orders](modules/supplier-management.md) | Planned | Not yet implemented/tested |
 | SUP-013 | [SUP — Portal invoices](modules/supplier-management.md) | Planned | Not yet implemented/tested |
 | SUP-014 | [SUP — Collaboration](modules/supplier-management.md) | Planned | Not yet implemented/tested |
-| SUP-015 | [SUP — Suspension](modules/supplier-management.md) | Planned | Not yet implemented/tested |
+| SUP-015 | [SUP — Suspension](modules/supplier-management.md) | Built + tested | blocked supplier cannot receive POs; reinstatement back to review; apps/api/test/supplier.test.ts |
 | SUP-016 | [SUP — Master merge](modules/supplier-management.md) | Planned | Not yet implemented/tested |
 | SUP-017 | [SUP — Renewal reminders](modules/supplier-management.md) | Planned | Not yet implemented/tested |
 | SUP-018 | [SUP — Concentration](modules/supplier-management.md) | Planned | Not yet implemented/tested |
-| TAX-001 | [TAX — Jurisdiction](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
-| TAX-002 | [TAX — Tax classes](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
-| TAX-003 | [TAX — Effective rules](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
-| TAX-004 | [TAX — Inclusive tax](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
+| TAX-001 | [TAX — Jurisdiction](modules/tax-compliance.md) | Partial | single jurisdiction (PK) per org |
+| TAX-002 | [TAX — Tax classes](modules/tax-compliance.md) | Built + tested | tax codes; apps/api/test/partials.test.ts |
+| TAX-003 | [TAX — Effective rules](modules/tax-compliance.md) | Built + tested | effective-dated versions, overlap refused, line-date selection; apps/api/test/partials.test.ts |
+| TAX-004 | [TAX — Inclusive tax](modules/tax-compliance.md) | Built + tested | inclusive extraction re-adds to gross; apps/api/test/partials.test.ts |
 | TAX-005 | [TAX — Compound taxes](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
 | TAX-006 | [TAX — Exemptions](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
 | TAX-007 | [TAX — Withholding](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
 | TAX-008 | [TAX — Recoverability](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
-| TAX-009 | [TAX — Return datasets](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
-| TAX-010 | [TAX — Submission states](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
+| TAX-009 | [TAX — Return datasets](modules/tax-compliance.md) | Built + tested | ledger-derived return datasets; apps/api/test/partials.test.ts |
+| TAX-010 | [TAX — Submission states](modules/tax-compliance.md) | Built + tested | return states with preparer≠filer SoD; settlement posts once; apps/api/test/partials.test.ts |
 | TAX-011 | [TAX — Corrections](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
 | TAX-012 | [TAX — Pakistan invoicing](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
 | TAX-013 | [TAX — US sales tax](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
@@ -660,25 +660,25 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | TAX-015 | [TAX — Submission evidence](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
 | TAX-016 | [TAX — Customs policy](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
 | TAX-017 | [TAX — Rule updates](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
-| TAX-018 | [TAX — Tax reconciliation](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
+| TAX-018 | [TAX — Tax reconciliation](modules/tax-compliance.md) | Partial | return reconciles to ledger; apps/api/test/partials.test.ts |
 | TAX-019 | [TAX — Compliance calendar](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
 | TAX-020 | [TAX — Readiness registry](modules/tax-compliance.md) | Planned | Not yet implemented/tested |
 | TIM-001 | [TIM — Time clocks](modules/time-workforce.md) | Planned | Not yet implemented/tested |
 | TIM-002 | [TIM — Device adapters](modules/time-workforce.md) | Planned | Not yet implemented/tested |
 | TIM-003 | [TIM — Attendance](modules/time-workforce.md) | Planned | Not yet implemented/tested |
-| TIM-004 | [TIM — Timesheets](modules/time-workforce.md) | Planned | Not yet implemented/tested |
+| TIM-004 | [TIM — Timesheets](modules/time-workforce.md) | Built + tested | weekly timesheets, one per employee-week, overlap/out-of-week refused; apps/api/test/time.test.ts |
 | TIM-005 | [TIM — Corrections](modules/time-workforce.md) | Planned | Not yet implemented/tested |
 | TIM-006 | [TIM — Shift templates](modules/time-workforce.md) | Planned | Not yet implemented/tested |
 | TIM-007 | [TIM — Rosters](modules/time-workforce.md) | Planned | Not yet implemented/tested |
 | TIM-008 | [TIM — Swaps](modules/time-workforce.md) | Planned | Not yet implemented/tested |
-| TIM-009 | [TIM — Overtime](modules/time-workforce.md) | Planned | Not yet implemented/tested |
+| TIM-009 | [TIM — Overtime](modules/time-workforce.md) | Built + tested | daily overtime, exact cost; apps/api/test/time.test.ts |
 | TIM-010 | [TIM — Leave accrual](modules/time-workforce.md) | Planned | Not yet implemented/tested |
-| TIM-011 | [TIM — Leave requests](modules/time-workforce.md) | Planned | Not yet implemented/tested |
+| TIM-011 | [TIM — Leave requests](modules/time-workforce.md) | Built + tested | leave requests: working days, overlaps, approval SoD; apps/api/test/time.test.ts |
 | TIM-012 | [TIM — Leave calendars](modules/time-workforce.md) | Planned | Not yet implemented/tested |
-| TIM-013 | [TIM — Holidays](modules/time-workforce.md) | Planned | Not yet implemented/tested |
+| TIM-013 | [TIM — Holidays](modules/time-workforce.md) | Built + tested | holidays excluded from leave and SLA; apps/api/test/time.test.ts |
 | TIM-014 | [TIM — Remote attendance](modules/time-workforce.md) | Planned | Not yet implemented/tested |
 | TIM-015 | [TIM — Exceptions](modules/time-workforce.md) | Planned | Not yet implemented/tested |
-| TIM-016 | [TIM — Payroll freeze](modules/time-workforce.md) | Planned | Not yet implemented/tested |
+| TIM-016 | [TIM — Payroll freeze](modules/time-workforce.md) | Partial | period-guarded timesheet posting; apps/api/test/time.test.ts |
 | TIM-017 | [TIM — Project allocations](modules/time-workforce.md) | Planned | Not yet implemented/tested |
 | TIM-018 | [TIM — Staffing forecast](modules/time-workforce.md) | Planned | Not yet implemented/tested |
 | TIM-019 | [TIM — Mobile actions](modules/time-workforce.md) | Planned | Not yet implemented/tested |
@@ -707,11 +707,11 @@ For each ID record owning role/person, release slice, entity/command/event chang
 | TRY-022 | [TRY — Customer lending gate](modules/treasury-financing.md) | Planned | Not yet implemented/tested |
 | WMS-001 | [WMS — Layout](modules/warehouse.md) | Planned | Not yet implemented/tested |
 | WMS-002 | [WMS — Mobile receipt](modules/warehouse.md) | Planned | Not yet implemented/tested |
-| WMS-003 | [WMS — Putaway](modules/warehouse.md) | Planned | Not yet implemented/tested |
-| WMS-004 | [WMS — Waves](modules/warehouse.md) | Planned | Not yet implemented/tested |
-| WMS-005 | [WMS — Picking](modules/warehouse.md) | Planned | Not yet implemented/tested |
+| WMS-003 | [WMS — Putaway](modules/warehouse.md) | Built + tested | putaway bounded by unbinned stock and bin capacity; apps/api/test/partials.test.ts |
+| WMS-004 | [WMS — Waves](modules/warehouse.md) | Partial | one pick list per order (no multi-order waves) |
+| WMS-005 | [WMS — Picking](modules/warehouse.md) | Built + tested | pick allocation PICK before BULK, never over a bin, shortages; over-pick refused; apps/api/test/partials.test.ts |
 | WMS-006 | [WMS — Task leases](modules/warehouse.md) | Planned | Not yet implemented/tested |
-| WMS-007 | [WMS — Short picks](modules/warehouse.md) | Planned | Not yet implemented/tested |
+| WMS-007 | [WMS — Short picks](modules/warehouse.md) | Built + tested | short picks recorded as shortage remainder; apps/api/test/partials.test.ts |
 | WMS-008 | [WMS — Packing](modules/warehouse.md) | Planned | Not yet implemented/tested |
 | WMS-009 | [WMS — Labels](modules/warehouse.md) | Planned | Not yet implemented/tested |
 | WMS-010 | [WMS — Replenishment](modules/warehouse.md) | Planned | Not yet implemented/tested |

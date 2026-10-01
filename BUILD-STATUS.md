@@ -7,7 +7,7 @@
 - **Exact Decimal Arithmetic Core** (`@omnysync/financial-engine`): Exact decimal computation using `decimal.js` with working monetary scale (24,8), rate scale (24,12), explicit half-up rounding, and string serialization across API boundaries.
 - **Four-Level Chart of Accounts (COA)** (`@omnysync/financial-engine`, `@omnysync/platform`): Strict 4-level hierarchy (L1 Statement Class > L2 Group > L3 Subgroup > L4 Leaf Account). Only Level 4 accounts accept financial postings. Complete standard enterprise COA template including trading, payroll, inventory adjustments, manufacturing WIP/scrap, project milestone & retention accounts, fixed assets (`121001`, `121002`, `521004`), and equipment repairs & maintenance (`521005 Equipment Maintenance & Repairs Expense`).
 - **Fiscal Calendar & Period Management**: 12-month calendar with posting guards (`OPEN`, `SOFT_CLOSED`, `HARD_CLOSED`).
-- **PostgreSQL Database & Migration Runner** (`@omnysync/platform`): Migration runner supporting embedded PGlite (WASM PostgreSQL 16) and standard PostgreSQL (`pg` pool). Migrations 001 through 014.
+- **PostgreSQL Database & Migration Runner** (`@omnysync/platform`): Migration runner supporting embedded PGlite (WASM PostgreSQL 16) and standard PostgreSQL (`pg` pool). Migrations 001 through 032.
 - **Authentication & RBAC**: Scrypt password hashing, tamper-proof HMAC session tokens, and role-based permissions (`ADMIN`, `CONTROLLER`, `ACCOUNTANT`, `CASHIER`, `SALES_OPERATOR`, `INVENTORY_MANAGER`, `HR_MANAGER`, `PRODUCTION_MANAGER`, `WAREHOUSE_OPERATOR`, `PROJECT_MANAGER`, `QUALITY_MANAGER`, `MAINTENANCE_ENGINEER`, `AUDITOR`, `VIEWER`).
 - **Journal Lifecycle & Posting Engine**: Draft -> Submit -> Approve -> Post -> General Ledger -> Trial Balance -> Linked Reversals with double-entry balancing ($\sum\text{Debits} = \sum\text{Credits}$).
 - **M2 Trading Masters & Workflows**: Parties subledger, catalog items, Order-to-Cash (Sales Orders, Stock Fulfillment, AR Invoicing, COGS GL vouchers), Procure-to-Pay (Purchase Orders, GRN Stock Receipts, GRNI Liability Accruals, AP Supplier Bills), Customer Receipts & Supplier Disbursements with open-item allocation.
@@ -61,42 +61,84 @@
   - Decimal-safe display: 107 `parseFloat` uses replaced.
   - `Column.accessor` is now rendered; 52 columns previously showed raw fields.
 
-## Verified Capabilities (actual command output, 2026-10-01 PKT)
-- `npx vitest run`: **11 files, 165 tests, all passing** (6.2 s).
+## Overnight pass, round 2 (same branch, 2026-10-01 03:57–05:30 PKT)
+Shared **resource kit** (`apps/api/src/lib/resource.ts`, ADR-012) and **ModuleWorkspace** UI (`apps/web/src/views/kit/ModuleWorkspace.tsx`). Every new module gets the same things: list/search/filter/paging, Drawer forms with Comboboxes, optimistic `revision` checks, state-machine commands with SoD, audit and outbox events, `requireModule` lifecycle guards, org-scoped refs (a foreign or missing ref returns 400 with `details.field`), and an idempotent seeder.
 
-  | Test file | Tests | Covers |
-  | --- | --- | --- |
-  | `packages/financial-engine/test/financial-engine.test.ts` | 41 | |
-  | `packages/financial-engine/test/retail.test.ts` | 26 | Scan parsing, promotions, tender settlement, rounding, refunds, loyalty |
-  | `packages/financial-engine/test/calendar.test.ts` | 3 | |
-  | `packages/platform/test/platform.test.ts` | 3 | |
-  | `apps/api/test/api.test.ts` | 17 | |
-  | `apps/api/test/pos.test.ts` | 24 | Rounding, split tender over/under, return of discounted items, void after payment, concurrent stock and shift open, PIN lockout, offline replay dedupe |
-  | `apps/api/test/automation.test.ts` | 11 | |
-  | `apps/api/test/automation-schedule.test.ts` | 7 | DST gap and fall-back |
-  | `apps/api/test/controls.test.ts` | 11 | SoD, double and concurrent post, period guard, idempotency, tenant isolation, GET purity |
-  | `apps/web/test/pos-cart.test.ts` | 18 | |
-  | `apps/web/test/format.test.ts` | 4 | |
+| Code | Module | Migration | Status | Built, and tested in `apps/api/test/*` |
+| --- | --- | --- | --- | --- |
+| ADM/CFG | Admin & Configuration | 015 | Built | Versioned settings with history and stale-version 409; module lifecycle (enabled/draining/read_only/disabled) |
+| TAX | Tax Compliance | 016 | Built | Tax codes and rates by date, return periods, filing lock |
+| WMS | Warehouse Execution | 017 | Built | Putaway/pick tasks, wave picking, bin capacity |
+| AUT | Automation | 018 | Built | Event-triggered rules alongside scheduled rules; visual rule builder (Workflow Studio). Actions are ALERT/TASK only (ADR-013) |
+| SRV | Field Service | 019 | Built | Cases, SLA business-hours clock, dispatch, work orders, parts issue with stock and COGS, billing, contracts/PM |
+| CRM | CRM & Pipeline | 020 | Built | Leads, opportunities, kanban, win → SRV installation case, event rule |
+| TIM | Time & Attendance | 021 | Built | Timesheets with overlap guard, overtime, approval SoD, period-guarded posting, leave |
+| SUP | Supplier Management | 022 | Built | Onboarding, blocking (PO create refuses blocked suppliers), scorecards |
+| LOG | Logistics | 023 | Built | Carriers, shipments, freight posting |
+| BI | BI Dashboards | 024 | Built | 8 governed datasets, dashboards, widgets |
+| DOC | Documents | 025 | Built | Versions with SHA-256 tamper check, legal hold, retention purge |
+| FLT | Fleet | 026 | Built | Vehicles, conflict-free assignments, odometer-checked fuel posting |
+| COM | Subscriptions & AMC | 027 | Built | Plans; idempotent catch-up billing run (unique subscription + period); prorated final period; per-subscription isolation; optional AMC contract in SRV; MRR/ARR |
+| EPM | Budgets & Planning | 028 | Built | Versioned P&L budgets by account and month; SoD approval; BUDGET_LOCKED; revise → v+1; budget vs actual from posted journals |
+| LND | Customer Financing | 029 | Built | Annuity and equal-principal schedules (last instalment absorbs rounding); maker-checker; one-time disbursement; interest-first repayments; payoff closes |
+| GRC | Risk & Compliance | 030 | Built | Risk register (inherent/residual, appetite-gated acceptance); evidence-based control tests (FAIL → deficient + incident); incidents with SoD close; heatmap |
+| TAL | Recruitment | 031 | Built | Approved requisitions with salary band; candidates; pipeline; scored interviews gate offers; hire → employee record; capacity guard |
+| INV | Moving-average costing | 032 | Built | `inventory.costing_method = MOVING_AVERAGE` re-costs on purchase receipt with an `item_cost_changes` audit trail; issues and COGS use the average |
+
+### Honest partials
+- **FIFO costing** is not implemented. Only STANDARD and MOVING_AVERAGE exist, and moving average re-costs only on PO receipts. Transfers, counts and returns use the current average.
+- **TIM:** technicians can create timesheets for any employee, because employees have no link to a user.
+- **SUP:** scorecard quality, price and service scores are entered manually; only delivery is derived from receipts.
+- **BI:** the 8 datasets are fixed in code, and widgets are edited as JSON. There is no drag-and-drop builder.
+- **DOC:** the entity link is a raw id in the UI. Binary download has no API test (makeRequest parses only JSON), but the tamper 500 and purged 410 cases are tested.
+- **FLT:** maintenance is a vehicle status only and is not linked to PM work orders.
+- **SRV:** the SLA clock uses a fixed +05:00 offset, which is correct for PKT because it has no DST.
+- **EPM:** the fiscal year is the calendar year. Budgets cover P&L accounts only; there is no cost-centre dimension and no PO budget-availability check.
+- **LND:** interest is recognised on a cash basis when it is collected. There is no accrual, penalty interest or restructuring.
+- **COM:** billing is in advance on the anniversary. There is no mid-period upgrade proration and no automatic scheduled run; it is triggered manually or via the API.
+- **TAL:** there is no candidate self-service portal and no CV file upload (DOC could hold the files).
+
+## Verified Capabilities (actual command output, 2026-10-01 05:2x PKT)
+- `npx vitest run`: **26 files, 240 tests, all passing**.
+
+  | New test file (round 2) | Tests |
+  | --- | --- |
+  | `partials.test.ts` (ADM/CFG/TAX/WMS/AUT) | 12 |
+  | `service.test.ts` | 10 |
+  | `crm.test.ts` | 5 |
+  | `time.test.ts` | 4 |
+  | `supplier.test.ts` | 4 |
+  | `logistics.test.ts` | 2 |
+  | `bi.test.ts` | 5 |
+  | `documents.test.ts` | 3 |
+  | `fleet.test.ts` | 3 |
+  | `subscriptions.test.ts` | 6 |
+  | `budgets.test.ts` | 4 |
+  | `lending.test.ts` | 5 |
+  | `grc.test.ts` | 5 |
+  | `talent.test.ts` | 4 |
+  | `costing.test.ts` | 3 |
 
 - `npx tsc --noEmit -p .` and `npm run lint`: 0 errors.
-- `npm run build`: all 6 workspaces build. The web bundle builds in 3.0 s, with a chunk-size warning of 680 kB (173 kB gzip).
-- Screenshots:
-  - `/workspace/erp-screens/before` (25)
-  - `/workspace/erp-screens/after` (36)
-  - `/workspace/erp-screens/pos` (17)
+- `npm run build`: exit 0, with **no chunk-size warning**. Views are `React.lazy`-split; the largest chunk is `index` at 207 kB (65 kB gzip), down from 680 kB.
+- Screenshots: `/workspace/erp-screens/after` has 74 PNGs, including 38 `mod-*` module shots.
+
+### Intentional test changes
+- `packages/platform/test/platform.test.ts`: the user count went from 7 to 10 (new personas: service, tech, hr).
+- `apps/api/test/automation.test.ts`: the rule count went from 11 to 12 (new `SRV-SLA-PM` job).
 
 ## Blockers
 - None for the build.
-- `npm audit` still reports 5 advisories, all in dev tooling: vite, esbuild, vite-node, vitest and @vitest/mocker. Every fix requires a major upgrade (vitest 5, vite 8). This was deferred to avoid destabilising the toolchain overnight. None of these packages ship in the production API or web bundle.
+- `npm audit` still reports 5 advisories, all in dev tooling: vite, esbuild, vite-node, vitest and @vitest/mocker. Every fix requires a major upgrade, so it was deferred. None of these packages ship in production bundles.
 
 ## Last Actual Checks
-- `npx vitest run`: 11 files, 165 passed.
-- `npm run build`: exit 0.
+- `npx vitest run`: 26 files, 240 passed.
+- `npm run build`: exit 0, no warnings.
 - `npm run lint`: exit 0.
 
-## Not built (MODULE-CATALOG gap, see /workspace/erp-overnight-REPORT.md)
-- CRM, DOC, FLT, GRC, LND, LOG, EPM, TAL, BI, SRV, COM, SUP and TIM have no implementation.
-- ADM, CFG, TAX, WMS and AUT are partial.
+## Module coverage
+- All 13 previously missing catalog modules are now implemented (see the table above): CRM, DOC, FLT, GRC, LND, LOG, EPM, TAL, BI, SRV, COM, SUP and TIM.
+- ADM, CFG, TAX, WMS and AUT are complete for the scope in the table.
 
 ## Next Roadmap Milestones
 - **Milestone 10**: Logistics, Freight Management & Landed Cost Tracking.
