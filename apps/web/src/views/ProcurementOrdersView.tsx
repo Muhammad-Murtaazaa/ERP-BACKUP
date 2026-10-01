@@ -99,8 +99,10 @@ export const ProcurementOrdersView: React.FC = () => {
 
   const handleApprovePo = async (id: string) => {
     try {
-      await ApiClient.post(`/procurement/orders/${id}/approve`, {});
+      const r = await ApiClient.post<any>(`/procurement/orders/${id}/approve`, {});
       await loadData();
+      const w = r?.budget_warnings || [];
+      if (w.length) alert(`Approved, but over budget:\n${w.map((x: any) => `${x.code} ${x.name}: available ${x.available}, this PO ${x.this_po} (over by ${x.excess})`).join('\n')}`);
     } catch (err: any) {
       alert(err.message || 'Failed to approve purchase order');
     }

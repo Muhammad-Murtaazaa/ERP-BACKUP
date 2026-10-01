@@ -1505,6 +1505,7 @@ export const ErrorCode = {
   ALREADY_BILLED: 'ALREADY_BILLED',
   LEGAL_HOLD: 'LEGAL_HOLD',
   BUDGET_LOCKED: 'BUDGET_LOCKED',
+  BUDGET_EXCEEDED: 'BUDGET_EXCEEDED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

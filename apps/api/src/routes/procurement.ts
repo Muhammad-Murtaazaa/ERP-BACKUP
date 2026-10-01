@@ -1,4 +1,6 @@
 import type { Express, Request, Response } from 'express';
+import { poBudgetCheck } from './budgets.js';
+import { getSetting } from './config.js';
 import { assertSupplierUsable } from './supplier.js';
 import crypto from 'node:crypto';
 import { Money } from '@omnysync/financial-engine';
@@ -81,9 +83,16 @@ export function registerProcurementRoutes(app: Express): void {
       const po = await requireOrgRow(tx, 'purchase_orders', req.params.id, org, 'Purchase order', { forUpdate: true });
       // Requester vs approver (FINANCIAL-CONTROLS.md segregation of duties).
       if (po.created_by === req.session!.user_id) throw sodViolation('Segregation of duties: the requester cannot approve their own purchase order');
+      // Budget control (EPM): expense lines vs approved budget − actuals − open commitments.
+      const control = await getSetting<string>(tx, org, 'epm.po_budget_control');
+      const overBudget = control === 'OFF' ? [] : await poBudgetCheck(tx, org, po.id);
+      if (overBudget.length && control === 'BLOCK') {
+        const o = overBudget[0];
+        throw new ApiError(409, ErrorCode.BUDGET_EXCEEDED, `Over budget on ${o.code} ${o.name}: available ${o.available}, this PO ${o.this_po}`, { over_budget: overBudget });
+      }
       await transition(tx, { table: 'purchase_orders', id: po.id, organizationId: org, from: ['DRAFT'], to: 'APPROVED', label: 'Purchase order', set: { approved_by: req.session!.user_id, updated_at: new Date().toISOString() } });
-      await audit(req, tx, 'PURCHASE_ORDER_APPROVED', 'PURCHASE_ORDER', po.id, { status: po.status }, { status: 'APPROVED' });
-      return { id: po.id, status: 'APPROVED' };
+      await audit(req, tx, 'PURCHASE_ORDER_APPROVED', 'PURCHASE_ORDER', po.id, { status: po.status }, { status: 'APPROVED', ...(overBudget.length ? { over_budget: overBudget } : {}) });
+      return { id: po.id, status: 'APPROVED', budget_warnings: overBudget };
     });
     return ok(req, res, out);
   });

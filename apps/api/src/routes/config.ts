@@ -25,6 +25,7 @@ export const SETTINGS: Record<string, { label: string; group: string; type: Sett
   'time.daily_overtime_after_hours': { label: 'Overtime after (hours/day)', group: 'Time', type: { kind: 'decimal', min: '1', max: '24' }, default: '8', help: 'Hours beyond this are overtime.' },
   'tax.default_output_code': { label: 'Default output tax code', group: 'Tax', type: { kind: 'text', max: 32 }, default: 'GST18', help: 'Applied when an item has no tax rate.' },
   'grc.risk_appetite': { label: 'Risk appetite (max acceptable residual score)', group: 'Risk', type: { kind: 'int', min: 1, max: 25 }, default: 8, help: 'Risks above this residual score (likelihood × impact) cannot be accepted without escalation.' },
+  'epm.po_budget_control': { label: 'PO budget control', group: 'Budgets', type: { kind: 'enum', values: ['OFF', 'WARN', 'BLOCK'] }, default: 'WARN', help: 'On PO approval, expense lines are checked against the approved annual budget (actuals + open commitments). BLOCK refuses; WARN approves and flags.' },
   'org.timezone': { label: 'Organisation time zone', group: 'Organisation', type: { kind: 'enum', values: ['Asia/Karachi', 'Asia/Dubai', 'Asia/Riyadh', 'Asia/Kolkata', 'Europe/London', 'UTC', 'America/New_York'] }, default: 'Asia/Karachi', help: 'Local day and business-hour SLA clocks (SRV) use this zone.' },
   'finance.require_journal_approval': { label: 'Manual journals need approval', group: 'Finance', type: { kind: 'bool' }, default: true, help: 'Maker-checker on manual vouchers.' },
 };

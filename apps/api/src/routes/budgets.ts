@@ -17,6 +17,59 @@ import { int } from '../lib/validate.js';
 
 const VIEW = [Permission.BUDGET_VIEW, Permission.BUDGET_MANAGE, Permission.BUDGET_APPROVE];
 
+/**
+ * PO budget check (EPM-007): for each expense account a PO charges on receipt (non-inventory items),
+ * approved annual BUDGET (all approved budgets for the PO's calendar year) is compared with
+ * posted actuals + open commitments (other approved POs not yet received) + this PO.
+ * Accounts without an approved budget line are not checked. Returns the over-budget accounts.
+ */
+export async function poBudgetCheck(q: any, org: string, poId: string) {
+  const po = (await q.query(`SELECT id, po_date FROM purchase_orders WHERE id = $1 AND organization_id = $2`, [poId, org])).rows[0];
+  if (!po) return [];
+  const year = new Date(po.po_date).getUTCFullYear();
+  const from = `${year}-01-01`;
+  const to = `${year}-12-31`;
+  const expenseAcct = `COALESCE(i.cogs_account_id, (SELECT id FROM accounts WHERE organization_id = $1 AND code = '511001'))`;
+  const mine = (
+    await q.query(
+      `SELECT ${expenseAcct} AS account_id, SUM(l.quantity * l.unit_price)::text amount FROM purchase_order_lines l JOIN items i ON i.id = l.item_id
+       WHERE l.purchase_order_id = $2 AND i.item_type <> 'INVENTORY' GROUP BY 1`,
+      [org, poId],
+    )
+  ).rows.filter((r: any) => r.account_id);
+  const over: { account_id: string; code: string; name: string; budget: string; actual: string; committed: string; this_po: string; available: string; excess: string }[] = [];
+  for (const m of mine) {
+    const b = (
+      await q.query(
+        `SELECT COALESCE(SUM(bl.amount), 0)::text total, COUNT(*)::int n FROM epm_budget_lines bl JOIN epm_budgets b ON b.id = bl.budget_id
+         WHERE b.organization_id = $1 AND b.status = 'APPROVED' AND b.scenario = 'BUDGET' AND b.fiscal_year = $2 AND bl.account_id = $3`,
+        [org, year, m.account_id],
+      )
+    ).rows[0];
+    if (!b.n) continue;
+    const actual = (
+      await q.query(
+        `SELECT COALESCE(SUM(jl.base_debit - jl.base_credit), 0)::text v FROM journal_lines jl JOIN journals j ON j.id = jl.journal_id
+         WHERE j.organization_id = $1 AND j.status = 'POSTED' AND j.posting_date BETWEEN $2 AND $3 AND jl.account_id = $4`,
+        [org, from, to, m.account_id],
+      )
+    ).rows[0].v;
+    const committed = (
+      await q.query(
+        `SELECT COALESCE(SUM((l.quantity - l.received_quantity) * l.unit_price), 0)::text v FROM purchase_order_lines l JOIN purchase_orders po ON po.id = l.purchase_order_id JOIN items i ON i.id = l.item_id
+         WHERE po.organization_id = $1 AND po.status = 'APPROVED' AND po.id <> $2 AND i.item_type <> 'INVENTORY' AND po.po_date BETWEEN $3 AND $4 AND ${expenseAcct} = $5`,
+        [org, poId, from, to, m.account_id],
+      )
+    ).rows[0].v;
+    const available = new Money(b.total).sub(actual).sub(committed);
+    if (new Money(m.amount).gt(available)) {
+      const a = (await q.query(`SELECT code, name FROM accounts WHERE id = $1`, [m.account_id])).rows[0];
+      over.push({ account_id: m.account_id, code: a.code, name: a.name, budget: new Money(b.total).toFixed(2), actual: new Money(actual).toFixed(2), committed: new Money(committed).toFixed(2), this_po: new Money(m.amount).toFixed(2), available: available.toFixed(2), excess: new Money(m.amount).sub(available).toFixed(2) });
+    }
+  }
+  return over;
+}
+
 /** Spreads an annual amount evenly over 12 months; December absorbs rounding. */
 export function spreadEven(annual: string): string[] {
   const total = new Money(annual).round(2);

@@ -81,4 +81,43 @@ describe('EPM API', () => {
     const h = await makeRequest('GET', `/api/epm/budgets/${v2.id}/variance?through_month=6`, undefined, acct);
     expect(Number(h.body.data.rows.find((x: any) => x.code === '521002').budget)).toBe(600000);
   });
+
+  it('PO budget control: expense lines vs approved budget − actuals − commitments; WARN flags, BLOCK refuses, OFF skips', async () => {
+    const ex = (await db.query(
+      `SELECT id FROM accounts a WHERE a.statement_class = 'EXPENSE' AND a.level = 4 AND a.is_active AND a.code <> '511001'
+         AND NOT EXISTS (SELECT 1 FROM epm_budget_lines bl WHERE bl.account_id = a.id) AND NOT EXISTS (SELECT 1 FROM items i WHERE i.cogs_account_id = a.id) ORDER BY a.code LIMIT 1`,
+    )).rows[0].id;
+    const b = (await makeRequest('POST', '/api/epm/budgets', { code: 'PO-CTL', name: 'AC servicing subcontract', fiscal_year: 2026 }, acct)).body.data;
+    await makeRequest('POST', `/api/epm/budgets/${b.id}/lines`, { lines: [{ account_id: ex, annual: '12000' }] }, acct);
+    await makeRequest('POST', `/api/epm/budgets/${b.id}/submit`, {}, ctrl);
+    expect((await makeRequest('POST', `/api/epm/budgets/${b.id}/approve`, {}, admin)).body.data.status).toBe('APPROVED');
+    const item = (await makeRequest('POST', '/api/items', { code: 'SUBCON-AC', name: 'Subcontracted AC service', item_type: 'SERVICE', uom: 'JOB', unit_price: '0', unit_cost: '0', cogs_account_id: ex }, admin)).body.data;
+    expect(item.id).toBeTruthy();
+    const vendor = (await makeRequest('GET', '/api/parties?type=VENDOR', undefined, admin)).body.data[0];
+    const po = async (amount: string) => (await makeRequest('POST', '/api/procurement/orders', { party_id: vendor.id, po_date: '2026-10-01', lines: [{ item_id: item.id, quantity: '1', unit_price: amount }] }, ctrl)).body.data.id;
+    const setCtl = async (value: string) => {
+      const cur = (await makeRequest('GET', '/api/config/settings', undefined, admin)).body.data.find((x: any) => x.key === 'epm.po_budget_control');
+      expect((await makeRequest('POST', '/api/config/settings/epm.po_budget_control', { value, version: cur.version }, admin)).status).toBe(200);
+    };
+    // Within budget: approved, no warnings.
+    const p1 = await makeRequest('POST', `/api/procurement/orders/${await po('8000')}/approve`, {}, admin);
+    expect(p1.status).toBe(200);
+    expect(p1.body.data.budget_warnings).toEqual([]);
+    // 8000 committed; 5000 more exceeds 12000 → WARN (default) approves but flags the excess.
+    const p2 = await makeRequest('POST', `/api/procurement/orders/${await po('5000')}/approve`, {}, admin);
+    expect(p2.status).toBe(200);
+    expect(p2.body.data.budget_warnings[0]).toMatchObject({ budget: '12000.00', committed: '8000.00', this_po: '5000.00', available: '4000.00', excess: '1000.00' });
+    await setCtl('BLOCK');
+    const id3 = await po('100');
+    const p3 = await makeRequest('POST', `/api/procurement/orders/${id3}/approve`, {}, admin);
+    expect(p3.status).toBe(409);
+    expect(p3.body.error.code).toBe('BUDGET_EXCEEDED');
+    expect((await db.query(`SELECT status FROM purchase_orders WHERE id = $1`, [id3])).rows[0].status).toBe('DRAFT');
+    // Inventory lines are not budget-checked (they hit the balance sheet).
+    const inv = (await db.query(`SELECT id FROM items WHERE item_type = 'INVENTORY' LIMIT 1`)).rows[0];
+    const invPo = (await makeRequest('POST', '/api/procurement/orders', { party_id: vendor.id, po_date: '2026-10-01', lines: [{ item_id: inv.id, quantity: '1', unit_price: '999999' }] }, ctrl)).body.data.id;
+    expect((await makeRequest('POST', `/api/procurement/orders/${invPo}/approve`, {}, admin)).status).toBe(200);
+    await setCtl('OFF');
+    expect((await makeRequest('POST', `/api/procurement/orders/${id3}/approve`, {}, admin)).status).toBe(200);
+  });
 });
