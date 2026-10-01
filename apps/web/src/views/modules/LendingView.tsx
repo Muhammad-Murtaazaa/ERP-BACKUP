@@ -1,16 +1,48 @@
-import React from 'react';
-import { Badge, Table } from '@omnysync/ui';
+import React, { useState } from 'react';
+import { ApiClient } from '../../api/client.js';
+import { Alert, Badge, Button, Input, Table } from '@omnysync/ui';
 import { ModuleWorkspace, TabDef } from '../kit/ModuleWorkspace.js';
 import { fmtMoney } from '../../lib/format.js';
 import { opts, partyRef, today } from './shared.js';
 
 const instState = (r: any) => {
-  const due = Number(r.principal) + Number(r.interest);
-  const paid = Number(r.paid_principal || 0) + Number(r.paid_interest || 0);
+  const due = Number(r.principal) + Number(r.interest) + Number(r.late_fee || 0);
+  const paid = Number(r.paid_principal || 0) + Number(r.paid_interest || 0) + Number(r.paid_late_fee || 0);
   if (r.preview) return <Badge size="sm" variant="neutral">Preview</Badge>;
   if (paid >= due - 0.005) return <Badge size="sm" variant="success">Paid</Badge>;
   if (String(r.due_date).slice(0, 10) < today()) return <Badge size="sm" variant="danger">Overdue</Badge>;
   return paid > 0 ? <Badge size="sm" variant="warning">Partial</Badge> : <Badge size="sm" variant="info">Due</Badge>;
+};
+
+const LateFees: React.FC<{ notify: (k: any, t: string) => void }> = ({ notify }) => {
+  const [asOf, setAsOf] = useState(today());
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState<any | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const run = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await ApiClient.post('/lnd/late-fees/assess', { as_of: asOf });
+      setRes(r);
+      notify('success', `${r.assessed} late fee(s) assessed`);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-4 max-w-3xl">
+      <p className="text-sm text-[#5B6472]">Charges the configured flat late fee (Settings → Lending) once on each instalment still unpaid after the grace period. Fees are collected first when the customer pays and are recognised as income (411005) on collection. Running it again never charges the same instalment twice.</p>
+      <div className="flex items-end gap-3">
+        <Input label="Assess as of" type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} />
+        <Button onClick={run} disabled={busy}>{busy ? 'Assessing…' : 'Assess late fees'}</Button>
+      </div>
+      {err && <Alert variant="danger">{err}</Alert>}
+      {res && <Alert variant={res.assessed ? 'warning' : 'success'}>{res.assessed ? `PKR ${res.fees} charged on ${res.instalments.join(', ')}` : 'No instalments past the grace period without a fee.'}</Alert>}
+    </div>
+  );
 };
 
 const tabs: TabDef[] = [
@@ -48,6 +80,7 @@ const tabs: TabDef[] = [
             { key: 'principal', header: 'Principal', align: 'right', render: (r: any) => fmtMoney(r.principal) },
             { key: 'interest', header: 'Interest', align: 'right', render: (r: any) => fmtMoney(r.interest) },
             { key: 'total', header: 'Instalment', align: 'right', render: (r: any) => fmtMoney(Number(r.principal) + Number(r.interest)) },
+            { key: 'late_fee', header: 'Late fee', align: 'right', render: (r: any) => (Number(r.late_fee || 0) > 0 ? fmtMoney(r.late_fee) : '—') },
             { key: 'state', header: '', render: instState },
           ]}
           data={row.schedule || []}
@@ -75,13 +108,14 @@ const tabs: TabDef[] = [
       { id: 'repay', label: 'Record repayment', variant: 'primary', when: ['ACTIVE'], path: (r) => `/lnd/loans/${r.id}/repayments`, fields: [{ name: 'amount', label: 'Amount received', type: 'decimal', required: true }, { name: 'reference', label: 'Receipt / bank reference', type: 'text', required: true }, { name: 'payment_date', label: 'Payment date', type: 'date', default: today() }], success: 'Repayment posted (interest first, then principal)' },
     ],
   },
+  { id: 'late-fees', label: 'Late fees', render: ({ notify }) => <LateFees notify={notify} /> },
 ];
 
 export const LendingView: React.FC = () => (
   <ModuleWorkspace
     id="lnd"
     title="Customer Financing"
-    description="Instalment financing for equipment: applications with maker-checker approval, amortisation schedules, one-time disbursement posting, and interest-first repayment allocation."
+    description="Instalment financing for equipment: applications with maker-checker approval, amortisation schedules, one-time disbursement posting, late fees after a grace period, and fee → interest → principal repayment allocation."
     tabs={tabs}
     summaryEndpoint="/lnd/summary"
     kpis={(s) => [

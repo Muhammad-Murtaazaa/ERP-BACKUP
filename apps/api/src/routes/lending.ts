@@ -3,8 +3,11 @@
  * segregation of duties, then disbursed: the schedule is generated and DR 112004 loans receivable /
  * CR 111002 bank posts once. Repayments are allocated oldest instalment first, interest before
  * principal, and post DR bank / CR 411006 interest income / CR 112004. Interest is recognised on
- * a cash basis when collected (no period-end accrual).
+ * a cash basis when collected (no period-end accrual). Instalments unpaid after `lnd.grace_days`
+ * are charged one flat late fee (`lnd.late_fee_flat`); fees are collected first and credited to
+ * 411005 when collected.
  */
+import { getSetting } from './config.js';
 import type { Express, Request, Response } from 'express';
 import { Permission, ErrorCode, AccountingPurpose } from '@omnysync/contracts';
 import { Money } from '@omnysync/financial-engine';
@@ -40,25 +43,30 @@ export function amortise(principal: string, annualRate: string, months: number, 
   return out;
 }
 
-/** Allocates a payment over open instalments: per instalment interest first, then principal. */
-export function allocate(rows: { id: string; principal: string; interest: string; paid_principal: string; paid_interest: string }[], amount: string) {
+/** Allocates a payment over open instalments (oldest first): per instalment late fee, then interest, then principal. */
+export function allocate(rows: { id: string; principal: string; interest: string; paid_principal: string; paid_interest: string; late_fee?: string; paid_late_fee?: string }[], amount: string) {
   let left = new Money(amount);
   let interest = Money.zero();
   let principal = Money.zero();
-  const updates: { id: string; interest: string; principal: string }[] = [];
+  let fees = Money.zero();
+  const updates: { id: string; interest: string; principal: string; fee: string }[] = [];
   for (const r of rows) {
     if (!left.isPositive()) break;
+    const fDue = new Money(r.late_fee ?? '0').sub(r.paid_late_fee ?? '0');
+    const fPay = fDue.lt(left) ? fDue : left;
+    left = left.sub(fPay);
     const iDue = new Money(r.interest).sub(r.paid_interest);
     const iPay = iDue.lt(left) ? iDue : left;
     left = left.sub(iPay);
     const pDue = new Money(r.principal).sub(r.paid_principal);
     const pPay = pDue.lt(left) ? pDue : left;
     left = left.sub(pPay);
-    if (iPay.isPositive() || pPay.isPositive()) updates.push({ id: r.id, interest: iPay.toFixed(2), principal: pPay.toFixed(2) });
+    if (fPay.isPositive() || iPay.isPositive() || pPay.isPositive()) updates.push({ id: r.id, interest: iPay.toFixed(2), principal: pPay.toFixed(2), fee: fPay.toFixed(2) });
     interest = interest.add(iPay);
     principal = principal.add(pPay);
+    fees = fees.add(fPay);
   }
-  return { interest: interest.toFixed(2), principal: principal.toFixed(2), unapplied: left.toFixed(2), updates };
+  return { interest: interest.toFixed(2), principal: principal.toFixed(2), fees: fees.toFixed(2), unapplied: left.toFixed(2), updates };
 }
 
 export function registerLendingRoutes(app: Express): void {
@@ -147,14 +155,15 @@ export function registerLendingRoutes(app: Express): void {
       if (paymentDate < toIsoDate(loan.disbursement_date)) throw validationError('payment_date is before disbursement', { field: 'payment_date' });
       const dup = await ctx.tx.query(`SELECT id FROM lnd_repayments WHERE loan_id = $1 AND reference = $2`, [loan.id, reference]);
       if (dup.rows.length) throw new ApiError(409, ErrorCode.DUPLICATE_RESOURCE, `Repayment ${reference} is already recorded`);
-      const open = (await ctx.tx.query(`SELECT id, principal::text, interest::text, paid_principal::text, paid_interest::text FROM lnd_schedule WHERE loan_id = $1 AND (paid_principal < principal OR paid_interest < interest) ORDER BY seq FOR UPDATE`, [loan.id])).rows;
+      const open = (await ctx.tx.query(`SELECT id, principal::text, interest::text, paid_principal::text, paid_interest::text, late_fee::text, paid_late_fee::text FROM lnd_schedule WHERE loan_id = $1 AND (paid_principal < principal OR paid_interest < interest OR paid_late_fee < late_fee) ORDER BY seq FOR UPDATE`, [loan.id])).rows;
       const a = allocate(open, String(b.amount));
       if (new Money(a.unapplied).isPositive()) throw validationError(`Payment exceeds the remaining balance by ${a.unapplied}`, { field: 'amount' });
       const rep = await ctx.tx.query(
-        `INSERT INTO lnd_repayments (organization_id, loan_id, payment_date, amount, interest_part, principal_part, reference, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-        [ctx.org, loan.id, paymentDate, String(b.amount), a.interest, a.principal, reference, ctx.user],
+        `INSERT INTO lnd_repayments (organization_id, loan_id, payment_date, amount, interest_part, principal_part, fee_part, reference, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [ctx.org, loan.id, paymentDate, String(b.amount), a.interest, a.principal, a.fees, reference, ctx.user],
       );
       const lines: any[] = [{ account_code: '111002', debit: new Money(String(b.amount)).toFixed(8), description: `Repayment ${reference}` }];
+      if (new Money(a.fees).isPositive()) lines.push({ account_code: '411005', credit: new Money(a.fees).toFixed(8), description: `Late fees ${loan.number}` });
       if (new Money(a.interest).isPositive()) lines.push({ account_code: '411006', credit: new Money(a.interest).toFixed(8), description: `Interest ${loan.number}` });
       if (new Money(a.principal).isPositive()) lines.push({ account_code: '112004', credit: new Money(a.principal).toFixed(8), party_id: loan.party_id, description: `Principal ${loan.number}` });
       const j = await postJournal(ctx.tx, auditLogger, outboxService, {
@@ -162,21 +171,43 @@ export function registerLendingRoutes(app: Express): void {
         description: `Loan ${loan.number} repayment ${reference}`, sourceType: 'LOAN_REPAYMENT', sourceId: rep.rows[0].id, sourceKey: `LND_REPAY:${rep.rows[0].id}`, numberPrefix: 'JV-LND', correlationId: ctx.req.correlationId, lines,
       });
       await ctx.tx.query(`UPDATE lnd_repayments SET journal_id = $2 WHERE id = $1`, [rep.rows[0].id, j?.journalId ?? null]);
-      for (const u of a.updates) await ctx.tx.query(`UPDATE lnd_schedule SET paid_interest = paid_interest + $2, paid_principal = paid_principal + $3 WHERE id = $1`, [u.id, u.interest, u.principal]);
+      for (const u of a.updates) await ctx.tx.query(`UPDATE lnd_schedule SET paid_interest = paid_interest + $2, paid_principal = paid_principal + $3, paid_late_fee = paid_late_fee + $4 WHERE id = $1`, [u.id, u.interest, u.principal, u.fee]);
       const outstanding = new Money(loan.outstanding_principal).sub(a.principal);
-      const closed = !(await ctx.tx.query(`SELECT 1 FROM lnd_schedule WHERE loan_id = $1 AND (paid_principal < principal OR paid_interest < interest) LIMIT 1`, [loan.id])).rows.length;
+      const closed = !(await ctx.tx.query(`SELECT 1 FROM lnd_schedule WHERE loan_id = $1 AND (paid_principal < principal OR paid_interest < interest OR paid_late_fee < late_fee) LIMIT 1`, [loan.id])).rows.length;
       await ctx.tx.query(`UPDATE lnd_loans SET outstanding_principal = $2, status = $3, revision = revision + 1, updated_at = NOW() WHERE id = $1`, [loan.id, outstanding.toFixed(8), closed ? 'CLOSED' : 'ACTIVE']);
-      await audit(ctx, 'REPAYMENT', 'LOAN', loan.id, undefined, { reference, amount: String(b.amount), interest: a.interest, principal: a.principal });
+      await audit(ctx, 'REPAYMENT', 'LOAN', loan.id, undefined, { reference, amount: String(b.amount), fees: a.fees, interest: a.interest, principal: a.principal });
       await emit(ctx, closed ? 'LOAN_CLOSED' : 'LOAN_REPAYMENT', { loan_id: loan.id, number: loan.number, amount: String(b.amount) });
       return { ...rep.rows[0], journal_number: j?.journalNumber ?? null, outstanding_principal: outstanding.toFixed(2), loan_status: closed ? 'CLOSED' : 'ACTIVE' };
     });
     return ok(req, res, out, 201);
   });
 
+  /** Charges one flat late fee on each instalment still unpaid after the grace period (idempotent per instalment). */
+  app.post('/api/lnd/late-fees/assess', authenticate, requireAnyPermission(Permission.LOAN_POST), requireModule('LND', 'command'), async (req: Request, res: Response) => {
+    const asOf = req.body?.as_of ? dateOnly(req.body.as_of, 'as_of') : todayIso();
+    const out = await unitOfWork(req, async (ctx) => {
+      const fee = new Money(await getSetting<string>(ctx.tx, ctx.org, 'lnd.late_fee_flat'));
+      const grace = Number(await getSetting<number>(ctx.tx, ctx.org, 'lnd.grace_days'));
+      if (!fee.isPositive()) return { as_of: asOf, assessed: 0, fees: '0.00', instalments: [] };
+      const due = (
+        await ctx.tx.query(
+          `SELECT s.id, s.seq, s.due_date, l.number FROM lnd_schedule s JOIN lnd_loans l ON l.id = s.loan_id
+           WHERE s.organization_id = $1 AND l.status = 'ACTIVE' AND s.late_fee_assessed_on IS NULL AND (s.paid_principal < s.principal OR s.paid_interest < s.interest)
+             AND s.due_date + ($2::int) < $3::date ORDER BY l.number, s.seq FOR UPDATE OF s`,
+          [ctx.org, grace, asOf],
+        )
+      ).rows;
+      for (const r of due) await ctx.tx.query(`UPDATE lnd_schedule SET late_fee = $2, late_fee_assessed_on = $3 WHERE id = $1`, [r.id, fee.toFixed(8), asOf]);
+      if (due.length) await audit(ctx, 'LATE_FEES_ASSESSED', 'LOAN', ctx.org, undefined, { as_of: asOf, count: due.length, fee: fee.toFixed(2) });
+      return { as_of: asOf, assessed: due.length, fees: fee.mul(due.length).toFixed(2), instalments: due.map((r: any) => `${r.number}#${r.seq}`) };
+    });
+    return ok(req, res, out);
+  });
+
   app.get('/api/lnd/summary', authenticate, requireAnyPermission(...VIEW), async (req: Request, res: Response) => {
     const org = req.session!.organization_id;
     const l = (await db.query(`SELECT COUNT(*) FILTER (WHERE status='ACTIVE')::int active, COUNT(*) FILTER (WHERE status IN ('SUBMITTED','APPROVED'))::int pipeline, COALESCE(SUM(outstanding_principal) FILTER (WHERE status='ACTIVE'),0)::text outstanding FROM lnd_loans WHERE organization_id = $1`, [org])).rows[0];
-    const o = (await db.query(`SELECT COALESCE(SUM(s.principal - s.paid_principal + s.interest - s.paid_interest),0)::text overdue, COUNT(DISTINCT s.loan_id)::int overdue_loans FROM lnd_schedule s JOIN lnd_loans l ON l.id = s.loan_id WHERE l.organization_id = $1 AND l.status = 'ACTIVE' AND s.due_date < CURRENT_DATE AND (s.paid_principal < s.principal OR s.paid_interest < s.interest)`, [org])).rows[0];
+    const o = (await db.query(`SELECT COALESCE(SUM(s.principal - s.paid_principal + s.interest - s.paid_interest + s.late_fee - s.paid_late_fee),0)::text overdue, COUNT(DISTINCT s.loan_id)::int overdue_loans FROM lnd_schedule s JOIN lnd_loans l ON l.id = s.loan_id WHERE l.organization_id = $1 AND l.status = 'ACTIVE' AND s.due_date < CURRENT_DATE AND (s.paid_principal < s.principal OR s.paid_interest < s.interest)`, [org])).rows[0];
     const i = (await db.query(`SELECT COALESCE(SUM(interest_part),0)::text interest_mtd FROM lnd_repayments WHERE organization_id = $1 AND payment_date >= date_trunc('month', CURRENT_DATE)`, [org])).rows[0];
     return ok(req, res, { ...l, ...o, ...i });
   });

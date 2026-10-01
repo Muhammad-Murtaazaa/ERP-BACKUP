@@ -112,4 +112,28 @@ describe('LND API', () => {
     const sm = await makeRequest('GET', '/api/lnd/summary', undefined, acct);
     expect(sm.status).toBe(200);
   });
+
+  it('late fees: one flat fee per instalment after the grace period, collected first, income on collection', async () => {
+    const l = await approved({ principal: '30000', annual_rate: '12', term_months: 3 });
+    await makeRequest('POST', `/api/lnd/loans/${l.id}/disburse`, { disbursement_date: '2026-09-01' }, acct);
+    const number = (await db.query(`SELECT number FROM lnd_loans WHERE id = $1`, [l.id])).rows[0].number;
+    expect((await makeRequest('POST', '/api/lnd/late-fees/assess', { as_of: '2026-10-07' }, viewer)).status).toBe(403);
+    const inGrace = await makeRequest('POST', '/api/lnd/late-fees/assess', { as_of: '2026-10-06' }, acct); // due 10-01 + 5 grace days
+    expect(inGrace.body.data.instalments).not.toContain(`${number}#1`);
+    const a1 = await makeRequest('POST', '/api/lnd/late-fees/assess', { as_of: '2026-10-07' }, acct);
+    expect(a1.status).toBe(200);
+    expect(a1.body.data.instalments).toContain(`${number}#1`);
+    const a2 = await makeRequest('POST', '/api/lnd/late-fees/assess', { as_of: '2026-10-20' }, acct);
+    expect(a2.body.data.instalments).not.toContain(`${number}#1`); // charged once
+    const fees = (await db.query(`SELECT seq, late_fee::text FROM lnd_schedule WHERE loan_id = $1 AND late_fee > 0`, [l.id])).rows;
+    expect(fees.map((f: any) => [f.seq, Number(f.late_fee)])).toEqual([[1, 500]]);
+    const p = await makeRequest('POST', `/api/lnd/loans/${l.id}/repayments`, { amount: '800', reference: 'LATE-1', payment_date: '2026-10-21' }, acct);
+    expect(p.status).toBe(201);
+    expect([Number(p.body.data.fee_part), Number(p.body.data.interest_part), Number(p.body.data.principal_part)]).toEqual([500, 300, 0]);
+    const fee = (await db.query(`SELECT SUM(jl.base_credit)::text c FROM journal_lines jl JOIN journals j ON j.id = jl.journal_id JOIN accounts a ON a.id = jl.account_id WHERE j.source_id = $1 AND a.code = '411005'`, [p.body.data.id])).rows[0].c;
+    expect(Number(fee)).toBe(500);
+    const left = (await db.query(`SELECT SUM(principal + interest + late_fee - paid_principal - paid_interest - paid_late_fee)::text r FROM lnd_schedule WHERE loan_id = $1`, [l.id])).rows[0].r;
+    const payoff = await makeRequest('POST', `/api/lnd/loans/${l.id}/repayments`, { amount: Number(left).toFixed(2), reference: 'LATE-PAYOFF', payment_date: '2026-10-22' }, acct);
+    expect(payoff.body.data.loan_status).toBe('CLOSED');
+  });
 });
