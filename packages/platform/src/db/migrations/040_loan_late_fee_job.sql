@@ -1,0 +1,6 @@
+-- 040: allow the LND-LATE-FEES automation job (daily late-fee assessment, tier A3).
+ALTER TABLE automation_rules DROP CONSTRAINT IF EXISTS automation_rules_job_type_check;
+ALTER TABLE automation_rules ADD CONSTRAINT automation_rules_job_type_check CHECK (job_type IN (
+  'REORDER_ALERTS','AR_DUNNING','AP_DUE_PROPOSALS','RECURRING_JOURNALS','BANK_AUTO_MATCH','STOCK_GL_RECON',
+  'PM_WORK_ORDERS','DEPRECIATION_DUE','POS_SHIFT_MONITOR','APPROVAL_AGING','PERIOD_CLOSE_REMINDER','SERVICE_SLA_PM',
+  'SUBSCRIPTION_BILLING','LOAN_LATE_FEES'));

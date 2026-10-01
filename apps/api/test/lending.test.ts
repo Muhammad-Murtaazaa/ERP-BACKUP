@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { bootstrap, login, makeRequest, db } from './harness.js';
 import { amortise, allocate } from '../src/routes/lending.js';
+import { JOB_HANDLERS } from '../src/automation/jobs.js';
+import { ensureDefaultRules } from '../src/automation/engine.js';
 
 const sum = (xs: string[]) => xs.reduce((a, x) => a + Math.round(Number(x) * 100), 0) / 100;
 
@@ -135,5 +137,22 @@ describe('LND API', () => {
     const left = (await db.query(`SELECT SUM(principal + interest + late_fee - paid_principal - paid_interest - paid_late_fee)::text r FROM lnd_schedule WHERE loan_id = $1`, [l.id])).rows[0].r;
     const payoff = await makeRequest('POST', `/api/lnd/loans/${l.id}/repayments`, { amount: Number(left).toFixed(2), reference: 'LATE-PAYOFF', payment_date: '2026-10-22' }, acct);
     expect(payoff.body.data.loan_status).toBe('CLOSED');
+  });
+
+  it('LND-LATE-FEES job assesses due instalments once and alerts the accountant', async () => {
+    const l = await approved({ principal: '9000', annual_rate: '0', term_months: 3 });
+    await makeRequest('POST', `/api/lnd/loans/${l.id}/disburse`, { disbursement_date: '2026-09-01' }, acct);
+    const { organization_id: org, number } = (await db.query(`SELECT organization_id, number FROM lnd_loans WHERE id = $1`, [l.id])).rows[0];
+    await ensureDefaultRules(db as any, org);
+    const rule = (await db.query(`SELECT * FROM automation_rules WHERE organization_id = $1 AND code = 'LND-LATE-FEES'`, [org])).rows[0];
+    expect(rule).toMatchObject({ tier: 'A3', job_type: 'LOAN_LATE_FEES' });
+    const ctx = { q: db as any, orgId: org, rule, config: {}, today: '2026-11-10', now: new Date() };
+    const r1 = await JOB_HANDLERS.LOAN_LATE_FEES(ctx);
+    expect(r1.summary.instalments).toEqual(expect.arrayContaining([`${number}#1`]));
+    expect(r1.alerts[0]).toMatchObject({ category: 'FINANCE', severity: 'WARNING' });
+    const r2 = await JOB_HANDLERS.LOAN_LATE_FEES(ctx);
+    expect(r2.summary.instalments).not.toContain(`${number}#1`);
+    const fees = (await db.query(`SELECT seq FROM lnd_schedule WHERE loan_id = $1 AND late_fee > 0 ORDER BY seq`, [l.id])).rows.map((r: any) => r.seq);
+    expect(fees).toEqual([1, 2]); // due 10-01 and 11-01 (+5 grace days) are late on 11-10; #3 (12-01) is not
   });
 });

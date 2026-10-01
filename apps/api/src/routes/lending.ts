@@ -69,6 +69,24 @@ export function allocate(rows: { id: string; principal: string; interest: string
   return { interest: interest.toFixed(2), principal: principal.toFixed(2), fees: fees.toFixed(2), unapplied: left.toFixed(2), updates };
 }
 
+/** Charges one flat late fee on each instalment still unpaid after the grace period (idempotent per instalment). Shared by the route and the LND-LATE-FEES job. */
+export async function assessLateFees(ctx: Parameters<typeof audit>[0], asOf: string) {
+  const fee = new Money(await getSetting<string>(ctx.tx, ctx.org, 'lnd.late_fee_flat'));
+  const grace = Number(await getSetting<number>(ctx.tx, ctx.org, 'lnd.grace_days'));
+  if (!fee.isPositive()) return { as_of: asOf, assessed: 0, fees: '0.00', instalments: [] };
+  const due = (
+    await ctx.tx.query(
+      `SELECT s.id, s.seq, s.due_date, l.number FROM lnd_schedule s JOIN lnd_loans l ON l.id = s.loan_id
+       WHERE s.organization_id = $1 AND l.status = 'ACTIVE' AND s.late_fee_assessed_on IS NULL AND (s.paid_principal < s.principal OR s.paid_interest < s.interest)
+         AND s.due_date + ($2::int) < $3::date ORDER BY l.number, s.seq FOR UPDATE OF s`,
+      [ctx.org, grace, asOf],
+    )
+  ).rows;
+  for (const r of due) await ctx.tx.query(`UPDATE lnd_schedule SET late_fee = $2, late_fee_assessed_on = $3 WHERE id = $1`, [r.id, fee.toFixed(8), asOf]);
+  if (due.length) await audit(ctx, 'LATE_FEES_ASSESSED', 'LOAN', ctx.org, undefined, { as_of: asOf, count: due.length, fee: fee.toFixed(2) });
+  return { as_of: asOf, assessed: due.length, fees: fee.mul(due.length).toFixed(2), instalments: due.map((r: any) => `${r.number}#${r.seq}`) };
+}
+
 export function registerLendingRoutes(app: Express): void {
   defineResource(app, {
     path: '/api/lnd/loans',
@@ -185,22 +203,7 @@ export function registerLendingRoutes(app: Express): void {
   /** Charges one flat late fee on each instalment still unpaid after the grace period (idempotent per instalment). */
   app.post('/api/lnd/late-fees/assess', authenticate, requireAnyPermission(Permission.LOAN_POST), requireModule('LND', 'command'), async (req: Request, res: Response) => {
     const asOf = req.body?.as_of ? dateOnly(req.body.as_of, 'as_of') : todayIso();
-    const out = await unitOfWork(req, async (ctx) => {
-      const fee = new Money(await getSetting<string>(ctx.tx, ctx.org, 'lnd.late_fee_flat'));
-      const grace = Number(await getSetting<number>(ctx.tx, ctx.org, 'lnd.grace_days'));
-      if (!fee.isPositive()) return { as_of: asOf, assessed: 0, fees: '0.00', instalments: [] };
-      const due = (
-        await ctx.tx.query(
-          `SELECT s.id, s.seq, s.due_date, l.number FROM lnd_schedule s JOIN lnd_loans l ON l.id = s.loan_id
-           WHERE s.organization_id = $1 AND l.status = 'ACTIVE' AND s.late_fee_assessed_on IS NULL AND (s.paid_principal < s.principal OR s.paid_interest < s.interest)
-             AND s.due_date + ($2::int) < $3::date ORDER BY l.number, s.seq FOR UPDATE OF s`,
-          [ctx.org, grace, asOf],
-        )
-      ).rows;
-      for (const r of due) await ctx.tx.query(`UPDATE lnd_schedule SET late_fee = $2, late_fee_assessed_on = $3 WHERE id = $1`, [r.id, fee.toFixed(8), asOf]);
-      if (due.length) await audit(ctx, 'LATE_FEES_ASSESSED', 'LOAN', ctx.org, undefined, { as_of: asOf, count: due.length, fee: fee.toFixed(2) });
-      return { as_of: asOf, assessed: due.length, fees: fee.mul(due.length).toFixed(2), instalments: due.map((r: any) => `${r.number}#${r.seq}`) };
-    });
+    const out = await unitOfWork(req, (ctx) => assessLateFees(ctx, asOf));
     return ok(req, res, out);
   });
 
