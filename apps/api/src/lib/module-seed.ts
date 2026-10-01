@@ -267,3 +267,30 @@ registerSeeder('LND', async (q, c) => {
     [c.org, c.le, party.id, c.admin],
   );
 });
+
+registerSeeder('GRC', async (q, c) => {
+  const risks: [string, string, string, number, number, number | null, number | null, string][] = [
+    ['RSK-HVAC-01', 'Refrigerant leak / gas handling injury on site', 'SAFETY', 3, 5, 2, 4, 'Service manager'],
+    ['RSK-HVAC-02', 'Fall from height during outdoor unit installation', 'SAFETY', 3, 5, null, null, 'Service manager'],
+    ['RSK-FIN-01', 'Technician cash collections not deposited', 'FINANCIAL', 3, 3, 2, 2, 'Controller'],
+    ['RSK-OPS-01', 'Warranty claims accepted outside coverage', 'OPERATIONAL', 4, 2, null, null, 'Service manager'],
+    ['RSK-IT-01', 'Customer data exposure from lost technician phone', 'IT', 2, 4, null, null, 'IT lead'],
+  ];
+  for (const [code, title, cat, l, i, rl, ri, owner] of risks) {
+    await q.query(
+      `INSERT INTO grc_risks (organization_id, legal_entity_id, code, title, category, owner, likelihood, impact, residual_likelihood, residual_impact, status, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'OPEN',$11) ON CONFLICT (organization_id, code) DO NOTHING`,
+      [c.org, c.le, code, title, cat, owner, l, i, rl, ri, c.admin],
+    );
+  }
+  const controls: [string, string, string, string, string][] = [
+    ['CTL-HVAC-01', 'RSK-HVAC-01', 'Leak detector + PPE checklist completed before charging', 'PREVENTIVE', 'MONTHLY'],
+    ['CTL-FIN-01', 'RSK-FIN-01', 'Daily technician cash-up reconciled to job billing', 'DETECTIVE', 'MONTHLY'],
+    ['CTL-OPS-01', 'RSK-OPS-01', 'Warranty eligibility check on case intake', 'PREVENTIVE', 'QUARTERLY'],
+  ];
+  for (const [code, risk, title, type, freq] of controls) {
+    await q.query(
+      `INSERT INTO grc_controls (organization_id, legal_entity_id, code, title, risk_id, control_type, frequency, owner, next_test_due, status, created_by) SELECT $1,$2,$3,$4,r.id,$5,$6,r.owner,CURRENT_DATE + 14,'OPERATING',$7 FROM grc_risks r WHERE r.organization_id = $1 AND r.code = $8 ON CONFLICT (organization_id, code) DO NOTHING`,
+      [c.org, c.le, code, title, type, freq, c.admin, risk],
+    );
+  }
+});

@@ -24,6 +24,7 @@ export const SETTINGS: Record<string, { label: string; group: string; type: Sett
   'service.default_labour_rate': { label: 'Default technician labour rate (PKR/h)', group: 'Service', type: { kind: 'decimal', min: '0', max: '1000000' }, default: '2500', help: 'Used when billing approved service time.' },
   'time.daily_overtime_after_hours': { label: 'Overtime after (hours/day)', group: 'Time', type: { kind: 'decimal', min: '1', max: '24' }, default: '8', help: 'Hours beyond this are overtime.' },
   'tax.default_output_code': { label: 'Default output tax code', group: 'Tax', type: { kind: 'text', max: 32 }, default: 'GST18', help: 'Applied when an item has no tax rate.' },
+  'grc.risk_appetite': { label: 'Risk appetite (max acceptable residual score)', group: 'Risk', type: { kind: 'int', min: 1, max: 25 }, default: 8, help: 'Risks above this residual score (likelihood × impact) cannot be accepted without escalation.' },
   'finance.require_journal_approval': { label: 'Manual journals need approval', group: 'Finance', type: { kind: 'bool' }, default: true, help: 'Maker-checker on manual vouchers.' },
 };
 
