@@ -69,6 +69,38 @@ export function allocate(rows: { id: string; principal: string; interest: string
   return { interest: interest.toFixed(2), principal: principal.toFixed(2), fees: fees.toFixed(2), unapplied: left.toFixed(2), updates };
 }
 
+/**
+ * Accrual basis: accrues the interest of every instalment due on or before `asOf` (ACTIVE loans, not yet
+ * accrued) — one journal per instalment, DR 112005 / CR 411006, idempotent by source key and flag.
+ */
+export async function accrueInterest(ctx: Parameters<typeof audit>[0], asOf: string) {
+  if ((await getSetting<string>(ctx.tx, ctx.org, 'lnd.interest_basis')) !== 'ACCRUAL') return { as_of: asOf, basis: 'CASH', accrued: 0, amount: '0.00', instalments: [] as string[] };
+  const due = (
+    await ctx.tx.query(
+      `SELECT s.id, s.seq, s.due_date, s.interest::text, l.number, l.party_id FROM lnd_schedule s JOIN lnd_loans l ON l.id = s.loan_id
+       WHERE s.organization_id = $1 AND l.status = 'ACTIVE' AND s.interest_accrued_on IS NULL AND s.interest > 0 AND s.due_date <= $2::date
+       ORDER BY l.number, s.seq FOR UPDATE OF s`,
+      [ctx.org, asOf],
+    )
+  ).rows;
+  let total = Money.zero();
+  for (const r of due) {
+    const amt = new Money(r.interest).round(2);
+    const j = await postJournal(ctx.tx, auditLogger, outboxService, {
+      organizationId: ctx.org, legalEntityId: ctx.le, userId: ctx.user, postingDate: toIsoDate(r.due_date), purpose: AccountingPurpose.LOAN_REPAYMENT,
+      description: `Interest accrued ${r.number} #${r.seq}`, sourceType: 'LOAN_ACCRUAL', sourceId: r.id, sourceKey: `LND_ACCR:${r.id}`, numberPrefix: 'JV-LND', correlationId: ctx.req.correlationId,
+      lines: [
+        { account_code: '112005', debit: amt.toFixed(8), party_id: r.party_id, description: `Accrued interest ${r.number} #${r.seq}` },
+        { account_code: '411006', credit: amt.toFixed(8), description: `Interest income ${r.number} #${r.seq}` },
+      ],
+    });
+    await ctx.tx.query(`UPDATE lnd_schedule SET interest_accrued_on = $2, accrual_journal_id = $3 WHERE id = $1`, [r.id, toIsoDate(r.due_date), j?.journalId ?? null]);
+    total = total.add(amt);
+  }
+  if (due.length) await audit(ctx, 'LOAN_INTEREST_ACCRUED', 'LOAN', ctx.org, undefined, { as_of: asOf, count: due.length, amount: total.toFixed(2) });
+  return { as_of: asOf, basis: 'ACCRUAL', accrued: due.length, amount: total.toFixed(2), instalments: due.map((r: any) => `${r.number}#${r.seq}`) };
+}
+
 /** Charges one flat late fee on each instalment still unpaid after the grace period (idempotent per instalment). Shared by the route and the LND-LATE-FEES job. */
 export async function assessLateFees(ctx: Parameters<typeof audit>[0], asOf: string) {
   const fee = new Money(await getSetting<string>(ctx.tx, ctx.org, 'lnd.late_fee_flat'));
@@ -173,7 +205,7 @@ export function registerLendingRoutes(app: Express): void {
       if (paymentDate < toIsoDate(loan.disbursement_date)) throw validationError('payment_date is before disbursement', { field: 'payment_date' });
       const dup = await ctx.tx.query(`SELECT id FROM lnd_repayments WHERE loan_id = $1 AND reference = $2`, [loan.id, reference]);
       if (dup.rows.length) throw new ApiError(409, ErrorCode.DUPLICATE_RESOURCE, `Repayment ${reference} is already recorded`);
-      const open = (await ctx.tx.query(`SELECT id, principal::text, interest::text, paid_principal::text, paid_interest::text, late_fee::text, paid_late_fee::text FROM lnd_schedule WHERE loan_id = $1 AND (paid_principal < principal OR paid_interest < interest OR paid_late_fee < late_fee) ORDER BY seq FOR UPDATE`, [loan.id])).rows;
+      const open = (await ctx.tx.query(`SELECT id, principal::text, interest::text, paid_principal::text, paid_interest::text, late_fee::text, paid_late_fee::text, interest_accrued_on FROM lnd_schedule WHERE loan_id = $1 AND (paid_principal < principal OR paid_interest < interest OR paid_late_fee < late_fee) ORDER BY seq FOR UPDATE`, [loan.id])).rows;
       const a = allocate(open, String(b.amount));
       if (new Money(a.unapplied).isPositive()) throw validationError(`Payment exceeds the remaining balance by ${a.unapplied}`, { field: 'amount' });
       const rep = await ctx.tx.query(
@@ -182,7 +214,12 @@ export function registerLendingRoutes(app: Express): void {
       );
       const lines: any[] = [{ account_code: '111002', debit: new Money(String(b.amount)).toFixed(8), description: `Repayment ${reference}` }];
       if (new Money(a.fees).isPositive()) lines.push({ account_code: '411005', credit: new Money(a.fees).toFixed(8), description: `Late fees ${loan.number}` });
-      if (new Money(a.interest).isPositive()) lines.push({ account_code: '411006', credit: new Money(a.interest).toFixed(8), description: `Interest ${loan.number}` });
+      // Interest on accrued instalments clears the receivable (accrual basis); the rest is income on collection.
+      const accruedIds = new Set(open.filter((o: any) => o.interest_accrued_on).map((o: any) => o.id));
+      const fromAccrued = a.updates.filter((u: any) => accruedIds.has(u.id)).reduce((m: Money, u: any) => m.add(u.interest), Money.zero());
+      const cashInterest = new Money(a.interest).sub(fromAccrued);
+      if (fromAccrued.isPositive()) lines.push({ account_code: '112005', credit: fromAccrued.toFixed(8), party_id: loan.party_id, description: `Accrued interest collected ${loan.number}` });
+      if (cashInterest.isPositive()) lines.push({ account_code: '411006', credit: cashInterest.toFixed(8), description: `Interest ${loan.number}` });
       if (new Money(a.principal).isPositive()) lines.push({ account_code: '112004', credit: new Money(a.principal).toFixed(8), party_id: loan.party_id, description: `Principal ${loan.number}` });
       const j = await postJournal(ctx.tx, auditLogger, outboxService, {
         organizationId: ctx.org, legalEntityId: ctx.le, userId: ctx.user, postingDate: paymentDate, purpose: AccountingPurpose.LOAN_REPAYMENT,
@@ -201,6 +238,11 @@ export function registerLendingRoutes(app: Express): void {
   });
 
   /** Charges one flat late fee on each instalment still unpaid after the grace period (idempotent per instalment). */
+  app.post('/api/lnd/interest/accrue', authenticate, requireAnyPermission(Permission.LOAN_POST), requireModule('LND', 'command'), async (req: Request, res: Response) => {
+    const asOf = req.body?.as_of ? dateOnly(req.body.as_of, 'as_of') : todayIso();
+    return ok(req, res, await unitOfWork(req, (ctx) => accrueInterest(ctx, asOf)));
+  });
+
   app.post('/api/lnd/late-fees/assess', authenticate, requireAnyPermission(Permission.LOAN_POST), requireModule('LND', 'command'), async (req: Request, res: Response) => {
     const asOf = req.body?.as_of ? dateOnly(req.body.as_of, 'as_of') : todayIso();
     const out = await unitOfWork(req, (ctx) => assessLateFees(ctx, asOf));

@@ -155,4 +155,34 @@ describe('LND API', () => {
     const fees = (await db.query(`SELECT seq FROM lnd_schedule WHERE loan_id = $1 AND late_fee > 0 ORDER BY seq`, [l.id])).rows.map((r: any) => r.seq);
     expect(fees).toEqual([1, 2]); // due 10-01 and 11-01 (+5 grace days) are late on 11-10; #3 (12-01) is not
   });
+
+  it('accrual basis: interest accrues on due dates once (DR 112005 / CR 411006) and collections clear the receivable', async () => {
+    const l = await approved({ principal: '30000', annual_rate: '12', term_months: 3 });
+    await makeRequest('POST', `/api/lnd/loans/${l.id}/disburse`, { disbursement_date: '2026-09-01' }, acct);
+    const cash = await makeRequest('POST', '/api/lnd/interest/accrue', { as_of: '2026-11-05' }, acct);
+    expect(cash.body.data).toMatchObject({ basis: 'CASH', accrued: 0 }); // default stays cash-basis
+    const adminTok = await login('admin@omnysync.internal');
+    const cur = (await makeRequest('GET', '/api/config/settings', undefined, adminTok)).body.data.find((x: any) => x.key === 'lnd.interest_basis');
+    expect((await makeRequest('POST', '/api/config/settings/lnd.interest_basis', { value: 'ACCRUAL', version: cur.version, reason: 'IFRS 9 accrual' }, adminTok)).status).toBe(200);
+    expect((await makeRequest('POST', '/api/lnd/interest/accrue', { as_of: '2026-11-05' }, viewer)).status).toBe(403);
+    const sched = (await db.query(`SELECT id, seq, principal::text, interest::text FROM lnd_schedule WHERE loan_id = $1 ORDER BY seq`, [l.id])).rows;
+    const a1 = await makeRequest('POST', '/api/lnd/interest/accrue', { as_of: '2026-11-05' }, acct);
+    expect(a1.status).toBe(200);
+    const number = (await db.query(`SELECT number FROM lnd_loans WHERE id = $1`, [l.id])).rows[0].number;
+    expect(a1.body.data.instalments).toEqual(expect.arrayContaining([`${number}#1`, `${number}#2`]));
+    expect(a1.body.data.instalments).not.toContain(`${number}#3`);
+    const a2 = await makeRequest('POST', '/api/lnd/interest/accrue', { as_of: '2026-11-05' }, acct);
+    expect(a2.body.data.instalments).not.toContain(`${number}#1`);
+    const gl = async (code: string) =>
+      Number((await db.query(`SELECT COALESCE(SUM(jl.base_debit - jl.base_credit),0)::text n FROM journal_lines jl JOIN journals j ON j.id = jl.journal_id JOIN accounts a ON a.id = jl.account_id WHERE a.code = $1 AND (j.source_id IN (SELECT id FROM lnd_schedule WHERE loan_id = $2) OR j.source_id IN (SELECT id FROM lnd_repayments WHERE loan_id = $2))`, [code, l.id])).rows[0].n);
+    const i1 = Number(sched[0].interest), i2 = Number(sched[1].interest);
+    expect(await gl('112005')).toBeCloseTo(i1 + i2, 2);
+    expect(await gl('411006')).toBeCloseTo(-(i1 + i2), 2);
+    const pay = await makeRequest('POST', `/api/lnd/loans/${l.id}/repayments`, { amount: (Number(sched[0].principal) + i1).toFixed(2), reference: 'ACCR-1', payment_date: '2026-11-06' }, acct);
+    expect(pay.status, JSON.stringify(pay.body)).toBe(201);
+    expect(await gl('112005')).toBeCloseTo(i2, 2); // #1 cleared, #2 still receivable
+    expect(await gl('411006')).toBeCloseTo(-(i1 + i2), 2); // no double-counted income
+    const v = (await makeRequest('GET', '/api/config/settings', undefined, adminTok)).body.data.find((x: any) => x.key === 'lnd.interest_basis').version;
+    await makeRequest('POST', '/api/config/settings/lnd.interest_basis', { value: 'CASH', version: v, reason: 'reset' }, adminTok);
+  });
 });

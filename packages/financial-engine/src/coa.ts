@@ -132,6 +132,7 @@ export const STANDARD_COA_TEMPLATE: CoaTemplateItem[] = [
   { code: '112002', name: 'Allowance for Doubtful Debts', level: 4, parentCode: '1120', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.CREDIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
   { code: '112003', name: 'Project Retention Receivable', level: 4, parentCode: '1120', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.AR_CONTROL },
   { code: '112004', name: 'Loans & Advances Receivable', level: 4, parentCode: '1120', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
+  { code: '112005', name: 'Accrued Interest Receivable (Customer Financing)', level: 4, parentCode: '1120', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.GENERAL },
 
   { code: '1130', name: 'Inventory', level: 3, parentCode: '1100', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: false, controlType: AccountControlType.GENERAL },
   { code: '113001', name: 'Trading Inventory', level: 4, parentCode: '1130', statementClass: StatementClass.ASSET, normalBalance: NormalBalance.DEBIT, postingAllowed: true, controlType: AccountControlType.INVENTORY_CONTROL },

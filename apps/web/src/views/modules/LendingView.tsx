@@ -32,14 +32,31 @@ const LateFees: React.FC<{ notify: (k: any, t: string) => void }> = ({ notify })
       setBusy(false);
     }
   };
+  const [acc, setAcc] = useState<any | null>(null);
+  const accrue = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r: any = await ApiClient.post('/lnd/interest/accrue', { as_of: asOf });
+      setAcc(r);
+      notify(r.basis === 'ACCRUAL' ? 'success' : 'info', r.basis === 'ACCRUAL' ? `${r.accrued} instalment(s) accrued` : 'Interest is on cash basis (Settings → Lending)');
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="flex flex-col gap-4 max-w-3xl">
       <p className="text-sm text-[#5B6472]">Charges the configured flat late fee (Settings → Lending) once on each instalment still unpaid after the grace period. Fees are collected first when the customer pays and are recognised as income (411005) on collection. Running it again never charges the same instalment twice.</p>
       <div className="flex items-end gap-3">
         <Input label="Assess as of" type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} />
-        <Button onClick={run} disabled={busy}>{busy ? 'Assessing…' : 'Assess late fees'}</Button>
+        <Button onClick={run} disabled={busy}>{busy ? 'Working…' : 'Assess late fees'}</Button>
+        <Button variant="secondary" onClick={accrue} disabled={busy}>Accrue interest due</Button>
       </div>
+      <p className="text-xs text-[#5B6472]">With <span className="font-mono">lnd.interest_basis = ACCRUAL</span>, interest is accrued on each instalment’s due date (DR 112005 / CR 411006, once) and collections clear the receivable. The LND-LATE-FEES job runs both daily.</p>
       {err && <Alert variant="danger">{err}</Alert>}
+      {acc && <Alert variant="info">{acc.basis === 'ACCRUAL' ? (acc.accrued ? `PKR ${acc.amount} interest accrued on ${acc.instalments.join(', ')}` : 'No unaccrued interest due by this date.') : 'Cash basis: interest is recognised when collected.'}</Alert>}
       {res && <Alert variant={res.assessed ? 'warning' : 'success'}>{res.assessed ? `PKR ${res.fees} charged on ${res.instalments.join(', ')}` : 'No instalments past the grace period without a fee.'}</Alert>}
     </div>
   );

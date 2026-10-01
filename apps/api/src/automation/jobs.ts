@@ -15,7 +15,7 @@ import { toIsoDate } from '../lib/validate.js';
 import { bankGlLines } from '../routes/treasury.js';
 import { addMonthsIso } from './schedule.js';
 import { billSubscription, recognizeRevenue } from '../routes/subscriptions.js';
-import { assessLateFees } from '../routes/lending.js';
+import { accrueInterest, assessLateFees } from '../routes/lending.js';
 
 export interface DetectedAlert {
   dedupe_key: string;
@@ -411,7 +411,9 @@ async function subscriptionBilling({ q, orgId, today, config, rule }: JobContext
 async function loanLateFees({ q, orgId, today }: JobContext): Promise<JobResult> {
   const owner = (await q.query(`SELECT legal_entity_id, created_by FROM lnd_loans WHERE organization_id = $1 ORDER BY created_at LIMIT 1`, [orgId])).rows[0];
   if (!owner) return { summary: { assessed: 0, reason: 'no loans' }, alerts: [], resolveScope: 'LND_LATE:' };
-  const r: any = await q.transaction((tx) => assessLateFees({ req: { correlationId: crypto.randomUUID() } as any, tx, org: orgId, le: owner.legal_entity_id, user: owner.created_by } as any, today));
+  const lctx = (tx: any) => ({ req: { correlationId: crypto.randomUUID() } as any, tx, org: orgId, le: owner.legal_entity_id, user: owner.created_by }) as any;
+  const accrual: any = await q.transaction((tx) => accrueInterest(lctx(tx), today));
+  const r: any = { ...(await q.transaction((tx) => assessLateFees(lctx(tx), today))), interest_accrual: accrual };
   const alerts: DetectedAlert[] = r.assessed
     ? [{ dedupe_key: `LND_LATE:${today}`, category: 'FINANCE', severity: 'WARNING', title: `${r.assessed} overdue loan instalment(s) charged a late fee`, body: `${r.instalments.join(', ')} — total ${r.fees}.`, entity_type: 'LOAN', entity_id: null }]
     : [];
@@ -450,5 +452,5 @@ export const DEFAULT_RULES: { code: string; name: string; job_type: string; tier
   { code: 'POS-MONITOR', name: 'POS shift monitor', job_type: 'POS_SHIFT_MONITOR', tier: 'A0', schedule_kind: 'INTERVAL', interval_minutes: 30, owner_role: 'STORE_MANAGER', description: 'Flags shifts left open too long and recent cash variances.', config: { max_shift_hours: 14, material_variance: '500' } },
   { code: 'SRV-SLA-PM', name: 'Service SLA escalation & preventive visits', job_type: 'SERVICE_SLA_PM', tier: 'A2', schedule_kind: 'INTERVAL', interval_minutes: 15, owner_role: 'SERVICE_MANAGER', description: 'Escalates service cases at risk of / past their SLA and opens preventive-maintenance cases for contracts falling due (one per occurrence).', config: { at_risk_minutes: 60 } },
   { code: 'COM-BILLING', name: 'Subscription / AMC billing', job_type: 'SUBSCRIPTION_BILLING', tier: 'A3', schedule_kind: 'DAILY', run_at_local: '03:00', owner_role: 'ACCOUNTANT', description: 'Invoices active subscriptions on their bill date (in advance, one invoice per period, period-guarded). Failures alert the owner.', config: { max_periods: 3 } },
-  { code: 'LND-LATE-FEES', name: 'Loan late-fee assessment', job_type: 'LOAN_LATE_FEES', tier: 'A3', schedule_kind: 'DAILY', run_at_local: '04:00', owner_role: 'ACCOUNTANT', description: 'Charges the flat late fee (lnd.late_fee_flat) once per instalment unpaid past lnd.grace_days. Fees are collected first and credited to fee income on receipt.' },
+  { code: 'LND-LATE-FEES', name: 'Loan late fees & interest accrual', job_type: 'LOAN_LATE_FEES', tier: 'A3', schedule_kind: 'DAILY', run_at_local: '04:00', owner_role: 'ACCOUNTANT', description: 'Charges the flat late fee (lnd.late_fee_flat) once per instalment unpaid past lnd.grace_days. Fees are collected first and credited to fee income on receipt. With lnd.interest_basis = ACCRUAL it first accrues interest falling due (DR 112005 / CR 411006).' },
 ];
