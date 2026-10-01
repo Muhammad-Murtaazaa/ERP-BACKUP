@@ -277,7 +277,7 @@ export function registerPosRoutes(app: Express): void {
 
   // ------------------------------------------------------------------ registers
   app.get('/api/pos/registers', authenticate, terminal, async (req: Request, res: Response) => {
-    const r = await db.query(
+    let r = await db.query(
       `SELECT pr.*, w.name AS warehouse_name,
          (SELECT row_to_json(x) FROM (SELECT ps.id, ps.cashier_id, ps.cashier_name, ps.opened_at FROM pos_sessions ps
             WHERE ps.register_id = pr.id AND ps.status = 'OPEN' LIMIT 1) x) AS open_session
@@ -285,6 +285,31 @@ export function registerPosRoutes(app: Express): void {
        WHERE pr.organization_id = $1 ORDER BY pr.register_code ASC`,
       [org(req)],
     );
+
+    // Auto-provision default register POS-01 if none exists for this organization
+    if (r.rows.length === 0) {
+      const whRes = await db.query(
+        `SELECT id FROM warehouses WHERE organization_id = $1 ORDER BY is_default DESC, created_at ASC LIMIT 1`,
+        [org(req)],
+      );
+      const whId = whRes.rows[0]?.id || null;
+      const regId = '72000000-0000-0000-0000-000000000001';
+      await db.query(
+        `INSERT INTO pos_registers (id, register_code, name, warehouse_id, is_active, organization_id, default_tax_rate, max_cashier_discount_percent, receipt_header, receipt_footer)
+         VALUES ($1, 'POS-01', 'Main Counter Register 1', $2, true, $3, '18', '10', 'OMNYSYNC RETAIL MART\nMain Counter Terminal', 'Thank you for shopping!\nExchange within 14 days with receipt.')
+         ON CONFLICT (organization_id, register_code) DO NOTHING`,
+        [regId, whId, org(req)],
+      );
+      r = await db.query(
+        `SELECT pr.*, w.name AS warehouse_name,
+           (SELECT row_to_json(x) FROM (SELECT ps.id, ps.cashier_id, ps.cashier_name, ps.opened_at FROM pos_sessions ps
+              WHERE ps.register_id = pr.id AND ps.status = 'OPEN' LIMIT 1) x) AS open_session
+         FROM pos_registers pr LEFT JOIN warehouses w ON w.id = pr.warehouse_id
+         WHERE pr.organization_id = $1 ORDER BY pr.register_code ASC`,
+        [org(req)],
+      );
+    }
+
     return ok(req, res, r.rows);
   });
 
