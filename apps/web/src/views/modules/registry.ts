@@ -1,5 +1,6 @@
 /** Registry of module workspaces added after the core pack; lazily loaded (route-level code splitting). */
 import React, { lazy } from 'react';
+import { Permission as P } from '@omnysync/contracts';
 import { Cog, Receipt, Boxes, Workflow, Wrench, Handshake, Clock, BadgeCheck, Truck, BarChart3, FileText, Car, Repeat, Target, Landmark, ShieldAlert, UserPlus } from 'lucide-react';
 
 type Nav = { title: string; items: { id: string; label: string; icon: React.ComponentType<any> }[] };
@@ -63,3 +64,36 @@ export const MODULE_NAV: Nav[] = [
     ],
   },
 ];
+
+/**
+ * Read permissions per module workspace (mirrors each route file's VIEW list). The sidebar hides a module
+ * the signed-in user cannot read; the API still enforces every permission server-side.
+ */
+export const MODULE_PERMS: Record<string, string[]> = {
+  'admin-config': [P.CONFIG_VIEW, P.CONFIG_MANAGE, P.ORG_MANAGE, P.USER_MANAGE],
+  tax: [P.TAX_VIEW, P.TAX_MANAGE],
+  wms: [P.WMS_MANAGE, P.WMS_PICK, P.WAREHOUSE_MANAGE, P.INVENTORY_MANAGE],
+  srv: [P.SERVICE_VIEW, P.SERVICE_MANAGE, P.SERVICE_EXECUTE],
+  crm: [P.CRM_VIEW, P.CRM_MANAGE],
+  time: [P.TIME_VIEW, P.TIME_SUBMIT, P.TIME_APPROVE],
+  sup: [P.SUPPLIER_VIEW, P.SUPPLIER_MANAGE, P.SUPPLIER_APPROVE],
+  log: [P.LOGISTICS_VIEW, P.LOGISTICS_MANAGE, P.LOGISTICS_POST],
+  bi: [P.BI_VIEW, P.BI_MANAGE],
+  doc: [P.DOC_VIEW, P.DOC_MANAGE, P.DOC_HOLD],
+  flt: [P.FLEET_VIEW, P.FLEET_MANAGE, P.FLEET_POST],
+  epm: [P.BUDGET_VIEW, P.BUDGET_MANAGE, P.BUDGET_APPROVE],
+  lnd: [P.LOAN_VIEW, P.LOAN_MANAGE, P.LOAN_APPROVE, P.LOAN_POST],
+  grc: [P.GRC_VIEW, P.GRC_MANAGE],
+  tal: [P.TALENT_VIEW, P.TALENT_MANAGE],
+  com: [P.SUBSCRIPTION_VIEW, P.SUBSCRIPTION_MANAGE, P.SUBSCRIPTION_BILL],
+  'workflow-studio': [P.AUTOMATION_VIEW, P.AUTOMATION_MANAGE],
+  automation: [P.AUTOMATION_VIEW, P.AUTOMATION_MANAGE],
+  audit: [P.AUDIT_VIEW],
+};
+
+/** True when the user holds any read permission for the module (unknown ids are always visible). */
+export function canSeeModule(id: string, permissions: string[] | undefined): boolean {
+  const need = MODULE_PERMS[id];
+  if (!need || !permissions) return true;
+  return need.some((p) => permissions.includes(p));
+}

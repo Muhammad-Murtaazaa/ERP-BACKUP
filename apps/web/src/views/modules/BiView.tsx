@@ -97,7 +97,7 @@ const Dashboards: React.FC<{ reloadKey: number }> = ({ reloadKey }) => {
     ApiClient.get('/bi/dashboards?status=ACTIVE').then((r: any) => {
       setList(r);
       if (!sel && r[0]) setSel(r[0].id);
-    });
+    }).catch((e) => setErr(e.message));
   }, [reloadKey]);
   useEffect(() => {
     if (!sel) return;
@@ -139,7 +139,7 @@ const Explorer: React.FC = () => {
       setSets(r);
       const first = r.find((d: any) => d.readable);
       if (first) setCode(first.code);
-    });
+    }).catch((e) => setErr(e.message));
   }, []);
   const run = async () => {
     try {
@@ -195,9 +195,9 @@ const Builder: React.FC<{ notify: (k: any, t: string) => void }> = ({ notify }) 
   const [busy, setBusy] = useState(false);
   const [newCode, setNewCode] = useState('');
   const [newName, setNewName] = useState('');
-  const loadBoards = () => ApiClient.get('/bi/dashboards?status=ACTIVE').then((r: any) => setBoards(r));
+  const loadBoards = () => ApiClient.get('/bi/dashboards?status=ACTIVE').then((r: any) => setBoards(r)).catch((e) => setErr(e.message));
   useEffect(() => {
-    ApiClient.get('/bi/datasets').then((r: any) => setSets(r));
+    ApiClient.get('/bi/datasets').then((r: any) => setSets(r)).catch((e) => setErr(e.message));
     loadBoards();
   }, []);
   useEffect(() => {

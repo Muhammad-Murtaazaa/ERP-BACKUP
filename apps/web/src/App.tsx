@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { MODULE_VIEWS, MODULE_NAV } from './views/modules/registry.js';
+import { MODULE_VIEWS, MODULE_NAV, canSeeModule } from './views/modules/registry.js';
 import { ApiClient } from './api/client.js';
 import { Badge } from '@omnysync/ui';
 
@@ -242,7 +242,10 @@ export const App: React.FC = () => {
 
           {/* Navigation Sections */}
           <nav aria-label="Modules" className={`${collapsed ? 'px-2 py-3' : 'p-3'} flex flex-col gap-4`}>
-            {navSections.map((sec, sIdx) => (
+            {navSections
+              .map((sec) => ({ ...sec, items: sec.items.filter((it: any) => canSeeModule(it.id, currentUser?.permissions)) }))
+              .filter((sec) => sec.items.length > 0)
+              .map((sec, sIdx) => (
               <div key={sIdx} role="group" aria-labelledby={collapsed ? undefined : `nav-sec-${sIdx}`} aria-label={collapsed ? sec.title : undefined}>
                 {!collapsed ? (
                   <div id={`nav-sec-${sIdx}`} className="text-[11px] font-bold text-[#5E6A7D] uppercase tracking-wider px-2 mb-1">
