@@ -20,7 +20,7 @@ services:
       - key: OMNYSYNC_DEMO_MODE
         value: "false"
       - key: OMNYSYNC_DEMO_SEED
-        value: "true"
+        value: "false"
       - key: KEEP_ALIVE_ENABLED
         value: "true"
       - key: KEEP_ALIVE_INTERVAL_MINUTES
