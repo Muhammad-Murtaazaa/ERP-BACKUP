@@ -26,7 +26,7 @@ export async function makeRequest(
     headers['authorization'] = `Bearer ${token}`;
   }
 
-  return new Promise<{ status: number; body: any }>((resolve, reject) => {
+  return new Promise<{ status: number; body: any; headers?: Record<string, string> }>((resolve, reject) => {
     const req: any = {
       method,
       url: pathStr,
@@ -68,6 +68,11 @@ export async function makeRequest(
       },
       json(data: any) {
         resolve({ status: this.statusCode, body: data });
+      },
+      // Raw responses (file downloads): body is the Buffer/string as sent, with the headers.
+      send(data: any) {
+        resolve({ status: this.statusCode, body: data, headers: this.headers });
+        return this;
       },
       on(_event: string, _cb: any) {},
     };

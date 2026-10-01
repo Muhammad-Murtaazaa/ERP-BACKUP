@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { bootstrap, login, makeRequest, db } from './harness.js';
 import { inspectUpload, MAX_BYTES } from '../src/routes/documents.js';
@@ -52,6 +53,14 @@ describe('DOC API', () => {
     expect(after.versions.map((v: any) => v.version_no)).toEqual([2, 1]);
     const listed = (await makeRequest('GET', `/api/doc/documents?entity_type=SERVICE_CONTRACT&entity_id=${c.id}`, undefined, tech)).body.data;
     expect(listed.map((x: any) => x.id)).toContain(d.id);
+    // Download returns the exact bytes with safe headers and the hash.
+    const dl = await makeRequest('GET', `/api/doc/documents/${d.id}/versions/2/download`, undefined, tech);
+    expect(dl.status).toBe(200);
+    expect(Buffer.isBuffer(dl.body)).toBe(true);
+    expect(dl.body.equals(Buffer.from(PDF2, 'base64'))).toBe(true);
+    expect(dl.headers).toMatchObject({ 'content-type': 'application/pdf', 'x-content-type-options': 'nosniff', 'content-disposition': 'attachment; filename="amc-v2.pdf"' });
+    expect(dl.headers!['x-content-sha256']).toBe(createHash('sha256').update(dl.body).digest('hex'));
+    expect((await makeRequest('GET', `/api/doc/documents/${d.id}/versions/9/download`, undefined, tech)).status).toBe(404);
     // Tamper detection on download.
     await db.query(`UPDATE doc_versions SET content = $2 WHERE document_id = $1 AND version_no = 1`, [d.id, Buffer.from('%PDF-tampered')]);
     const bad = await makeRequest('GET', `/api/doc/documents/${d.id}/versions/1/download`, undefined, tech);
