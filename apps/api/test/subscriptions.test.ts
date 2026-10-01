@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { bootstrap, login, makeRequest, db } from './harness.js';
 import { addMonths, mrr, periodNet } from '../src/routes/subscriptions.js';
+import { JOB_HANDLERS } from '../src/automation/jobs.js';
+import { ensureDefaultRules } from '../src/automation/engine.js';
 
 describe('COM pure rules', () => {
   it('month arithmetic keeps month-end semantics; MRR normalises intervals', () => {
@@ -107,5 +109,25 @@ describe('COM API', () => {
     expect(Number(r.body.data.mrr)).toBeGreaterThanOrEqual(4500);
     expect(Number(r.body.data.arr)).toBeCloseTo(Number(r.body.data.mrr) * 12, 2);
     expect(r.body.data.churned_this_month).toBeGreaterThanOrEqual(0);
+  });
+
+  it('COM-BILLING automation job bills due periods once and alerts on failures', async () => {
+    const s = await sub({ plan_id: plan('AMC-COMM').id, start_date: '2026-09-20' });
+    await makeRequest('POST', `/api/com/subscriptions/${s.id}/activate`, {}, acct);
+    const org = (await db.query(`SELECT organization_id FROM com_subscriptions WHERE id = $1`, [s.id])).rows[0].organization_id;
+    await ensureDefaultRules(db as any, org);
+    const rule = (await db.query(`SELECT * FROM automation_rules WHERE organization_id = $1 AND code = 'COM-BILLING'`, [org])).rows[0];
+    expect(rule).toMatchObject({ tier: 'A3', job_type: 'SUBSCRIPTION_BILLING' });
+    const ctx = { q: db as any, orgId: org, rule, config: { max_periods: 3 }, today: '2026-09-30', now: new Date() };
+    const r1 = await JOB_HANDLERS.SUBSCRIPTION_BILLING(ctx);
+    expect((r1.summary.billed as any[]).find((b) => b.subscription === s.number).invoices.length).toBe(1);
+    const r2 = await JOB_HANDLERS.SUBSCRIPTION_BILLING(ctx);
+    expect((r2.summary.billed as any[]).find((b) => b.subscription === s.number)).toBeUndefined();
+    expect((await db.query(`SELECT COUNT(*)::int n FROM com_billing_periods WHERE subscription_id = $1`, [s.id])).rows[0].n).toBe(1);
+    const bad = await sub({ plan_id: plan('AMC-HOME').id, start_date: '2019-03-01' });
+    await makeRequest('POST', `/api/com/subscriptions/${bad.id}/activate`, {}, acct);
+    const r3 = await JOB_HANDLERS.SUBSCRIPTION_BILLING(ctx);
+    expect(r3.alerts.some((a) => a.dedupe_key === `COM_BILLING_FAIL:${bad.id}` && a.severity === 'CRITICAL')).toBe(true);
+    await makeRequest('POST', `/api/com/subscriptions/${bad.id}/cancel`, { cancel_reason: 'cleanup' }, acct);
   });
 });

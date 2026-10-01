@@ -14,6 +14,7 @@ import { nextDocumentNumber } from '../lib/numbering.js';
 import { toIsoDate } from '../lib/validate.js';
 import { bankGlLines } from '../routes/treasury.js';
 import { addMonthsIso } from './schedule.js';
+import { billSubscription } from '../routes/subscriptions.js';
 
 export interface DetectedAlert {
   dedupe_key: string;
@@ -374,6 +375,27 @@ async function serviceSlaPm({ q, orgId, today, now, config }: JobContext): Promi
   return { summary: { pm_cases_created: pm.created, pm_duplicates_skipped: pm.skipped_duplicates, sla_alerts: open.rows.length }, alerts, resolveScope: 'SRV_SLA:' };
 }
 
+
+/** A3: bills due AMC / subscription periods (subscriptions were activated by a person; billing is idempotent per period). */
+async function subscriptionBilling({ q, orgId, today, config, rule }: JobContext): Promise<JobResult> {
+  const due = (await q.query(`SELECT id, number, legal_entity_id, created_by FROM com_subscriptions WHERE organization_id = $1 AND status = 'ACTIVE' AND next_bill_date IS NOT NULL AND next_bill_date <= $2::date ORDER BY number`, [orgId, today])).rows;
+  const alerts: DetectedAlert[] = [];
+  let invoices = 0;
+  const billed: any[] = [];
+  for (const s of due) {
+    try {
+      const r: any = await q.transaction((tx) =>
+        billSubscription({ req: { correlationId: crypto.randomUUID() } as any, tx, org: orgId, le: s.legal_entity_id, user: s.created_by }, s.id, today, Math.min(12, Number(config.max_periods ?? 3))),
+      );
+      invoices += r.invoices?.length || 0;
+      billed.push({ subscription: s.number, invoices: r.invoices, next_bill_date: r.next_bill_date, ended: r.ended });
+    } catch (e: any) {
+      alerts.push({ dedupe_key: `COM_BILLING_FAIL:${s.id}`, category: 'FINANCE', severity: 'CRITICAL', title: `Subscription ${s.number} could not be billed`, body: String(e?.message || e), entity_type: 'SUBSCRIPTION', entity_id: s.id });
+    }
+  }
+  return { summary: { due: due.length, invoices, billed, rule: rule?.code }, alerts, resolveScope: 'COM_BILLING_FAIL:' };
+}
+
 export const JOB_HANDLERS: Record<string, (ctx: JobContext) => Promise<JobResult>> = {
   REORDER_ALERTS: reorderAlerts,
   STOCK_GL_RECON: stockGlRecon,
@@ -387,6 +409,7 @@ export const JOB_HANDLERS: Record<string, (ctx: JobContext) => Promise<JobResult
   PM_WORK_ORDERS: pmWorkOrders,
   POS_SHIFT_MONITOR: posShiftMonitor,
   SERVICE_SLA_PM: serviceSlaPm,
+  SUBSCRIPTION_BILLING: subscriptionBilling,
 };
 
 /** Default rule catalogue, created idempotently for every organisation. */
@@ -403,4 +426,5 @@ export const DEFAULT_RULES: { code: string; name: string; job_type: string; tier
   { code: 'PM-WORKORDERS', name: 'Preventive maintenance work orders', job_type: 'PM_WORK_ORDERS', tier: 'A2', schedule_kind: 'DAILY', run_at_local: '06:00', owner_role: 'ADMIN', description: 'Creates scheduled work orders for PM plans falling due.', config: { lead_days: 3 } },
   { code: 'POS-MONITOR', name: 'POS shift monitor', job_type: 'POS_SHIFT_MONITOR', tier: 'A0', schedule_kind: 'INTERVAL', interval_minutes: 30, owner_role: 'STORE_MANAGER', description: 'Flags shifts left open too long and recent cash variances.', config: { max_shift_hours: 14, material_variance: '500' } },
   { code: 'SRV-SLA-PM', name: 'Service SLA escalation & preventive visits', job_type: 'SERVICE_SLA_PM', tier: 'A2', schedule_kind: 'INTERVAL', interval_minutes: 15, owner_role: 'SERVICE_MANAGER', description: 'Escalates service cases at risk of / past their SLA and opens preventive-maintenance cases for contracts falling due (one per occurrence).', config: { at_risk_minutes: 60 } },
+  { code: 'COM-BILLING', name: 'Subscription / AMC billing', job_type: 'SUBSCRIPTION_BILLING', tier: 'A3', schedule_kind: 'DAILY', run_at_local: '03:00', owner_role: 'ACCOUNTANT', description: 'Invoices active subscriptions on their bill date (in advance, one invoice per period, period-guarded). Failures alert the owner.', config: { max_periods: 3 } },
 ];

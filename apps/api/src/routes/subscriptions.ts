@@ -11,7 +11,7 @@ import { Money } from '@omnysync/financial-engine';
 import { db, authenticate, requireAnyPermission } from '../context.js';
 import { ok } from '../lib/http.js';
 import { ApiError, validationError } from '../lib/errors.js';
-import { defineResource, loadRow, unitOfWork } from '../lib/resource.js';
+import { defineResource, loadRow, unitOfWork, type Ctx } from '../lib/resource.js';
 import { requireModule } from '../lib/modules.js';
 import { dateOnly, int, todayIso, toIsoDate } from '../lib/validate.js';
 import { createPostedSourceInvoice } from '../lib/ar-invoice.js';
@@ -36,6 +36,53 @@ export function periodNet(price: string, qty: number, discountPct: string) {
 /** Monthly recurring revenue contribution. */
 export function mrr(price: string, qty: number, discountPct: string, interval: string) {
   return periodNet(price, qty, discountPct).div(MONTHS[interval]).round(2);
+}
+
+
+/** Bills every due period of one subscription inside the caller's unit of work (API run or automation job). */
+export async function billSubscription(ctx: Ctx, id: string, asOf: string, maxPeriods = 12) {
+  const s = await loadRow(ctx.tx, 'com_subscriptions', id, ctx.org, 'Subscription', true);
+  if (s.status !== 'ACTIVE') return { subscription: s.number, skipped: s.status };
+  const plan = await loadRow(ctx.tx, 'com_plans', s.plan_id, ctx.org, 'Plan');
+  const step = MONTHS[plan.billing_interval];
+  const invoices: string[] = [];
+  let next = toIsoDate(s.next_bill_date);
+  let ended = false;
+  for (let n = 0; n < maxPeriods && next <= asOf; n++) {
+    const end = s.end_date ? toIsoDate(s.end_date) : null;
+    if (end && next >= end) {
+      ended = true;
+      break;
+    }
+    let pEnd = minusDay(addMonths(next, step));
+    let net = periodNet(plan.price, s.quantity, s.discount_pct);
+    if (end && pEnd >= end) {
+      // Final partial period is prorated by days.
+      const full = (Date.parse(pEnd) - Date.parse(next)) / 86400000 + 1;
+      const used = (Date.parse(end) - Date.parse(next)) / 86400000;
+      net = net.mul(used).div(full).round(2);
+      pEnd = minusDay(end);
+    }
+    const ins = await ctx.tx.query(`INSERT INTO com_billing_periods (organization_id, subscription_id, period_start, period_end, net_amount) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (subscription_id, period_start) DO NOTHING RETURNING id`, [ctx.org, s.id, next, pEnd, net.toFixed(8)]);
+    if (ins.rows[0] && net.isPositive()) {
+      const qty = new Money(s.quantity).toFixed(4);
+      const unit = net.div(s.quantity).round(4).toFixed(4);
+      const inv = await createPostedSourceInvoice(ctx, {
+        party_id: s.party_id, invoice_date: next <= asOf ? next : asOf, due_days: 15,
+        lines: [{ item_id: plan.item_id, description: `${plan.name} ${next} – ${pEnd}`, quantity: qty, unit_price: unit, tax_rate: new Money(plan.tax_rate).toFixed(3), revenue_account_code: '411007' }],
+        sourceType: 'SUBSCRIPTION', sourceId: s.id, sourceKey: `COM:${s.id}:${next}`, notes: `Subscription ${s.number}`, purpose: AccountingPurpose.SUBSCRIPTION_INVOICE, prefix: 'INV',
+      });
+      await ctx.tx.query(`UPDATE com_billing_periods SET ar_invoice_id = $2 WHERE id = $1`, [ins.rows[0].id, inv?.id ?? null]);
+      if (inv) invoices.push(inv.invoice_number);
+    }
+    next = addMonths(next, step);
+    if (end && next >= end) {
+      ended = true;
+      break;
+    }
+  }
+  await ctx.tx.query(`UPDATE com_subscriptions SET next_bill_date = $2, status = $3, revision = revision + 1, updated_at = NOW() WHERE id = $1`, [s.id, ended ? null : next, ended ? 'ENDED' : 'ACTIVE']);
+  return { subscription: s.number, invoices, next_bill_date: ended ? null : next, ended };
 }
 
 export function registerSubscriptionRoutes(app: Express): void {
@@ -168,50 +215,7 @@ export function registerSubscriptionRoutes(app: Express): void {
     for (const { id } of due) {
       try {
         results.push(
-          await unitOfWork(req, async (ctx) => {
-            const s = await loadRow(ctx.tx, 'com_subscriptions', id, ctx.org, 'Subscription', true);
-            if (s.status !== 'ACTIVE') return { subscription: s.number, skipped: s.status };
-            const plan = await loadRow(ctx.tx, 'com_plans', s.plan_id, ctx.org, 'Plan');
-            const step = MONTHS[plan.billing_interval];
-            const invoices: string[] = [];
-            let next = toIsoDate(s.next_bill_date);
-            let ended = false;
-            for (let n = 0; n < maxPeriods && next <= asOf; n++) {
-              const end = s.end_date ? toIsoDate(s.end_date) : null;
-              if (end && next >= end) {
-                ended = true;
-                break;
-              }
-              let pEnd = minusDay(addMonths(next, step));
-              let net = periodNet(plan.price, s.quantity, s.discount_pct);
-              if (end && pEnd >= end) {
-                // Final partial period is prorated by days.
-                const full = (Date.parse(pEnd) - Date.parse(next)) / 86400000 + 1;
-                const used = (Date.parse(end) - Date.parse(next)) / 86400000;
-                net = net.mul(used).div(full).round(2);
-                pEnd = minusDay(end);
-              }
-              const ins = await ctx.tx.query(`INSERT INTO com_billing_periods (organization_id, subscription_id, period_start, period_end, net_amount) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (subscription_id, period_start) DO NOTHING RETURNING id`, [ctx.org, s.id, next, pEnd, net.toFixed(8)]);
-              if (ins.rows[0] && net.isPositive()) {
-                const qty = new Money(s.quantity).toFixed(4);
-                const unit = net.div(s.quantity).round(4).toFixed(4);
-                const inv = await createPostedSourceInvoice(ctx, {
-                  party_id: s.party_id, invoice_date: next <= asOf ? next : asOf, due_days: 15,
-                  lines: [{ item_id: plan.item_id, description: `${plan.name} ${next} – ${pEnd}`, quantity: qty, unit_price: unit, tax_rate: new Money(plan.tax_rate).toFixed(3), revenue_account_code: '411007' }],
-                  sourceType: 'SUBSCRIPTION', sourceId: s.id, sourceKey: `COM:${s.id}:${next}`, notes: `Subscription ${s.number}`, purpose: AccountingPurpose.SUBSCRIPTION_INVOICE, prefix: 'INV',
-                });
-                await ctx.tx.query(`UPDATE com_billing_periods SET ar_invoice_id = $2 WHERE id = $1`, [ins.rows[0].id, inv?.id ?? null]);
-                if (inv) invoices.push(inv.invoice_number);
-              }
-              next = addMonths(next, step);
-              if (end && next >= end) {
-                ended = true;
-                break;
-              }
-            }
-            await ctx.tx.query(`UPDATE com_subscriptions SET next_bill_date = $2, status = $3, revision = revision + 1, updated_at = NOW() WHERE id = $1`, [s.id, ended ? null : next, ended ? 'ENDED' : 'ACTIVE']);
-            return { subscription: s.number, invoices, next_bill_date: ended ? null : next, ended };
-          }),
+          await unitOfWork(req, (ctx) => billSubscription(ctx, id, asOf, maxPeriods)),
         );
       } catch (e: any) {
         results.push({ subscription_id: id, error: e?.code || 'ERROR', message: e?.message });
