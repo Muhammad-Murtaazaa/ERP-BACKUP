@@ -249,19 +249,37 @@ export function registerTimeRoutes(app: Express): void {
     },
   });
 
+  /** Employee picker for TIM forms: self-service users only get their own record; others get active employees. */
+  app.get('/api/time/employees', authenticate, requireAnyPermission(...VIEW), async (req: Request, res: Response) => {
+    const org = req.session!.organization_id;
+    const self = isSelfService(req.session!.permissions);
+    const search = typeof req.query.search === 'string' ? `%${req.query.search.slice(0, 80)}%` : null;
+    const r = await db.query(
+      `SELECT id, employee_number, first_name, last_name, employment_type FROM employees
+       WHERE organization_id = $1 AND status = 'ACTIVE' AND ($2::uuid IS NULL OR user_id = $2::uuid)
+         AND ($3::text IS NULL OR employee_number ILIKE $3 OR first_name || ' ' || last_name ILIKE $3)
+       ORDER BY employee_number LIMIT 100`,
+      [org, self ? req.session!.user_id : null, search],
+    );
+    return ok(req, res, r.rows);
+  });
+
   app.get('/api/time/summary', authenticate, requireAnyPermission(...VIEW), async (req: Request, res: Response) => {
     const org = req.session!.organization_id;
+    // Self-service users see their own figures only.
+    const own = isSelfService(req.session!.permissions) ? req.session!.user_id : null;
+    const scope = `AND ($2::uuid IS NULL OR employee_id IN (SELECT id FROM employees WHERE user_id = $2::uuid))`;
     const s = (
       await db.query(
         `SELECT COUNT(*) FILTER (WHERE status='SUBMITTED')::int awaiting_approval, COUNT(*) FILTER (WHERE status='APPROVED')::int awaiting_posting,
           COALESCE(SUM(total_hours) FILTER (WHERE week_start >= date_trunc('month', NOW())::date),0)::text hours_mtd,
           COALESCE(SUM(overtime_hours) FILTER (WHERE week_start >= date_trunc('month', NOW())::date),0)::text overtime_mtd,
           COALESCE(SUM(cost_amount) FILTER (WHERE status='POSTED'),0)::text posted_cost
-         FROM tim_timesheets WHERE organization_id = $1`,
-        [org],
+         FROM tim_timesheets WHERE organization_id = $1 ${scope}`,
+        [org, own],
       )
     ).rows[0];
-    const leave = (await db.query(`SELECT COUNT(*) FILTER (WHERE status='REQUESTED')::int pending, COUNT(*) FILTER (WHERE status='APPROVED' AND CURRENT_DATE BETWEEN start_date AND end_date)::int on_leave_today FROM tim_leave_requests WHERE organization_id = $1`, [org])).rows[0];
+    const leave = (await db.query(`SELECT COUNT(*) FILTER (WHERE status='REQUESTED')::int pending, COUNT(*) FILTER (WHERE status='APPROVED' AND CURRENT_DATE BETWEEN start_date AND end_date)::int on_leave_today FROM tim_leave_requests WHERE organization_id = $1 ${scope}`, [org, own])).rows[0];
     return ok(req, res, { ...s, leave });
   });
 }

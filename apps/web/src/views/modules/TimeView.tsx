@@ -4,6 +4,10 @@ import { Alert, Button, Table } from '@omnysync/ui';
 import { ModuleWorkspace, TabDef } from '../kit/ModuleWorkspace.js';
 import { fmtMoney } from '../../lib/format.js';
 import { employeeRef, opts, today } from './shared.js';
+import type { FormField } from '../kit/ModuleWorkspace.js';
+
+/** TIM forms pick from /time/employees, which limits technicians (self-service) to their own record. */
+const timeEmployeeRef = (): FormField => { const f = employeeRef(); return { ...f, ref: { ...f.ref!, endpoint: '/time/employees', description: (r: any) => r.employment_type } }; };
 
 const monday = () => {
   const d = new Date();
@@ -88,7 +92,7 @@ const tabs: TabDef[] = [
     ],
     detailExtra: (row, reload) => <Entries row={row} reload={reload} />,
     createLabel: 'New timesheet',
-    createFields: [employeeRef(), { name: 'week_start', label: 'Week starting (Monday)', type: 'date', required: true, default: monday() }, { name: 'cost_rate', label: 'Cost rate (PKR / hour)', type: 'decimal', required: true }, { name: 'notes', label: 'Notes', type: 'textarea' }],
+    createFields: [timeEmployeeRef(), { name: 'week_start', label: 'Week starting (Monday)', type: 'date', required: true, default: monday() }, { name: 'cost_rate', label: 'Cost rate (PKR / hour)', type: 'decimal', required: true }, { name: 'notes', label: 'Notes', type: 'textarea' }],
     editFields: [{ name: 'cost_rate', label: 'Cost rate', type: 'decimal' }, { name: 'notes', label: 'Notes', type: 'textarea' }],
     actions: [
       {
@@ -127,7 +131,7 @@ const tabs: TabDef[] = [
       { key: 'status', header: 'Status', kind: 'status' },
     ],
     createLabel: 'Request leave',
-    createFields: [employeeRef(), { name: 'leave_type', label: 'Type', type: 'select', required: true, options: opts('ANNUAL', 'SICK', 'CASUAL', 'UNPAID', 'MATERNITY', 'PATERNITY', 'HAJJ') }, { name: 'start_date', label: 'From', type: 'date', required: true }, { name: 'end_date', label: 'To', type: 'date', required: true }, { name: 'reason', label: 'Reason', type: 'textarea' }],
+    createFields: [timeEmployeeRef(), { name: 'leave_type', label: 'Type', type: 'select', required: true, options: opts('ANNUAL', 'SICK', 'CASUAL', 'UNPAID', 'MATERNITY', 'PATERNITY', 'HAJJ') }, { name: 'start_date', label: 'From', type: 'date', required: true }, { name: 'end_date', label: 'To', type: 'date', required: true }, { name: 'reason', label: 'Reason', type: 'textarea' }],
     actions: [
       { id: 'approve', label: 'Approve', variant: 'primary', when: ['REQUESTED'], fields: [{ name: 'decision_note', label: 'Note', type: 'textarea' }] },
       { id: 'reject', label: 'Reject', variant: 'destructive', when: ['REQUESTED'], fields: [{ name: 'decision_note', label: 'Reason', type: 'textarea', required: true }] },

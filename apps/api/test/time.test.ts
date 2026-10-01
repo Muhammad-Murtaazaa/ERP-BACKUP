@@ -113,5 +113,14 @@ describe('TIM API', () => {
     expect((await makeRequest('POST', `/api/time/timesheets/${hrSheet.id}/submit`, {}, tech)).status).toBe(404);
     // HR (approver) still sees everyone.
     expect((await makeRequest('GET', '/api/time/timesheets', undefined, hr)).body.data.some((x: any) => x.employee_id === own.id)).toBe(true);
+    // Picker and summary are scoped too.
+    const pick = (await makeRequest('GET', '/api/time/employees', undefined, tech)).body.data;
+    expect(pick.map((e: any) => e.id)).toEqual([own.id]);
+    expect((await makeRequest('GET', '/api/time/employees', undefined, hr)).body.data.length).toBeGreaterThan(1);
+    const mineSum = (await makeRequest('GET', '/api/time/summary', undefined, tech)).body.data;
+    const allSum = (await makeRequest('GET', '/api/time/summary', undefined, hr)).body.data;
+    expect(Number(mineSum.hours_mtd)).toBeLessThanOrEqual(Number(allSum.hours_mtd));
+    expect(mineSum.leave.pending).toBe(0);
+    expect(allSum.leave.pending).toBeGreaterThanOrEqual(0);
   });
 });
