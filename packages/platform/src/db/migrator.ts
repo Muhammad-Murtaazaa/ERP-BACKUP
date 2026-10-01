@@ -52,6 +52,8 @@ export class DbMigrator {
       });
 
       applied.push(file);
+      // Yield to event loop to allow memory garbage collection between large DDL files
+      await new Promise((resolve) => setImmediate(resolve));
     }
 
     return { applied, alreadyApplied };

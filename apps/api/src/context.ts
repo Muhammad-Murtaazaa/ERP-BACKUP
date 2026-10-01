@@ -1,14 +1,16 @@
 import type { Request, Response, NextFunction } from 'express';
-import { PGliteAdapter, AuthService, AuditLogger, OutboxService, DbClient } from '@omnysync/platform';
+import { PGliteAdapter, PgPoolAdapter, AuthService, AuditLogger, OutboxService, DbClient } from '@omnysync/platform';
 import { ErrorCode, StandardErrorResponse, AuthSession, Permission, UserRole } from '@omnysync/contracts';
 import { idempotency } from './lib/idempotency.js';
 
 /**
- * Process-wide singletons shared by route modules. The runtime DB adapter is the
- * embedded PGlite engine for demo/test profiles; production wiring would swap in
- * PgPoolAdapter with a non-owner runtime role (SECURITY.md).
+ * Process-wide singletons shared by route modules. Automatically switches to
+ * PgPoolAdapter if DATABASE_URL or POSTGRES_URL is configured, or uses on-disk
+ * PGlite engine to stay well below memory limits.
  */
-export const db: DbClient = new PGliteAdapter();
+export const db: DbClient = process.env.DATABASE_URL || process.env.POSTGRES_URL
+  ? new PgPoolAdapter(process.env.DATABASE_URL || process.env.POSTGRES_URL!)
+  : new PGliteAdapter(process.env.PGDATA_DIR || (process.env.NODE_ENV === 'test' ? undefined : './data/omnysync.db'));
 export const authService = new AuthService(db);
 export const auditLogger = new AuditLogger(db);
 export const outboxService = new OutboxService(db);

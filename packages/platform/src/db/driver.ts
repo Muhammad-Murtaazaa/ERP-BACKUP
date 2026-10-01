@@ -1,4 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import fs from 'node:fs';
+import path from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import pg from 'pg';
 
@@ -54,6 +56,17 @@ export class PGliteAdapter implements DbClient {
     if (dataDirOrInstance instanceof PGlite) {
       this.pglite = dataDirOrInstance;
     } else {
+      if (typeof dataDirOrInstance === 'string' && dataDirOrInstance.length > 0) {
+        try {
+          const resolvedPath = path.resolve(dataDirOrInstance);
+          const parentDir = path.dirname(resolvedPath);
+          if (!fs.existsSync(parentDir)) {
+            fs.mkdirSync(parentDir, { recursive: true });
+          }
+        } catch {
+          // Fallback to default
+        }
+      }
       this.pglite = new PGlite(dataDirOrInstance);
     }
   }
