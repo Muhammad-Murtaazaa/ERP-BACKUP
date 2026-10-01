@@ -4,6 +4,7 @@ import { Alert, Button, Card, Input, Table } from '@omnysync/ui';
 import { ModuleWorkspace, TabDef } from '../kit/ModuleWorkspace.js';
 import { fmtMoney } from '../../lib/format.js';
 import { today } from './shared.js';
+import { insertBefore, moveBefore, shiftBy } from '../../lib/reorder.js';
 
 const PALETTE = ['#5940B8', '#2F9E5B', '#E0A100', '#E5484D', '#1F7AE0', '#8E4EC6', '#12A594'];
 const short = (n: number) => (Math.abs(n) >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : Math.abs(n) >= 1e3 ? `${(n / 1e3).toFixed(0)}k` : n.toFixed(n % 1 ? 1 : 0));
@@ -218,28 +219,10 @@ const Builder: React.FC<{ notify: (k: any, t: string) => void }> = ({ notify }) 
     if (!d || !d.readable) return;
     if (widgets.length >= 12) return setErr('A dashboard can hold at most 12 widgets.');
     const w: BW = { key: bwKey(), dataset: code, chart: d.dimension === 'month' ? 'LINE' : 'BAR', measure: d.measures[0], title: d.name };
-    setWidgets((ws) => {
-      const i = before ? ws.findIndex((x) => x.key === before) : -1;
-      return i < 0 ? [...ws, w] : [...ws.slice(0, i), w, ...ws.slice(i)];
-    });
+    setWidgets((ws) => insertBefore(ws, w, before));
   };
-  const move = (key: string, before: string | null) =>
-    setWidgets((ws) => {
-      const w = ws.find((x) => x.key === key);
-      if (!w || key === before) return ws;
-      const rest = ws.filter((x) => x.key !== key);
-      const i = before ? rest.findIndex((x) => x.key === before) : -1;
-      return i < 0 ? [...rest, w] : [...rest.slice(0, i), w, ...rest.slice(i)];
-    });
-  const shift = (key: string, d: number) =>
-    setWidgets((ws) => {
-      const i = ws.findIndex((x) => x.key === key);
-      const j = i + d;
-      if (i < 0 || j < 0 || j >= ws.length) return ws;
-      const out = [...ws];
-      [out[i], out[j]] = [out[j], out[i]];
-      return out;
-    });
+  const move = (key: string, before: string | null) => setWidgets((ws) => moveBefore(ws, key, before));
+  const shift = (key: string, d: number) => setWidgets((ws) => shiftBy(ws, key, d));
   const patch = (key: string, p: Partial<BW>) => setWidgets((ws) => ws.map((w) => (w.key === key ? { ...w, ...p } : w)));
   const drop = (target: string | null) => {
     if (!drag) return;
