@@ -1,6 +1,6 @@
 /** Registry of module workspaces added after the core pack; lazily loaded (route-level code splitting). */
 import React, { lazy } from 'react';
-import { Cog, Receipt, Boxes, Workflow, Wrench, Handshake, Clock, BadgeCheck, Truck, BarChart3, FileText, Car, Repeat, Target, Landmark, ShieldAlert } from 'lucide-react';
+import { Cog, Receipt, Boxes, Workflow, Wrench, Handshake, Clock, BadgeCheck, Truck, BarChart3, FileText, Car, Repeat, Target, Landmark, ShieldAlert, UserPlus } from 'lucide-react';
 
 type Nav = { title: string; items: { id: string; label: string; icon: React.ComponentType<any> }[] };
 
@@ -19,6 +19,7 @@ export const MODULE_VIEWS: Record<string, React.LazyExoticComponent<React.Compon
   epm: lazy(() => import('./BudgetsView.js').then((m) => ({ default: m.BudgetsView }))),
   lnd: lazy(() => import('./LendingView.js').then((m) => ({ default: m.LendingView }))),
   grc: lazy(() => import('./GrcView.js').then((m) => ({ default: m.GrcView }))),
+  tal: lazy(() => import('./TalentView.js').then((m) => ({ default: m.TalentView }))),
   com: lazy(() => import('./SubscriptionsView.js').then((m) => ({ default: m.SubscriptionsView }))),
   'workflow-studio': lazy(() => import('./WorkflowStudioView.js').then((m) => ({ default: m.WorkflowStudioView }))),
 };
@@ -30,6 +31,7 @@ export const MODULE_NAV: Nav[] = [
       { id: 'srv', label: 'Field Service', icon: Wrench },
       { id: 'crm', label: 'CRM & Pipeline', icon: Handshake },
       { id: 'time', label: 'Time & Attendance', icon: Clock },
+      { id: 'tal', label: 'Recruitment', icon: UserPlus },
       { id: 'flt', label: 'Fleet', icon: Car },
       { id: 'com', label: 'Subscriptions & AMC', icon: Repeat },
     ],

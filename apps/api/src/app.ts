@@ -35,6 +35,7 @@ import { registerSubscriptionRoutes } from './routes/subscriptions.js';
 import { registerBudgetRoutes } from './routes/budgets.js';
 import { registerLendingRoutes } from './routes/lending.js';
 import { registerGrcRoutes } from './routes/grc.js';
+import { registerTalentRoutes } from './routes/talent.js';
 
 export function createApp() {
   const app = express();
@@ -116,6 +117,7 @@ export function createApp() {
   registerBudgetRoutes(app);
   registerLendingRoutes(app);
   registerGrcRoutes(app);
+  registerTalentRoutes(app);
 
   app.use('/api', (req: Request, res: Response) => {
     res.status(404).json({

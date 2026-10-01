@@ -294,3 +294,28 @@ registerSeeder('GRC', async (q, c) => {
     );
   }
 });
+
+registerSeeder('TAL', async (q, c) => {
+  const has = (await q.query(`SELECT 1 FROM tal_requisitions WHERE organization_id = $1 AND number = 'REQ-DEMO-001'`, [c.org])).rows.length;
+  if (has) return;
+  await q.query(
+    `INSERT INTO tal_requisitions (organization_id, legal_entity_id, number, title, department, location, positions, salary_min, salary_max, justification, status, created_by) VALUES
+     ($1,$2,'REQ-DEMO-001','HVAC Technician (split & VRF)','Field Service','Lahore',3,65000,95000,'Summer backlog: SLA breaches up; 3 extra technicians needed before May.','OPEN',$3),
+     ($1,$2,'REQ-DEMO-002','Service Dispatcher','Field Service','Lahore',1,55000,75000,'Dispatch currently done by service manager.','DRAFT',$3)`,
+    [c.org, c.le, c.admin],
+  );
+  const cands = [
+    ['Ahmed Raza', 'ahmed.raza@example.pk', 'REFERRAL', 'R-410A charging, VRF commissioning, brazing', 6],
+    ['Bilal Hussain', 'bilal.h@example.pk', 'JOB_BOARD', 'Split AC install, basic electrical', 2],
+    ['Usman Tariq', 'usman.tariq@example.pk', 'WALK_IN', 'Chiller maintenance, ducting', 9],
+  ] as const;
+  for (const [n, e, s, sk, y] of cands) {
+    await q.query(`INSERT INTO tal_candidates (organization_id, legal_entity_id, full_name, email, source, skills, years_experience, current_city, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,'Lahore',$8) ON CONFLICT DO NOTHING`, [c.org, c.le, n, e, s, sk, y, c.admin]);
+  }
+  await q.query(
+    `INSERT INTO tal_applications (organization_id, legal_entity_id, requisition_id, candidate_id, status, created_by)
+     SELECT $1, $2, r.id, k.id, CASE k.email WHEN 'ahmed.raza@example.pk' THEN 'INTERVIEW' WHEN 'usman.tariq@example.pk' THEN 'SCREENING' ELSE 'APPLIED' END, $3
+     FROM tal_requisitions r, tal_candidates k WHERE r.organization_id = $1 AND r.number = 'REQ-DEMO-001' AND k.organization_id = $1 ON CONFLICT DO NOTHING`,
+    [c.org, c.le, c.admin],
+  );
+});
