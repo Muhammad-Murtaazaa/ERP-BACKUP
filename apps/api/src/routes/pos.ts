@@ -884,11 +884,12 @@ export function registerPosRoutes(app: Express): void {
       for (const [i, pl] of priced.lines.entries()) {
         const it = itemMap.get(pl.item_id);
         const discount = new Money(pl.promo_discount).add(pl.manual_discount).add(pl.cart_discount);
+        const lineId = crypto.randomUUID();
         await tx.query(
           `INSERT INTO pos_order_lines (id, order_id, item_id, item_code, item_name, quantity, unit_price, line_total, tax_amount, line_number, list_price,
              gross_amount, discount_amount, net_amount, tax_rate, unit_cost, applied_promotions, scanned_code, override_approval_id)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
-          [crypto.randomUUID(), orderId, it.id, it.code, it.name, pl.quantity, pl.effective_unit_price, pl.total_amount, pl.tax_amount, i + 1, it.unit_price,
+          [lineId, orderId, it.id, it.code, it.name, pl.quantity, pl.effective_unit_price, pl.total_amount, pl.tax_amount, i + 1, it.unit_price,
             pl.gross_amount, discount.toFixed(8), pl.net_amount, pl.tax_rate, it.unit_cost, pl.applied_promotions.length ? pl.applied_promotions : null,
             lines[i].scanned_code, lines[i].approval_id],
         );
@@ -903,12 +904,14 @@ export function registerPosRoutes(app: Express): void {
               allowNegative = true;
             }
           }
-          await postStockMovement(tx, {
+          const mv = await postStockMovement(tx, {
             organizationId: orgId, legalEntityId: req.session!.legal_entity_id, itemId: it.id, warehouseId: wh, movementType: 'POS_SALE',
             movementDate: businessDate, quantity: new Money(pl.quantity).negated().toFixed(8), unitCost: it.unit_cost, referenceType: 'POS_ORDER',
             referenceId: orderId, description: `POS sale ${orderNumber}`, allowNegative,
           });
-          const cost = new Money(pl.quantity).mul(it.unit_cost).round(2);
+          // FIFO-aware: the line keeps the cost the stock was actually issued at (returns re-stock at it).
+          if (!new Money(mv.unit_cost).sub(it.unit_cost || '0').isZero()) await tx.query(`UPDATE pos_order_lines SET unit_cost = $1 WHERE id = $2`, [mv.unit_cost, lineId]);
+          const cost = new Money(mv.total_value).abs().round(2);
           if (cost.isPositive()) {
             cogsLines.push(it.cogs_account_id ? { account_id: it.cogs_account_id, debit: cost.toFixed(8), description: `COGS ${it.code}` } : { account_code: '511001', debit: cost.toFixed(8), description: `COGS ${it.code}` });
             cogsLines.push(it.inventory_account_id ? { account_id: it.inventory_account_id, credit: cost.toFixed(8), description: `Inventory ${it.code}` } : { account_code: '113001', credit: cost.toFixed(8), description: `Inventory ${it.code}` });

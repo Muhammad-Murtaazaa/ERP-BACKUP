@@ -18,7 +18,7 @@ export const SETTINGS: Record<string, { label: string; group: string; type: Sett
   'sales.payment_terms_days': { label: 'Default payment terms (days)', group: 'Sales & AR', type: { kind: 'int', min: 0, max: 365 }, default: 30, help: 'Used for due dates on new invoices.' },
   'sales.credit_check': { label: 'Enforce credit limits', group: 'Sales & AR', type: { kind: 'bool' }, default: true, help: 'Block order confirmation beyond the customer limit.' },
   'pos.max_cashier_discount_pct': { label: 'Cashier discount limit (%)', group: 'POS', type: { kind: 'decimal', min: '0', max: '100' }, default: '10', help: 'Above this a manager PIN is required.' },
-  'inventory.costing_method': { label: 'Inventory costing method', group: 'Inventory', type: { kind: 'enum', values: ['STANDARD', 'MOVING_AVERAGE'] }, default: 'STANDARD', help: 'MOVING_AVERAGE re-computes unit cost on each receipt (ADR-002 addendum).' },
+  'inventory.costing_method': { label: 'Inventory costing method', group: 'Inventory', type: { kind: 'enum', values: ['STANDARD', 'MOVING_AVERAGE', 'FIFO'] }, default: 'STANDARD', help: 'MOVING_AVERAGE re-computes unit cost on each receipt; FIFO values issues at the oldest receipt layers (ADR-016).' },
   'inventory.allow_negative_stock': { label: 'Allow negative stock', group: 'Inventory', type: { kind: 'bool' }, default: false, help: 'Never recommended; issues are blocked when off.' },
   'service.business_hours': { label: 'Service SLA business hours', group: 'Service', type: { kind: 'hours' }, default: { start: '09:00', end: '18:00', days: [1, 2, 3, 4, 5, 6] }, help: 'SLA clocks only run inside these hours (Asia/Karachi).' },
   'service.default_labour_rate': { label: 'Default technician labour rate (PKR/h)', group: 'Service', type: { kind: 'decimal', min: '0', max: '1000000' }, default: '2500', help: 'Used when billing approved service time.' },
@@ -159,7 +159,9 @@ export function registerConfigRoutes(app: Express): void {
       res,
       Object.entries(SETTINGS).map(([key, d]) => {
         const row = byKey.get(key);
-        const v = row ? (typeof row.value === 'string' ? JSON.parse(row.value) : row.value) : d.default;
+        // JSONB comes back already decoded; a string setting (e.g. "FIFO") must not be JSON.parse'd again
+        // (that threw and broke the whole settings page once an enum setting had been saved).
+        const v = row ? row.value : d.default;
         return { id: key, key, label: d.label, group: d.group, kind: d.type.kind, options: (d.type as any).values, help: d.help, value: v, is_default: !row, version: row?.version ?? 0, updated_at: row?.updated_at ?? null };
       }),
     );

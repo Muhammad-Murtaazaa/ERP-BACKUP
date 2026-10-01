@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { bootstrap, login, makeRequest, db } from './harness.js';
-import { movingAverage } from '../src/lib/stock.js';
+import { movingAverage, fifoConsume } from '../src/lib/stock.js';
 
 describe('moving-average maths', () => {
   it('weights by quantity and resets when stock is not positive', () => {
@@ -8,6 +8,19 @@ describe('moving-average maths', () => {
     expect(Number(movingAverage('30', '100', '10', '140'))).toBe(110);
     expect(Number(movingAverage('0', '100', '5', '90'))).toBe(90);
     expect(Number(movingAverage('-2', '100', '5', '90'))).toBe(90);
+  });
+});
+
+describe('FIFO maths', () => {
+  it('consumes oldest layers first and values any shortfall at the fallback cost', () => {
+    const layers = [ { id: 'a', qty_remaining: '10', unit_cost: '100' }, { id: 'b', qty_remaining: '10', unit_cost: '130' } ];
+    const r = fifoConsume(layers, '15', '999');
+    expect(Number(r.value)).toBe(1650);
+    expect(Number(r.unit_cost)).toBe(110);
+    expect(r.takes.map((t) => [t.id, Number(t.quantity)])).toEqual([['a', 10], ['b', 5]]);
+    const short = fifoConsume([{ id: 'a', qty_remaining: '2', unit_cost: '100' }], '3', '40');
+    expect(Number(short.value)).toBe(240);
+    expect(short.takes[1].id).toBeNull();
   });
 });
 
@@ -60,5 +73,35 @@ describe('inventory costing method', () => {
     // Remaining 16 @ 115 + 4 @ 160 -> (1840 + 640) / 20 = 124
     await receive(it1.id, '4', '160');
     expect(await cost(it1.id)).toBe(124);
+  });
+
+  it('FIFO: issues are valued at the oldest receipt layers and COGS posts the same value', async () => {
+    const cur = (await makeRequest('GET', '/api/config/settings', undefined, admin)).body.data.find((x: any) => x.key === 'inventory.costing_method');
+    const r = await makeRequest('POST', '/api/config/settings/inventory.costing_method', { value: 'FIFO', version: cur.version, reason: 'Auditor prefers FIFO' }, admin);
+    expect(r.status).toBe(200);
+    const it2 = await newItem('CAP-FIFO');
+    await receive(it2.id, '10', '100');
+    await receive(it2.id, '10', '130');
+    expect(await cost(it2.id)).toBe(100); // FIFO does not re-cost the item master
+    const ship = async (qty: string) => {
+      const so = await makeRequest('POST', '/api/sales/orders', { party_id: customer.id, order_date: '2026-09-04', lines: [{ item_id: it2.id, quantity: qty, unit_price: '500' }] }, controller);
+      await makeRequest('POST', `/api/sales/orders/${so.body.data.id}/confirm`, {}, controller);
+      const f = await makeRequest('POST', `/api/sales/orders/${so.body.data.id}/fulfill`, { shipment_date: '2026-09-04' }, admin);
+      expect(f.status).toBe(200);
+      const debit = (await db.query(`SELECT COALESCE(SUM(debit_amount),0)::text d FROM journal_lines WHERE journal_id = $1`, [f.body.data.cogs_journal_id])).rows[0].d;
+      const mv = (await db.query(`SELECT unit_cost::text c, total_value::text v FROM stock_movements WHERE reference_id = $1`, [so.body.data.id])).rows[0];
+      return { debit: Number(debit), unit: Number(mv.c), value: Number(mv.v) };
+    };
+    const first = await ship('15'); // 10 × 100 + 5 × 130
+    expect(first).toEqual({ debit: 1650, unit: 110, value: -1650 });
+    const second = await ship('5'); // remaining 5 × 130
+    expect(second).toEqual({ debit: 650, unit: 130, value: -650 });
+    const layers = (await db.query(`SELECT unit_cost::text c, qty_remaining::text q FROM stock_cost_layers WHERE item_id = $1 ORDER BY seq`, [it2.id])).rows;
+    expect(layers.map((l: any) => [Number(l.c), Number(l.q)])).toEqual([[100, 0], [130, 0]]);
+    expect((await db.query(`SELECT COUNT(*)::int n FROM stock_layer_consumptions c JOIN stock_cost_layers l ON l.id = c.layer_id WHERE l.item_id = $1`, [it2.id])).rows[0].n).toBe(3);
+    // Oversell is still refused (no layer or stock is touched).
+    const so = await makeRequest('POST', '/api/sales/orders', { party_id: customer.id, order_date: '2026-09-04', lines: [{ item_id: it2.id, quantity: '1', unit_price: '500' }] }, controller);
+    await makeRequest('POST', `/api/sales/orders/${so.body.data.id}/confirm`, {}, controller);
+    expect((await makeRequest('POST', `/api/sales/orders/${so.body.data.id}/fulfill`, { shipment_date: '2026-09-04' }, admin)).status).toBe(409);
   });
 });

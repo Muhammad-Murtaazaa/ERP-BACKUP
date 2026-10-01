@@ -427,7 +427,7 @@ export function registerServiceRoutes(app: Express): void {
       const wh = (typeof req.body?.warehouse_id === 'string' && (await loadRow(ctx.tx, 'warehouses', req.body.warehouse_id, ctx.org, 'Warehouse')).id) || (await defaultWarehouseId(ctx.tx, ctx.org));
       const date = todayIso();
       const mv = await postStockMovement(ctx.tx, { organizationId: ctx.org, legalEntityId: ctx.le, itemId: item.id, warehouseId: wh, movementType: 'SERVICE_ISSUE', movementDate: date, quantity: new Money(qty).negated().toFixed(8), unitCost: String(item.unit_cost), referenceType: 'SERVICE_WORK_ORDER', referenceId: wo.id, description: `Parts for ${wo.number}` });
-      const value = new Money(qty).mul(item.unit_cost).round(2);
+      const value = new Money(mv.total_value).abs().round(2); // FIFO-aware
       const chargeable = req.body?.chargeable === undefined ? true : bool(req.body.chargeable);
       const cost = value.isPositive()
         ? await postJournal(ctx.tx, auditLogger, outboxService, {
@@ -442,7 +442,7 @@ export function registerServiceRoutes(app: Express): void {
       const part = (
         await ctx.tx.query(
           `INSERT INTO srv_work_order_parts (organization_id, work_order_id, item_id, quantity, unit_cost, unit_price, chargeable, issue_key, stock_movement_id, journal_id, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-          [ctx.org, wo.id, item.id, qty, item.unit_cost, item.unit_price, chargeable, issueKey, mv.id, cost?.journalId ?? null, ctx.user],
+          [ctx.org, wo.id, item.id, qty, mv.unit_cost, item.unit_price, chargeable, issueKey, mv.id, cost?.journalId ?? null, ctx.user],
         )
       ).rows[0];
       await ctx.tx.query(`UPDATE srv_work_orders SET signoff_hash = NULL, signed_at = NULL, customer_signoff_name = NULL, revision = revision + 1 WHERE id = $1`, [wo.id]);

@@ -202,17 +202,8 @@ export function registerManufacturingRoutes(app: Express): void {
       if (lot_id) await assertOrgRef(tx, 'item_lots', lot_id, org, 'lot_id');
       const items = await lockItems(tx, org, [component_item_id]);
       const item = items.get(component_item_id);
-      const unitCost = new Money(item.unit_cost || '0').toFixed(8);
-      const totalCost = new Money(consumed_qty).mul(unitCost).toFixed(8);
-      const cons = (
-        await tx.query(
-          `INSERT INTO work_order_consumptions (work_order_id, component_item_id, consumed_qty, unit_cost, total_cost, lot_id)
-           VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-          [wo.id, component_item_id, consumed_qty, unitCost, totalCost, lot_id],
-        )
-      ).rows[0];
-      // Stock leaves the production warehouse (previously no stock or GL effect at all).
-      await postStockMovement(tx, {
+      // Stock leaves the production warehouse first so the consumption is valued at the issued cost (FIFO-aware).
+      const mv = await postStockMovement(tx, {
         organizationId: org,
         legalEntityId: req.session!.legal_entity_id,
         itemId: component_item_id,
@@ -220,11 +211,20 @@ export function registerManufacturingRoutes(app: Express): void {
         movementType: 'PRODUCTION_ISSUE',
         movementDate: posting_date,
         quantity: new Money(consumed_qty).negated().toFixed(8),
-        unitCost,
+        unitCost: new Money(item.unit_cost || '0').toFixed(8),
         referenceType: 'WORK_ORDER',
         referenceId: wo.id,
         description: `Material issue to ${wo.work_order_number}`,
       });
+      const unitCost = mv.unit_cost;
+      const totalCost = new Money(mv.total_value).abs().toFixed(8);
+      const cons = (
+        await tx.query(
+          `INSERT INTO work_order_consumptions (work_order_id, component_item_id, consumed_qty, unit_cost, total_cost, lot_id)
+           VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+          [wo.id, component_item_id, consumed_qty, unitCost, totalCost, lot_id],
+        )
+      ).rows[0];
       // Dr WIP / Cr component inventory account.
       const invAccount = item.inventory_account_id || (await accountId(tx, org, '113001'));
       await postJournal(tx, auditLogger, outboxService, {

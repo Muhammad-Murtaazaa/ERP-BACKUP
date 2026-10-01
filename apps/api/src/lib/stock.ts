@@ -13,8 +13,45 @@ import { ApiError, validationError } from './errors.js';
  * Valuation uses items.unit_cost. With the org setting inventory.costing_method = MOVING_AVERAGE,
  * movements flagged `revalue` (purchase receipts) re-compute unit_cost as the weighted average of
  * on-hand value and the receipt, so later issues are costed at the moving average (ADR-002,
- * ADR-016). STANDARD (default) leaves unit_cost untouched.
+ * ADR-016). STANDARD (default) leaves unit_cost untouched. With FIFO, inbound movements open cost
+ * layers and outbound movements consume the oldest layers first; the movement is valued at the
+ * consumed layers (returned as unit_cost / total_value so callers post GL at the same value).
+ * Stock that pre-dates the switch to FIFO has no layers and is valued at the caller's unit cost.
+ * Transfers are valuation-neutral and leave the layers untouched.
  */
+
+const LAYER_NEUTRAL = new Set(['TRANSFER_OUT', 'TRANSFER_IN']);
+
+export interface StockMoveResult {
+  id: string;
+  /** Signed movement value (negative for issues). */
+  total_value: string;
+  /** Unit cost the movement was valued at (FIFO: weighted cost of the consumed layers). */
+  unit_cost: string;
+  on_hand_after: string;
+}
+
+/** Pure FIFO consumption: take qty from layers oldest first; any shortfall is valued at fallbackCost. */
+export function fifoConsume(layers: { id: string; qty_remaining: string; unit_cost: string }[], qty: string, fallbackCost: string) {
+  let need = new Money(qty);
+  let value = Money.zero();
+  const takes: { id: string | null; quantity: string; unit_cost: string }[] = [];
+  for (const l of layers) {
+    if (!need.isPositive()) break;
+    const avail = new Money(l.qty_remaining);
+    if (!avail.isPositive()) continue;
+    const take = avail.lt(need) ? avail : need;
+    takes.push({ id: l.id, quantity: take.toFixed(8), unit_cost: new Money(l.unit_cost).toFixed(8) });
+    value = value.add(take.mul(l.unit_cost));
+    need = need.sub(take);
+  }
+  if (need.isPositive()) {
+    takes.push({ id: null, quantity: need.toFixed(8), unit_cost: new Money(fallbackCost).toFixed(8) });
+    value = value.add(need.mul(fallbackCost));
+  }
+  const unit = new Money(qty).isZero() ? new Money(fallbackCost) : value.div(qty).round(8);
+  return { value: value.round(8).toFixed(8), unit_cost: unit.toFixed(8), takes };
+}
 
 export interface StockMoveInput {
   organizationId: string;
@@ -87,7 +124,7 @@ export async function onHand(q: DbClient, organizationId: string, itemId: string
   return new Money(r.rows[0].q).toFixed(8);
 }
 
-export async function postStockMovement(q: DbClient, input: StockMoveInput): Promise<{ id: string; total_value: string; on_hand_after: string }> {
+export async function postStockMovement(q: DbClient, input: StockMoveInput): Promise<StockMoveResult> {
   const qty = new Money(input.quantity);
   if (qty.isZero()) throw validationError('Stock movement quantity cannot be zero');
   const before = await onHand(q, input.organizationId, input.itemId, input.warehouseId);
@@ -101,7 +138,24 @@ export async function postStockMovement(q: DbClient, input: StockMoveInput): Pro
     });
   }
   const id = crypto.randomUUID();
-  const totalValue = qty.mul(input.unitCost).toFixed(8);
+  const method = await costingMethod(q, input.organizationId);
+  const fifo = method === 'FIFO' && !LAYER_NEUTRAL.has(input.movementType);
+  let unitCost = new Money(input.unitCost).toFixed(8);
+  let totalValue = qty.mul(input.unitCost).toFixed(8);
+  let takes: { id: string | null; quantity: string; unit_cost: string }[] = [];
+  if (fifo && qty.isNegative()) {
+    const layers = (
+      await q.query(
+        `SELECT id, qty_remaining::text, unit_cost::text FROM stock_cost_layers WHERE organization_id = $1 AND item_id = $2 AND qty_remaining > 0
+         ORDER BY received_date, seq FOR UPDATE`,
+        [input.organizationId, input.itemId],
+      )
+    ).rows;
+    const r = fifoConsume(layers, qty.abs().toFixed(8), input.unitCost);
+    unitCost = r.unit_cost;
+    totalValue = new Money(r.value).negated().toFixed(8);
+    takes = r.takes;
+  }
   await q.query(
     `INSERT INTO stock_movements (
       id, organization_id, legal_entity_id, item_id, warehouse_id, location_id, movement_type, movement_date,
@@ -116,14 +170,26 @@ export async function postStockMovement(q: DbClient, input: StockMoveInput): Pro
       input.movementType,
       input.movementDate,
       qty.toFixed(8),
-      new Money(input.unitCost).toFixed(8),
+      unitCost,
       totalValue,
       input.referenceType,
       input.referenceId,
       input.description,
     ],
   );
-  if (input.revalue && qty.isPositive() && (await costingMethod(q, input.organizationId)) === 'MOVING_AVERAGE') {
+  if (fifo && qty.isPositive()) {
+    await q.query(
+      `INSERT INTO stock_cost_layers (organization_id, item_id, stock_movement_id, received_date, qty_original, qty_remaining, unit_cost) VALUES ($1,$2,$3,$4,$5,$5,$6)`,
+      [input.organizationId, input.itemId, id, input.movementDate, qty.toFixed(8), unitCost],
+    );
+  }
+  for (const t of takes) {
+    if (t.id) await q.query(`UPDATE stock_cost_layers SET qty_remaining = qty_remaining - $1 WHERE id = $2`, [t.quantity, t.id]);
+    await q.query(`INSERT INTO stock_layer_consumptions (organization_id, layer_id, stock_movement_id, quantity, unit_cost) VALUES ($1,$2,$3,$4,$5)`, [
+      input.organizationId, t.id, id, t.quantity, t.unit_cost,
+    ]);
+  }
+  if (input.revalue && qty.isPositive() && method === 'MOVING_AVERAGE') {
     const item = (await q.query(`SELECT unit_cost::text AS c FROM items WHERE id = $1 AND organization_id = $2 FOR UPDATE`, [input.itemId, input.organizationId])).rows[0];
     const qtyBefore = new Money(await onHand(q, input.organizationId, input.itemId)).sub(qty).toFixed(8); // org-wide, excluding this receipt
     const newCost = movingAverage(qtyBefore, item.c, qty.toFixed(8), input.unitCost);
@@ -135,5 +201,5 @@ export async function postStockMovement(q: DbClient, input: StockMoveInput): Pro
       [input.organizationId, input.itemId, id, qtyBefore, qty.toFixed(8), item.c, new Money(input.unitCost).toFixed(8), newCost],
     );
   }
-  return { id, total_value: totalValue, on_hand_after: after.toFixed(8) };
+  return { id, total_value: totalValue, unit_cost: unitCost, on_hand_after: after.toFixed(8) };
 }

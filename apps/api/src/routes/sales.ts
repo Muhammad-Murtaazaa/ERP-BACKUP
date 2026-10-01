@@ -136,8 +136,7 @@ export function registerSalesRoutes(app: Express): void {
         const item = items.get(l.item_id);
         if (item.item_type === 'INVENTORY') {
           const cost = new Money(item.unit_cost || '0');
-          const value = cost.mul(l.quantity);
-          await postStockMovement(tx, {
+          const mv = await postStockMovement(tx, {
             organizationId: org,
             legalEntityId: so.legal_entity_id,
             itemId: l.item_id,
@@ -150,6 +149,7 @@ export function registerSalesRoutes(app: Express): void {
             referenceId: so.id,
             description: `Shipment for ${so.order_number}`,
           });
+          const value = new Money(mv.total_value).abs(); // FIFO-aware: GL matches the stock movement value
           const cogsAcc = item.cogs_account_id || defaultCogs;
           const invAcc = item.inventory_account_id || defaultInv;
           const key = `${cogsAcc}|${invAcc}`;

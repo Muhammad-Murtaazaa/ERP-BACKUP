@@ -335,11 +335,12 @@ export function registerMaintenanceRoutes(app: Express): void {
       let partsTotal = Money.zero();
       for (const p of parts) {
         const item = items.get(p.item_id);
-        const cost = new Money(p.total_cost).round(2);
-        partsTotal = partsTotal.add(cost);
+        let cost = new Money(p.total_cost).round(2);
         if (item.item_type === 'INVENTORY') {
-          await postStockMovement(tx, { organizationId: org, legalEntityId: req.session!.legal_entity_id, itemId: p.item_id, warehouseId: null, movementType: 'ADJUSTMENT', movementDate: completionDate, quantity: new Money(p.quantity).negated().toFixed(8), unitCost: p.unit_cost, referenceType: 'MAINT_WORK_ORDER', referenceId: id, description: `Spare parts issued to ${wo.work_order_number}` });
+          const mv = await postStockMovement(tx, { organizationId: org, legalEntityId: req.session!.legal_entity_id, itemId: p.item_id, warehouseId: null, movementType: 'ADJUSTMENT', movementDate: completionDate, quantity: new Money(p.quantity).negated().toFixed(8), unitCost: p.unit_cost, referenceType: 'MAINT_WORK_ORDER', referenceId: id, description: `Spare parts issued to ${wo.work_order_number}` });
+          cost = new Money(mv.total_value).abs().round(2); // FIFO-aware (equals total_cost under STANDARD)
         }
+        partsTotal = partsTotal.add(cost);
         lines.push({ account_id: item.inventory_account_id || (await accountByCode(tx, org, '113001')), credit: cost.toFixed(8), description: `Spare parts ${item.code}` });
       }
       // Internal labour is re-classified out of salaries expense (it was previously

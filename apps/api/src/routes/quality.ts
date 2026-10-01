@@ -406,9 +406,10 @@ export function registerQualityRoutes(app: Express): void {
       // quantity is actually on hand; otherwise the write-off is flagged as a
       // stock/GL reconciliation exception (surfaced by the automation reconciliation job).
       let stockAdjusted = false;
+      let movedValue: Money | null = null;
       if (item.item_type === 'INVENTORY' && !new Money(await onHand(tx, req.session!.organization_id, ncr.item_id, null)).lt(ncr.quantity)) {
         stockAdjusted = true;
-        await postStockMovement(tx, {
+        const mv = await postStockMovement(tx, {
           organizationId: req.session!.organization_id,
           legalEntityId: req.session!.legal_entity_id,
           itemId: ncr.item_id,
@@ -421,8 +422,9 @@ export function registerQualityRoutes(app: Express): void {
           referenceId: id,
           description: `Scrap write-off ${ncr.ncr_number}`,
         });
+        movedValue = new Money(mv.total_value).abs(); // FIFO-aware
       }
-      const value = unitCost.mul(ncr.quantity).round(2);
+      const value = (movedValue ?? unitCost.mul(ncr.quantity)).round(2);
       const posted = value.isPositive()
         ? await postJournal(tx, auditLogger, outboxService, {
             organizationId: req.session!.organization_id,
