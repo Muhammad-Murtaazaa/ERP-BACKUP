@@ -480,8 +480,10 @@ export function registerInventoryRoutes(app: Express): void {
       const countDate = toIsoDate(count.count_date);
       // Stock facts: previously only a GL voucher was posted and on-hand never changed,
       // so the stock subledger and GL diverged after every count.
+      // FIFO: shortages leave at layer cost, so the GL follows the movements' actual value, not the count sheet's.
+      let movedValue = new Money(0);
       for (const l of variances) {
-        await postStockMovement(tx, {
+        const mv = await postStockMovement(tx, {
           organizationId: org,
           legalEntityId: req.session!.legal_entity_id,
           itemId: l.item_id,
@@ -495,9 +497,14 @@ export function registerInventoryRoutes(app: Express): void {
           description: `Cycle count ${count.count_number} variance`,
           allowNegative: false,
         });
+        movedValue = movedValue.add(mv.total_value);
       }
       let journalId: string | null = null;
-      const varianceVal = new Money(count.total_variance_value);
+      const varianceVal = movedValue.round(2);
+      if (!varianceVal.eq(new Money(count.total_variance_value).round(2))) {
+        await tx.query(`UPDATE inventory_counts SET total_variance_value = $2 WHERE id = $1`, [count.id, varianceVal.toFixed(8)]);
+        count.total_variance_value = varianceVal.toFixed(8);
+      }
       if (!varianceVal.isZero()) {
         const inv = await tx.query(`SELECT id FROM accounts WHERE organization_id = $1 AND code = '113001'`, [org]);
         const adj = await tx.query(`SELECT id FROM accounts WHERE organization_id = $1 AND code = '511002'`, [org]);

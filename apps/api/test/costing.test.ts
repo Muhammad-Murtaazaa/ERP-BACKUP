@@ -166,4 +166,24 @@ describe('inventory costing method', () => {
     const ledger = (await db.query(`SELECT SUM(total_value)::text v FROM stock_movements WHERE item_id = $1`, [it3.id])).rows[0].v;
     expect(Number(ledger)).toBe(600); // stock ledger value == remaining layers
   });
+
+  it('FIFO cycle-count shortage posts GL at the consumed layer cost, not the count-sheet cost', async () => {
+    const w = (await makeRequest('POST', '/api/inventory/warehouses', { code: 'FIFO-C', name: 'Count branch' }, admin)).body.data;
+    const it4 = await newItem('CAP-CNT'); // item master cost 100
+    for (const [qty, price, date] of [['2', '150', '2026-09-02'], ['3', '200', '2026-09-03']]) {
+      const po = await makeRequest('POST', '/api/procurement/orders', { party_id: vendor.id, po_date: date, lines: [{ item_id: it4.id, quantity: qty, unit_price: price }] }, controller);
+      await makeRequest('POST', `/api/procurement/orders/${po.body.data.id}/approve`, {}, admin);
+      expect((await makeRequest('POST', `/api/procurement/orders/${po.body.data.id}/receive`, { receipt_date: date, warehouse_id: w.id }, controller)).status).toBe(200);
+    }
+    const periods = (await makeRequest('GET', '/api/periods', undefined, admin)).body.data;
+    const per = periods.find((p: any) => p.status === 'OPEN' && String(p.start_date).slice(0, 7) <= '2026-09' && String(p.end_date).slice(0, 7) >= '2026-09');
+    const c = await makeRequest('POST', '/api/inventory/counts', { warehouse_id: w.id, period_id: per.id, count_date: '2026-09-10', count_number: 'CNT-FIFO-1' }, controller);
+    expect(c.status, JSON.stringify(c.body)).toBe(201);
+    expect((await makeRequest('POST', `/api/inventory/counts/${c.body.data.id}/record`, { counts: [{ item_id: it4.id, counted_qty: '3' }] }, controller)).status).toBe(200);
+    const post = await makeRequest('POST', `/api/inventory/counts/${c.body.data.id}/reconcile-and-post`, {}, admin);
+    expect(post.status, JSON.stringify(post.body)).toBe(200);
+    expect(Number(post.body.data.total_variance_value)).toBe(-300); // 2 × 150 oldest layer (sheet said 2 × 100)
+    const dr = (await db.query(`SELECT COALESCE(SUM(base_debit),0)::text d FROM journal_lines WHERE journal_id = $1`, [post.body.data.journal_id])).rows[0].d;
+    expect(Number(dr)).toBe(300);
+  });
 });
