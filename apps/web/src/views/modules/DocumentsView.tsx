@@ -4,7 +4,7 @@ import { Alert, Badge, Button, Input, Table } from '@omnysync/ui';
 import { ModuleWorkspace, TabDef, FormField, fmtWhen } from '../kit/ModuleWorkspace.js';
 import { opts } from './shared.js';
 
-const LINK_TYPES = ['PARTY', 'SERVICE_CASE', 'SERVICE_WORK_ORDER', 'SERVICE_CONTRACT', 'OPPORTUNITY', 'SUPPLIER', 'SHIPMENT', 'PROJECT', 'EMPLOYEE', 'PURCHASE_ORDER', 'SALES_ORDER'];
+const LINK_TYPES = ['PARTY', 'SERVICE_CASE', 'SERVICE_WORK_ORDER', 'SERVICE_CONTRACT', 'OPPORTUNITY', 'SUPPLIER', 'SHIPMENT', 'PROJECT', 'EMPLOYEE', 'PURCHASE_ORDER', 'SALES_ORDER', 'CANDIDATE'];
 const ALLOWED = 'application/pdf,image/png,image/jpeg,text/plain,.csv,.docx,.xlsx';
 const size = (n: number) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 const toBase64 = (f: File) =>

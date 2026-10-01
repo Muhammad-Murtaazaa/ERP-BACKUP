@@ -137,6 +137,22 @@ const tabs: TabDef[] = [
       { key: 'applications', header: 'Applications', align: 'right' },
       { key: 'status', header: 'Status', kind: 'status' },
     ],
+    detailExtra: (row) => (
+      <div className="flex flex-col gap-2">
+        <div className="text-sm font-semibold">CV &amp; documents</div>
+        <Table
+          columns={[
+            { key: 'number', header: 'Doc' },
+            { key: 'title', header: 'Title' },
+            { key: 'filename', header: 'File', render: (r: any) => (r.filename ? `${r.filename} · v${r.current_version}` : 'no file yet') },
+            { key: 'status', header: 'Status', render: (r: any) => <Badge size="sm" variant={r.status === 'APPROVED' ? 'success' : 'neutral'}>{r.status}</Badge> },
+          ]}
+          data={row.documents || []}
+          keyExtractor={(r: any) => r.id}
+          emptyMessage="No CV yet — add one under Documents, linked to this candidate."
+        />
+      </div>
+    ),
     createLabel: 'Add candidate',
     createFields: [{ name: 'full_name', label: 'Full name', type: 'text', required: true }, { name: 'email', label: 'Email', type: 'text', required: true }, { name: 'phone', label: 'Phone', type: 'text' }, { name: 'source', label: 'Source', type: 'select', options: opts('REFERRAL', 'JOB_BOARD', 'WALK_IN', 'AGENCY', 'LINKEDIN', 'CAMPUS'), default: 'JOB_BOARD' }, { name: 'years_experience', label: 'Years of experience', type: 'decimal' }, { name: 'current_city', label: 'City', type: 'text' }, { name: 'skills', label: 'Skills', type: 'textarea' }],
     editFields: [{ name: 'phone', label: 'Phone', type: 'text' }, { name: 'skills', label: 'Skills', type: 'textarea' }, { name: 'years_experience', label: 'Years of experience', type: 'decimal' }],

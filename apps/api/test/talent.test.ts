@@ -96,4 +96,17 @@ describe('TAL API', () => {
     const s = await makeRequest('GET', '/api/tal/summary', undefined, hr);
     expect(s.body.data.hired).toBeGreaterThanOrEqual(2);
   });
+
+  it('CV upload: a DOC document linked to the candidate (validated file) shows on the candidate record', async () => {
+    const c = await cand();
+    const pdf = Buffer.from('%PDF-1.4\n% CV of a senior HVAC technician\n').toString('base64');
+    const d = await makeRequest('POST', '/api/doc/documents', { title: `CV — ${c.full_name}`, category: 'HR', entity_type: 'CANDIDATE', entity_id: c.id }, admin);
+    expect(d.status).toBe(201);
+    expect((await makeRequest('POST', `/api/doc/documents/${d.body.data.id}/versions`, { filename: 'cv.exe', mime_type: 'application/pdf', content_base64: pdf }, admin)).status).toBe(400);
+    expect((await makeRequest('POST', `/api/doc/documents/${d.body.data.id}/versions`, { filename: 'cv.pdf', mime_type: 'application/pdf', content_base64: pdf }, admin)).status).toBe(201);
+    const detail = (await makeRequest('GET', `/api/tal/candidates/${c.id}`, undefined, hr)).body.data;
+    expect(detail.documents.map((x: any) => [x.filename, x.category])).toEqual([['cv.pdf', 'HR']]);
+    const picker = (await makeRequest('GET', `/api/doc/link-targets?type=CANDIDATE&search=${encodeURIComponent(c.full_name)}`, undefined, admin)).body.data;
+    expect(picker.map((x: any) => x.id)).toEqual([c.id]);
+  });
 });

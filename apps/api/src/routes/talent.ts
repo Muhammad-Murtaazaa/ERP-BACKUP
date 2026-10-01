@@ -111,6 +111,14 @@ export function registerTalentRoutes(app: Express): void {
     },
     detail: async (q, row) => ({
       applications: (await q.query(`SELECT a.id, a.status, r.number, r.title FROM tal_applications a JOIN tal_requisitions r ON r.id = a.requisition_id WHERE a.candidate_id = $1 ORDER BY a.created_at DESC`, [row.id])).rows,
+      // CVs and certificates are DOC documents linked to the candidate (type/size/magic-byte checked, versioned, hashed).
+      documents: (
+        await q.query(
+          `SELECT d.id, d.number, d.title, d.category, d.status, d.current_version, v.filename, v.size_bytes FROM doc_documents d LEFT JOIN doc_versions v ON v.document_id = d.id AND v.version_no = d.current_version
+           WHERE d.organization_id = $1 AND d.entity_type = 'CANDIDATE' AND d.entity_id::text = $2 AND d.status <> 'DELETED' ORDER BY d.created_at DESC`,
+          [row.organization_id, row.id],
+        )
+      ).rows,
     }),
     commands: { archive: { from: ['ACTIVE'], to: 'ARCHIVED', permission: Permission.TALENT_MANAGE }, restore: { from: ['ARCHIVED'], to: 'ACTIVE', permission: Permission.TALENT_MANAGE } },
   });

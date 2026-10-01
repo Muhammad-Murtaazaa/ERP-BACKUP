@@ -20,6 +20,7 @@ export const MAX_BYTES = 5 * 1024 * 1024;
 export const LINKABLE: Record<string, string> = {
   PARTY: 'parties', SERVICE_CASE: 'srv_cases', SERVICE_WORK_ORDER: 'srv_work_orders', SERVICE_CONTRACT: 'srv_contracts', OPPORTUNITY: 'crm_opportunities',
   SUPPLIER: 'sup_profiles', SHIPMENT: 'log_shipments', PROJECT: 'projects', EMPLOYEE: 'employees', PURCHASE_ORDER: 'purchase_orders', SALES_ORDER: 'sales_orders',
+  CANDIDATE: 'tal_candidates',
 };
 /** Human label SQL per linkable type (alias x), used by the link picker and to show what a document is linked to. */
 const LINK_LABEL: Record<string, { from: string; label: string; order: string }> = {
@@ -34,6 +35,7 @@ const LINK_LABEL: Record<string, { from: string; label: string; order: string }>
   EMPLOYEE: { from: 'employees x', label: "x.employee_number || ' · ' || x.first_name || ' ' || x.last_name", order: 'x.employee_number' },
   PURCHASE_ORDER: { from: 'purchase_orders x', label: "x.po_number || ' · ' || x.status", order: 'x.po_number DESC' },
   SALES_ORDER: { from: 'sales_orders x', label: "x.order_number || ' · ' || x.status", order: 'x.order_number DESC' },
+  CANDIDATE: { from: 'tal_candidates x', label: "x.full_name || ' · ' || x.email", order: 'x.full_name' },
 };
 const entityLabelSql = `CASE t.entity_type ${Object.entries(LINK_LABEL)
   .map(([k, d]) => `WHEN '${k}' THEN (SELECT ${d.label} FROM ${d.from} WHERE x.id::text = t.entity_id::text AND x.organization_id = t.organization_id)`)
