@@ -10,10 +10,10 @@
   },
   "dependencies": {
     "@omnysync/contracts": "^0.1.0",
-    "decimal.js": "^10.4.3"
+    "decimal.js": "^10.4.3",
+    "typescript": "^5.6.2"
   },
   "devDependencies": {
-    "typescript": "^5.6.2",
     "vitest": "^2.1.1"
   }
 }

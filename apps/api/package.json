@@ -12,14 +12,14 @@
     "@omnysync/contracts": "^0.1.0",
     "@omnysync/financial-engine": "^0.1.0",
     "@omnysync/platform": "^0.1.0",
-    "cors": "^2.8.5",
-    "express": "^4.21.0"
-  },
-  "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^22.5.5",
-    "ts-node": "^10.9.2",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
     "typescript": "^5.6.2"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2"
   }
 }
