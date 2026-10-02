@@ -78,9 +78,9 @@ export const App: React.FC = () => {
   const [dashboardHubExpanded, setDashboardHubExpanded] = useState(true);
 
   const [branding, setBranding] = useState({
-    company_name: 'HVAC ERP',
+    company_name: 'OMNYSYNC ERP',
     legal_entity_name: 'Omnysync Operations Pakistan Pvt Ltd',
-    tagline: 'OPERATIONS V2',
+    tagline: 'ENTERPRISE PLATFORM',
     logo_url: '',
     primary_color: '#5940B8',
   });
@@ -90,9 +90,9 @@ export const App: React.FC = () => {
       const b = await ApiClient.get('/config/branding');
       if (b) {
         setBranding({
-          company_name: b.company_name || 'HVAC ERP',
+          company_name: b.company_name || 'OMNYSYNC ERP',
           legal_entity_name: b.legal_entity_name || 'Omnysync Operations Pakistan Pvt Ltd',
-          tagline: b.tagline || 'OPERATIONS V2',
+          tagline: b.tagline || 'ENTERPRISE PLATFORM',
           logo_url: b.logo_url || '',
           primary_color: b.primary_color || '#5940B8',
         });
@@ -306,10 +306,10 @@ export const App: React.FC = () => {
         <div className="flex items-center gap-3 min-w-0">
           <div className="min-w-0">
             <div className="text-zinc-900 font-extrabold text-sm tracking-tight leading-tight truncate">
-              {branding.company_name || 'HVAC ERP'}
+              {branding.company_name || 'OMNYSYNC ERP'}
             </div>
             <div className="text-[10px] font-mono font-bold tracking-widest text-[#5940B8] uppercase leading-none mt-0.5">
-              {branding.tagline || 'OPERATIONS V2'}
+              {branding.tagline || 'ENTERPRISE PLATFORM'}
             </div>
           </div>
         </div>
