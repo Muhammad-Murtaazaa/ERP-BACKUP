@@ -5,7 +5,11 @@
   "outputDirectory": "apps/web/dist",
   "rewrites": [
     {
-      "source": "/((?!api|assets|favicon\\.ico).*)",
+      "source": "/api/:path*",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/((?!assets|favicon\\.ico).*)",
       "destination": "/index.html"
     }
   ]
