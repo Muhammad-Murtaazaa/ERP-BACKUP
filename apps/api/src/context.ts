@@ -10,7 +10,10 @@ import { idempotency } from './lib/idempotency.js';
  */
 export const db: DbClient = process.env.DATABASE_URL || process.env.POSTGRES_URL
   ? new PgPoolAdapter(process.env.DATABASE_URL || process.env.POSTGRES_URL!)
-  : new PGliteAdapter(process.env.PGDATA_DIR || (process.env.NODE_ENV === 'test' ? undefined : './data/omnysync.db'));
+  : new PGliteAdapter(
+      process.env.PGDATA_DIR ||
+      (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME ? '/tmp/omnysync.db' : (process.env.NODE_ENV === 'test' ? undefined : './data/omnysync.db'))
+    );
 export const authService = new AuthService(db);
 export const auditLogger = new AuditLogger(db);
 export const outboxService = new OutboxService(db);

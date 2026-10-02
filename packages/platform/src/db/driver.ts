@@ -67,7 +67,12 @@ export class PGliteAdapter implements DbClient {
           // Fallback to default
         }
       }
-      this.pglite = new PGlite(dataDirOrInstance);
+      try {
+        this.pglite = new PGlite(dataDirOrInstance);
+      } catch (err) {
+        console.warn('[PGliteAdapter] Could not initialize at path, falling back to in-memory:', err);
+        this.pglite = new PGlite();
+      }
     }
   }
 
