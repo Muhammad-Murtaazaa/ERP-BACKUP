@@ -4591,10 +4591,10 @@ function errorHandler(err, req, res, _next) {
   };
   res.status(apiErr.status).json(body);
 }
-function wrapAsyncRoutes(app) {
+function wrapAsyncRoutes(app2) {
   for (const method of ["get", "post", "put", "patch", "delete"]) {
-    const original = app[method].bind(app);
-    app[method] = (path4, ...handlers) => {
+    const original = app2[method].bind(app2);
+    app2[method] = (path4, ...handlers) => {
       if (handlers.length === 0)
         return original(path4);
       const wrapped = handlers.map((h) => typeof h === "function" ? (req, res, next) => {
@@ -11443,7 +11443,7 @@ async function assertInScope(spec, ctx, id) {
   if (!r.rows[0])
     throw notFound(spec.label);
 }
-function defineResource(app, spec) {
+function defineResource(app2, spec) {
   if (!IDENT.test(spec.table))
     throw new Error("Illegal table");
   const statusCol = spec.statusColumn === false ? null : spec.statusColumn || "status";
@@ -11455,7 +11455,7 @@ function defineResource(app, spec) {
   const passthrough = (_req, _res, next) => next();
   const modCreate = spec.module ? requireModule(spec.module, "create") : passthrough;
   const modCmd = spec.module ? requireModule(spec.module, "command") : passthrough;
-  app.get(spec.path, authenticate, guard(spec.view), async (req, res) => {
+  app2.get(spec.path, authenticate, guard(spec.view), async (req, res) => {
     const org = req.session.organization_id;
     const { limit, offset } = pagination(req.query);
     const params = [org];
@@ -11485,7 +11485,7 @@ function defineResource(app, spec) {
     const rows = await db.query(`SELECT ${select} ${base} ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${offset}`, params);
     return ok(req, res, rows.rows, 200, { total_count: count.rows[0].n, limit, offset });
   });
-  app.get(`${spec.path}/:id`, authenticate, guard(spec.view), async (req, res) => {
+  app2.get(`${spec.path}/:id`, authenticate, guard(spec.view), async (req, res) => {
     const org = req.session.organization_id;
     const sc = spec.rowScope?.(req);
     const r = await db.query(`SELECT ${select} FROM ${spec.table} t ${joins} WHERE t.organization_id = $1 AND t.id::text = $2${sc ? ` AND (${sc.sql.replace(/\$SCOPE/g, "$3")})` : ""}`, sc ? [org, req.params.id, sc.value] : [org, req.params.id]);
@@ -11495,7 +11495,7 @@ function defineResource(app, spec) {
     return ok(req, res, { ...r.rows[0], ...extra });
   });
   if (spec.create !== false) {
-    app.post(spec.path, authenticate, guard(spec.create || spec.view), modCreate, async (req, res) => {
+    app2.post(spec.path, authenticate, guard(spec.create || spec.view), modCreate, async (req, res) => {
       const out = await unitOfWork(req, async (ctx) => {
         const values = await parseFields(ctx.tx, ctx.org, spec.fields, req.body);
         if (spec.beforeCreate)
@@ -11523,7 +11523,7 @@ function defineResource(app, spec) {
     });
   }
   if (spec.update !== false) {
-    app.post(`${spec.path}/:id/update`, authenticate, guard(spec.update || spec.create || spec.view), modCmd, async (req, res) => {
+    app2.post(`${spec.path}/:id/update`, authenticate, guard(spec.update || spec.create || spec.view), modCmd, async (req, res) => {
       const out = await unitOfWork(req, async (ctx) => {
         const row = await loadRow(ctx.tx, spec.table, req.params.id, ctx.org, spec.label, true);
         await assertInScope(spec, ctx, row.id);
@@ -11550,7 +11550,7 @@ function defineResource(app, spec) {
   }
   for (const [name, cmd] of Object.entries(spec.commands || {})) {
     const action = name.toUpperCase().replace(/-/g, "_");
-    app.post(`${spec.path}/:id/${name}`, authenticate, guard(cmd.permission || spec.update || spec.create || spec.view), modCmd, async (req, res) => {
+    app2.post(`${spec.path}/:id/${name}`, authenticate, guard(cmd.permission || spec.update || spec.create || spec.view), modCmd, async (req, res) => {
       const out = await unitOfWork(req, async (ctx) => {
         const row = await loadRow(ctx.tx, spec.table, req.params.id, ctx.org, spec.label, true);
         await assertInScope(spec, ctx, row.id);
@@ -11659,16 +11659,16 @@ async function getSetting(q, org, key) {
     return SETTINGS[key]?.default;
   return v;
 }
-function registerConfigRoutes(app) {
-  app.get("/api/admin/users", authenticate, requirePermission(Permission.USER_MANAGE), async (req, res) => {
+function registerConfigRoutes(app2) {
+  app2.get("/api/admin/users", authenticate, requirePermission(Permission.USER_MANAGE), async (req, res) => {
     const r = await db.query(`SELECT u.id, u.email, u.name, u.is_active AS user_active, m.roles, m.is_active, m.created_at
        FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.organization_id = $1 ORDER BY u.name`, [req.session.organization_id]);
     return ok(req, res, r.rows.map((x) => ({ ...x, roles: typeof x.roles === "string" ? JSON.parse(x.roles) : x.roles, status: x.is_active && x.user_active ? "ACTIVE" : "SUSPENDED" })));
   });
-  app.get("/api/admin/roles", authenticate, requireAnyPermission(Permission.USER_MANAGE, Permission.CONFIG_VIEW), async (req, res) => {
+  app2.get("/api/admin/roles", authenticate, requireAnyPermission(Permission.USER_MANAGE, Permission.CONFIG_VIEW), async (req, res) => {
     return ok(req, res, ROLE_NAMES.map((r) => ({ id: r, code: r, name: r.replace(/_/g, " "), permissions: ROLE_PERMISSIONS[r] || [], permission_count: (ROLE_PERMISSIONS[r] || []).length })));
   });
-  app.post("/api/admin/users", authenticate, requirePermission(Permission.USER_MANAGE), async (req, res) => {
+  app2.post("/api/admin/users", authenticate, requirePermission(Permission.USER_MANAGE), async (req, res) => {
     const email = str(req.body?.email, "email", { max: 255, pattern: /^[^@\s]+@[^@\s]+\.[^@\s]+$/ }).toLowerCase();
     const name = str(req.body?.name, "name", { max: 200 });
     const password = str(req.body?.initial_password, "initial_password", { min: 12, max: 128 });
@@ -11691,7 +11691,7 @@ function registerConfigRoutes(app) {
   });
   const activeAdmins = async (q, org, excludeUser) => (await q.query(`SELECT COUNT(*)::int AS n FROM memberships m JOIN users u ON u.id = m.user_id
          WHERE m.organization_id = $1 AND m.is_active AND u.is_active AND m.roles::jsonb ? 'ADMIN' AND ($2::uuid IS NULL OR m.user_id <> $2::uuid)`, [org, excludeUser ?? null])).rows[0].n;
-  app.post("/api/admin/users/:id/roles", authenticate, requirePermission(Permission.USER_MANAGE), async (req, res) => {
+  app2.post("/api/admin/users/:id/roles", authenticate, requirePermission(Permission.USER_MANAGE), async (req, res) => {
     const roles = arrayOf(req.body?.roles, "roles", { min: 1, max: 5 }).map((r) => oneOf(r, "roles", ROLE_NAMES));
     const reason = optionalStr(req.body?.reason, "reason", 500);
     const out = await unitOfWork(req, async (ctx) => {
@@ -11712,7 +11712,7 @@ function registerConfigRoutes(app) {
     return ok(req, res, out);
   });
   for (const [action, active] of [["suspend", false], ["reactivate", true]]) {
-    app.post(`/api/admin/users/:id/${action}`, authenticate, requirePermission(Permission.USER_MANAGE), async (req, res) => {
+    app2.post(`/api/admin/users/:id/${action}`, authenticate, requirePermission(Permission.USER_MANAGE), async (req, res) => {
       const out = await unitOfWork(req, async (ctx) => {
         const m = (await ctx.tx.query(`SELECT * FROM memberships WHERE user_id::text = $1 AND organization_id = $2 FOR UPDATE`, [req.params.id, ctx.org])).rows[0];
         if (!m)
@@ -11729,7 +11729,7 @@ function registerConfigRoutes(app) {
       return ok(req, res, out);
     });
   }
-  app.get("/api/config/settings", authenticate, requireAnyPermission(Permission.CONFIG_VIEW, Permission.CONFIG_MANAGE), async (req, res) => {
+  app2.get("/api/config/settings", authenticate, requireAnyPermission(Permission.CONFIG_VIEW, Permission.CONFIG_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const r = await db.query(`SELECT * FROM org_settings WHERE organization_id = $1`, [org]);
     const byKey = new Map(r.rows.map((x) => [x.setting_key, x]));
@@ -11739,11 +11739,11 @@ function registerConfigRoutes(app) {
       return { id: key, key, label: d.label, group: d.group, kind: d.type.kind, options: d.type.values, help: d.help, value: v, is_default: !row, version: row?.version ?? 0, updated_at: row?.updated_at ?? null };
     }));
   });
-  app.get("/api/config/settings/:key/history", authenticate, requireAnyPermission(Permission.CONFIG_VIEW, Permission.CONFIG_MANAGE), async (req, res) => {
+  app2.get("/api/config/settings/:key/history", authenticate, requireAnyPermission(Permission.CONFIG_VIEW, Permission.CONFIG_MANAGE), async (req, res) => {
     const r = await db.query(`SELECT h.*, u.name AS changed_by_name FROM org_setting_history h LEFT JOIN users u ON u.id = h.changed_by WHERE h.organization_id = $1 AND h.setting_key = $2 ORDER BY h.version DESC LIMIT 50`, [req.session.organization_id, req.params.key]);
     return ok(req, res, r.rows);
   });
-  app.post("/api/config/settings/:key", authenticate, requirePermission(Permission.CONFIG_MANAGE), async (req, res) => {
+  app2.post("/api/config/settings/:key", authenticate, requirePermission(Permission.CONFIG_MANAGE), async (req, res) => {
     const key = req.params.key;
     const value = parseSetting(key, req.body?.value);
     const expected = int(req.body?.version, "version", { min: 0 });
@@ -11776,11 +11776,11 @@ function registerConfigRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.get("/api/config/modules", authenticate, requireAnyPermission(Permission.CONFIG_VIEW, Permission.CONFIG_MANAGE, Permission.ORG_MANAGE), async (req, res) => {
+  app2.get("/api/config/modules", authenticate, requireAnyPermission(Permission.CONFIG_VIEW, Permission.CONFIG_MANAGE, Permission.ORG_MANAGE), async (req, res) => {
     const states = await moduleStates(db, req.session.organization_id);
     return ok(req, res, MODULES.map((m) => ({ id: m.code, ...m, state: states.get(m.code), dependents: MODULES.filter((x) => x.depends.includes(m.code)).map((x) => x.code) })));
   });
-  app.post("/api/config/modules/:code/state", authenticate, requirePermission(Permission.ORG_MANAGE), async (req, res) => {
+  app2.post("/api/config/modules/:code/state", authenticate, requirePermission(Permission.ORG_MANAGE), async (req, res) => {
     const code = String(req.params.code).toUpperCase();
     const to = oneOf(req.body?.state, "state", ["enabled", "draining", "read_only", "disabled"]);
     const reason = str(req.body?.reason, "reason", { max: 500 });
@@ -11798,7 +11798,7 @@ function registerConfigRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.get("/api/config/branding", authenticate, async (req, res) => {
+  app2.get("/api/config/branding", authenticate, async (req, res) => {
     const org = req.session.organization_id;
     const r = await db.query(`SELECT setting_key, value FROM org_settings WHERE organization_id = $1 AND setting_key IN ('org.company_name', 'org.legal_entity_name', 'org.tagline', 'org.logo_url', 'org.primary_color')`, [org]);
     const map = new Map(r.rows.map((x) => [x.setting_key, x.value]));
@@ -11810,7 +11810,7 @@ function registerConfigRoutes(app) {
       primary_color: map.get("org.primary_color") || "#5940B8"
     });
   });
-  app.post("/api/config/branding", authenticate, requirePermission(Permission.CONFIG_MANAGE), async (req, res) => {
+  app2.post("/api/config/branding", authenticate, requirePermission(Permission.CONFIG_MANAGE), async (req, res) => {
     const company_name = str(req.body?.company_name || "OMNYSYNC ERP", "company_name", { max: 200 });
     const legal_entity_name = str(req.body?.legal_entity_name || "Omnysync Pakistan Pvt Ltd", "legal_entity_name", { max: 200 });
     const tagline = str(req.body?.tagline || "Modular Enterprise Platform", "tagline", { max: 200 });
@@ -12125,8 +12125,8 @@ async function assertTechScope(ctx, wo) {
   if (!t || t.id !== wo.technician_id)
     throw new ApiError(403, ErrorCode.FORBIDDEN_SCOPE, "This work order is not assigned to you");
 }
-function registerServiceRoutes(app) {
-  defineResource(app, {
+function registerServiceRoutes(app2) {
+  defineResource(app2, {
     path: "/api/srv/technicians",
     table: "srv_technicians",
     label: "Technician",
@@ -12154,7 +12154,7 @@ function registerServiceRoutes(app) {
     orderBy: "t.code",
     commands: { deactivate: { from: ["ACTIVE"], to: "INACTIVE", permission: Permission.SERVICE_MANAGE }, activate: { from: ["INACTIVE"], to: "ACTIVE", permission: Permission.SERVICE_MANAGE } }
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/srv/contracts",
     table: "srv_contracts",
     label: "Service contract",
@@ -12200,7 +12200,7 @@ function registerServiceRoutes(app) {
       cancel: { from: ["DRAFT", "ACTIVE"], to: "CANCELLED", permission: Permission.SERVICE_MANAGE }
     }
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/srv/cases",
     table: "srv_cases",
     label: "Service case",
@@ -12303,7 +12303,7 @@ function registerServiceRoutes(app) {
       cancel: { from: ["NEW", "TRIAGED", "ON_HOLD"], to: "CANCELLED", permission: Permission.SERVICE_MANAGE, fields: { triage_reason: { type: "text", required: true } }, run: async (_c, _r, i) => ({ set: { triage_reason: i.triage_reason } }) }
     }
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/srv/work-orders",
     table: "srv_work_orders",
     label: "Work order",
@@ -12470,7 +12470,7 @@ function registerServiceRoutes(app) {
       }
     }
   });
-  app.post("/api/srv/work-orders/:id/parts", authenticate, requireAnyPermission(Permission.SERVICE_EXECUTE, Permission.SERVICE_MANAGE), requireModule("SRV"), async (req, res) => {
+  app2.post("/api/srv/work-orders/:id/parts", authenticate, requireAnyPermission(Permission.SERVICE_EXECUTE, Permission.SERVICE_MANAGE), requireModule("SRV"), async (req, res) => {
     const out = await unitOfWork(req, async (ctx) => {
       const wo = await loadRow(ctx.tx, "srv_work_orders", req.params.id, ctx.org, "Work order", true);
       await assertTechScope(ctx, wo);
@@ -12518,7 +12518,7 @@ function registerServiceRoutes(app) {
     });
     return ok(req, res, out, out.replayed ? 200 : 201);
   });
-  app.post("/api/srv/work-orders/:id/time", authenticate, requireAnyPermission(Permission.SERVICE_EXECUTE, Permission.SERVICE_MANAGE), requireModule("SRV"), async (req, res) => {
+  app2.post("/api/srv/work-orders/:id/time", authenticate, requireAnyPermission(Permission.SERVICE_EXECUTE, Permission.SERVICE_MANAGE), requireModule("SRV"), async (req, res) => {
     const out = await unitOfWork(req, async (ctx) => {
       const wo = await loadRow(ctx.tx, "srv_work_orders", req.params.id, ctx.org, "Work order", true);
       await assertTechScope(ctx, wo);
@@ -12559,7 +12559,7 @@ function registerServiceRoutes(app) {
     return ok(req, res, out, 201);
   });
   for (const [action, status] of [["approve", "APPROVED"], ["reject", "REJECTED"]]) {
-    app.post(`/api/srv/time/:id/${action}`, authenticate, requireAnyPermission(Permission.SERVICE_MANAGE), requireModule("SRV"), async (req, res) => {
+    app2.post(`/api/srv/time/:id/${action}`, authenticate, requireAnyPermission(Permission.SERVICE_MANAGE), requireModule("SRV"), async (req, res) => {
       const out = await unitOfWork(req, async (ctx) => {
         const te = (await ctx.tx.query(`SELECT * FROM srv_time_entries WHERE id::text = $1 AND organization_id = $2 FOR UPDATE`, [req.params.id, ctx.org])).rows[0];
         if (!te)
@@ -12575,7 +12575,7 @@ function registerServiceRoutes(app) {
       return ok(req, res, out);
     });
   }
-  app.post("/api/srv/work-orders/:id/extras", authenticate, requireAnyPermission(Permission.SERVICE_EXECUTE, Permission.SERVICE_MANAGE), requireModule("SRV"), async (req, res) => {
+  app2.post("/api/srv/work-orders/:id/extras", authenticate, requireAnyPermission(Permission.SERVICE_EXECUTE, Permission.SERVICE_MANAGE), requireModule("SRV"), async (req, res) => {
     const out = await unitOfWork(req, async (ctx) => {
       const wo = await loadRow(ctx.tx, "srv_work_orders", req.params.id, ctx.org, "Work order", true);
       await assertTechScope(ctx, wo);
@@ -12587,7 +12587,7 @@ function registerServiceRoutes(app) {
     });
     return ok(req, res, out, 201);
   });
-  app.post("/api/srv/extras/:id/decide", authenticate, requireAnyPermission(Permission.SERVICE_EXECUTE, Permission.SERVICE_MANAGE), requireModule("SRV"), async (req, res) => {
+  app2.post("/api/srv/extras/:id/decide", authenticate, requireAnyPermission(Permission.SERVICE_EXECUTE, Permission.SERVICE_MANAGE), requireModule("SRV"), async (req, res) => {
     const out = await unitOfWork(req, async (ctx) => {
       const ex = (await ctx.tx.query(`SELECT * FROM srv_extra_work WHERE id::text = $1 AND organization_id = $2 FOR UPDATE`, [req.params.id, ctx.org])).rows[0];
       if (!ex)
@@ -12605,13 +12605,13 @@ function registerServiceRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.get("/api/srv/time", authenticate, requireAnyPermission(...VIEW5), async (req, res) => {
+  app2.get("/api/srv/time", authenticate, requireAnyPermission(...VIEW5), async (req, res) => {
     const status = typeof req.query.status === "string" && req.query.status ? req.query.status : null;
     const r = await db.query(`SELECT te.*, w.number AS work_order_number, t.name AS technician_name, u.name AS logged_by FROM srv_time_entries te JOIN srv_work_orders w ON w.id = te.work_order_id JOIN srv_technicians t ON t.id = te.technician_id LEFT JOIN users u ON u.id = te.created_by
        WHERE te.organization_id = $1 AND ($2::text IS NULL OR te.status = $2) ORDER BY te.start_at DESC LIMIT 300`, [req.session.organization_id, status]);
     return ok(req, res, r.rows.map((x) => ({ ...x, hours: (x.minutes / 60).toFixed(2) })));
   });
-  app.get("/api/srv/board", authenticate, requireAnyPermission(...VIEW5), async (req, res) => {
+  app2.get("/api/srv/board", authenticate, requireAnyPermission(...VIEW5), async (req, res) => {
     const org = req.session.organization_id;
     const off = await orgOffset(db, org);
     const localToday = new Date(Date.now() + off * 6e4).toISOString().slice(0, 10);
@@ -12626,7 +12626,7 @@ function registerServiceRoutes(app) {
          WHERE w.organization_id = $1 AND w.status = 'SCHEDULED' AND w.technician_id IS NULL ORDER BY c.priority, w.created_at`, [org])).rows;
     return ok(req, res, { date: day, technicians: techs.map((t) => ({ ...t, jobs: jobs.filter((j) => j.technician_id === t.id) })), unassigned });
   });
-  app.get("/api/srv/summary", authenticate, requireAnyPermission(...VIEW5), async (req, res) => {
+  app2.get("/api/srv/summary", authenticate, requireAnyPermission(...VIEW5), async (req, res) => {
     const org = req.session.organization_id;
     const r = (await db.query(`SELECT
           COUNT(*) FILTER (WHERE status NOT IN ('RESOLVED','CLOSED','CANCELLED'))::int AS open_cases,
@@ -12645,7 +12645,7 @@ function registerServiceRoutes(app) {
       unbilled_work_orders: unbilled
     });
   });
-  app.post("/api/srv/contracts/generate-pm", authenticate, requireAnyPermission(Permission.SERVICE_MANAGE), requireModule("SRV", "create"), async (req, res) => {
+  app2.post("/api/srv/contracts/generate-pm", authenticate, requireAnyPermission(Permission.SERVICE_MANAGE), requireModule("SRV", "create"), async (req, res) => {
     const asOf = typeof req.body?.as_of === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.body.as_of) ? req.body.as_of : todayIso();
     const out = await unitOfWork(req, (ctx) => generatePreventive(ctx.tx, ctx.org, ctx.le, ctx.user, asOf));
     return ok(req, res, out);
@@ -12733,8 +12733,8 @@ async function findDuplicate(ctx, email, phone, excludeId) {
        AND ((email_norm IS NOT NULL AND email_norm = $2) OR (phone_norm IS NOT NULL AND phone_norm = $3)) LIMIT 1`, [ctx.org, email, phone, excludeId ?? null]);
   return r.rows[0] || null;
 }
-function registerCrmRoutes(app) {
-  defineResource(app, {
+function registerCrmRoutes(app2) {
+  defineResource(app2, {
     path: "/api/crm/leads",
     table: "crm_leads",
     label: "Lead",
@@ -12821,7 +12821,7 @@ function registerCrmRoutes(app) {
       }
     }
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/crm/opportunities",
     table: "crm_opportunities",
     label: "Opportunity",
@@ -12897,7 +12897,7 @@ function registerCrmRoutes(app) {
       reopen: { from: ["LOST"], to: "OPEN", permission: Permission.CRM_MANAGE, run: async () => ({ set: { stage: "QUALIFICATION", probability: 25, lost_reason: null, lost_notes: null, closed_at: null } }) }
     }
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/crm/activities",
     table: "crm_activities",
     label: "Activity",
@@ -12937,7 +12937,7 @@ function registerCrmRoutes(app) {
       cancel: { from: ["OPEN"], to: "CANCELLED", permission: Permission.CRM_MANAGE }
     }
   });
-  app.get("/api/crm/summary", authenticate, requireAnyPermission(...VIEW6), async (req, res) => {
+  app2.get("/api/crm/summary", authenticate, requireAnyPermission(...VIEW6), async (req, res) => {
     const org = req.session.organization_id;
     const open = (await db.query(`SELECT stage, amount::text, probability FROM crm_opportunities WHERE organization_id = $1 AND status = 'OPEN'`, [org])).rows;
     const byStage = STAGES.map((s) => {
@@ -13094,8 +13094,8 @@ function recordFailure(key, now = Date.now()) {
   else
     rec.count += 1;
 }
-function registerPlatformRoutes(app) {
-  app.post("/api/auth/login", async (req, res) => {
+function registerPlatformRoutes(app2) {
+  app2.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body || {};
     if (!email || !password || typeof email !== "string" || typeof password !== "string") {
       throw new ApiError(400, ErrorCode.VALIDATION_FAILED, "Email and password are required");
@@ -13142,10 +13142,10 @@ function registerPlatformRoutes(app) {
     });
     return ok(req, res, { token, user: session, expires_at: claims?.exp ? new Date(claims.exp * 1e3).toISOString() : null });
   });
-  app.get("/api/auth/me", authenticate, (req, res) => {
+  app2.get("/api/auth/me", authenticate, (req, res) => {
     return ok(req, res, req.session);
   });
-  app.get("/api/orgs/context", authenticate, async (req, res) => {
+  app2.get("/api/orgs/context", authenticate, async (req, res) => {
     const org = req.session.organization_id;
     const orgRes = await db.query("SELECT id, name, code, is_active FROM organizations WHERE id = $1", [org]);
     const leRes = await db.query("SELECT id, name, code, functional_currency, tax_identifier, is_active FROM legal_entities WHERE organization_id = $1", [org]);
@@ -13160,7 +13160,7 @@ function registerPlatformRoutes(app) {
       }
     });
   });
-  app.get("/api/audit/logs", authenticate, requirePermission(Permission.AUDIT_VIEW), async (req, res) => {
+  app2.get("/api/audit/logs", authenticate, requirePermission(Permission.AUDIT_VIEW), async (req, res) => {
     const { limit, offset } = pagination(req.query, { limit: 100, max: 500 });
     const entityType = optionalStr(req.query.entity_type, "entity_type", 100);
     const action = optionalStr(req.query.action, "action", 100);
@@ -13210,20 +13210,20 @@ var MANUAL_PURPOSES = [
   AccountingPurpose.BANK_CHARGE,
   AccountingPurpose.FX_REVALUATION
 ];
-function registerFinanceRoutes(app) {
-  app.get("/api/coa/accounts", authenticate, async (req, res) => {
+function registerFinanceRoutes(app2) {
+  app2.get("/api/coa/accounts", authenticate, async (req, res) => {
     const accountsRes = await db.query("SELECT * FROM accounts WHERE organization_id = $1 ORDER BY code ASC", [
       req.session.organization_id
     ]);
     return ok(req, res, accountsRes.rows, 200, { total_count: accountsRes.rows.length });
   });
-  app.get("/api/coa/tree", authenticate, async (req, res) => {
+  app2.get("/api/coa/tree", authenticate, async (req, res) => {
     const accountsRes = await db.query("SELECT * FROM accounts WHERE organization_id = $1 ORDER BY code ASC", [
       req.session.organization_id
     ]);
     return ok(req, res, CoaHierarchyValidator.buildTree(accountsRes.rows));
   });
-  app.post("/api/coa/accounts", authenticate, requirePermission(Permission.FINANCE_COA_MANAGE), async (req, res) => {
+  app2.post("/api/coa/accounts", authenticate, requirePermission(Permission.FINANCE_COA_MANAGE), async (req, res) => {
     const body = req.body || {};
     const code = str(body.code, "code", { max: 32, pattern: /^[A-Za-z0-9._-]+$/ });
     const name = str(body.name, "name", { max: 255 });
@@ -13278,11 +13278,11 @@ function registerFinanceRoutes(app) {
     });
     return ok(req, res, { id: accountId2, code, name, level }, 201);
   });
-  app.get("/api/periods", authenticate, async (req, res) => {
+  app2.get("/api/periods", authenticate, async (req, res) => {
     const periodsRes = await db.query("SELECT * FROM fiscal_periods WHERE organization_id = $1 ORDER BY fiscal_year ASC, period_number ASC", [req.session.organization_id]);
     return ok(req, res, periodsRes.rows);
   });
-  app.post("/api/periods/:id/status", authenticate, requirePermission(Permission.FINANCE_PERIOD_MANAGE), async (req, res) => {
+  app2.post("/api/periods/:id/status", authenticate, requirePermission(Permission.FINANCE_PERIOD_MANAGE), async (req, res) => {
     const { id } = req.params;
     const status = oneOf(req.body?.status, "status", ["OPEN", "SOFT_CLOSED", "HARD_CLOSED"]);
     const reason = optionalStr(req.body?.reason, "reason", 500);
@@ -13318,7 +13318,7 @@ function registerFinanceRoutes(app) {
     });
     return ok(req, res, result);
   });
-  app.get("/api/journals", authenticate, requireAnyPermission(Permission.FINANCE_REPORTS_VIEW, Permission.FINANCE_JOURNAL_CREATE), async (req, res) => {
+  app2.get("/api/journals", authenticate, requireAnyPermission(Permission.FINANCE_REPORTS_VIEW, Permission.FINANCE_JOURNAL_CREATE), async (req, res) => {
     const status = optionalStr(req.query.status, "status", 20);
     const search = optionalStr(req.query.search, "search", 100);
     const purpose = optionalStr(req.query.purpose, "purpose", 64);
@@ -13346,14 +13346,14 @@ function registerFinanceRoutes(app) {
          LIMIT $${params.length - 1} OFFSET $${params.length}`, params);
     return ok(req, res, journalsRes.rows, 200, { total_count: count.rows[0].n, limit, offset });
   });
-  app.get("/api/journals/:id", authenticate, requireAnyPermission(Permission.FINANCE_REPORTS_VIEW, Permission.FINANCE_JOURNAL_CREATE), async (req, res) => {
+  app2.get("/api/journals/:id", authenticate, requireAnyPermission(Permission.FINANCE_REPORTS_VIEW, Permission.FINANCE_JOURNAL_CREATE), async (req, res) => {
     const journal = await requireOrgRow(db, "journals", req.params.id, req.session.organization_id, "Journal entry");
     const linesRes = await db.query(`SELECT jl.*, a.code as account_code, a.name as account_name, a.level as account_level
          FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
          WHERE jl.journal_id = $1 ORDER BY jl.line_number ASC`, [journal.id]);
     return ok(req, res, { ...journal, lines: linesRes.rows });
   });
-  app.post("/api/journals/draft", authenticate, requirePermission(Permission.FINANCE_JOURNAL_CREATE), async (req, res) => {
+  app2.post("/api/journals/draft", authenticate, requirePermission(Permission.FINANCE_JOURNAL_CREATE), async (req, res) => {
     const body = req.body || {};
     const posting_date = dateOnly(body.posting_date, "posting_date");
     const document_date = dateOnly(body.document_date, "document_date", { defaultValue: posting_date });
@@ -13456,24 +13456,24 @@ function registerFinanceRoutes(app) {
       return updated;
     });
   }
-  app.post("/api/journals/:id/submit", authenticate, requirePermission(Permission.FINANCE_JOURNAL_SUBMIT), async (req, res) => {
+  app2.post("/api/journals/:id/submit", authenticate, requirePermission(Permission.FINANCE_JOURNAL_SUBMIT), async (req, res) => {
     const j = await journalTransition(req, [JournalStatus.DRAFT], JournalStatus.SUBMITTED, "JOURNAL_SUBMITTED");
     return ok(req, res, { id: j.id, status: JournalStatus.SUBMITTED, revision: j.revision });
   });
-  app.post("/api/journals/:id/approve", authenticate, requirePermission(Permission.FINANCE_JOURNAL_APPROVE), async (req, res) => {
+  app2.post("/api/journals/:id/approve", authenticate, requirePermission(Permission.FINANCE_JOURNAL_APPROVE), async (req, res) => {
     const j = await journalTransition(req, [JournalStatus.SUBMITTED], JournalStatus.APPROVED, "JOURNAL_APPROVED", {
       approved_by: req.session.user_id
     });
     return ok(req, res, { id: j.id, status: JournalStatus.APPROVED, revision: j.revision });
   });
-  app.post("/api/journals/:id/reject", authenticate, requirePermission(Permission.FINANCE_JOURNAL_APPROVE), async (req, res) => {
+  app2.post("/api/journals/:id/reject", authenticate, requirePermission(Permission.FINANCE_JOURNAL_APPROVE), async (req, res) => {
     str(req.body?.reason, "reason", { max: 500 });
     const j = await journalTransition(req, [JournalStatus.SUBMITTED, JournalStatus.APPROVED], JournalStatus.DRAFT, "JOURNAL_REJECTED", {
       approved_by: null
     });
     return ok(req, res, { id: j.id, status: JournalStatus.DRAFT, revision: j.revision });
   });
-  app.post("/api/journals/:id/post", authenticate, requirePermission(Permission.FINANCE_JOURNAL_POST), async (req, res) => {
+  app2.post("/api/journals/:id/post", authenticate, requirePermission(Permission.FINANCE_JOURNAL_POST), async (req, res) => {
     const result = await db.transaction(async (tx) => {
       const j = await requireOrgRow(tx, "journals", req.params.id, req.session.organization_id, "Journal entry", { forUpdate: true });
       if (j.status === JournalStatus.POSTED || j.status === JournalStatus.REVERSED) {
@@ -13521,7 +13521,7 @@ function registerFinanceRoutes(app) {
     });
     return ok(req, res, { id: result.id, status: JournalStatus.POSTED, journal_number: result.journal_number });
   });
-  app.post("/api/journals/:id/reverse", authenticate, requirePermission(Permission.FINANCE_JOURNAL_REVERSE), async (req, res) => {
+  app2.post("/api/journals/:id/reverse", authenticate, requirePermission(Permission.FINANCE_JOURNAL_REVERSE), async (req, res) => {
     const reversal_posting_date = dateOnly(req.body?.reversal_posting_date, "reversal_posting_date");
     const reason = str(req.body?.reason, "reason", { max: 500 });
     const out = await db.transaction(async (tx) => {
@@ -13587,7 +13587,7 @@ function registerFinanceRoutes(app) {
     });
     return ok(req, res, { ...out, status: JournalStatus.REVERSED }, 201);
   });
-  app.get("/api/ledger/trial-balance", authenticate, requirePermission(Permission.FINANCE_REPORTS_VIEW), async (req, res) => {
+  app2.get("/api/ledger/trial-balance", authenticate, requirePermission(Permission.FINANCE_REPORTS_VIEW), async (req, res) => {
     const asOfDate = dateOnly(req.query.as_of_date, "as_of_date", { defaultValue: todayIso() });
     const accountsRes = await db.query("SELECT * FROM accounts WHERE organization_id = $1 ORDER BY code ASC", [
       req.session.organization_id
@@ -13597,7 +13597,7 @@ function registerFinanceRoutes(app) {
     const report = LedgerEngine.computeTrialBalance(accountsRes.rows, postedLinesRes.rows, asOfDate, req.session.legal_entity_id, "PKR");
     return ok(req, res, report);
   });
-  app.get("/api/ledger/accounts/:id", authenticate, requirePermission(Permission.FINANCE_REPORTS_VIEW), async (req, res) => {
+  app2.get("/api/ledger/accounts/:id", authenticate, requirePermission(Permission.FINANCE_REPORTS_VIEW), async (req, res) => {
     const account = await requireOrgRow(db, "accounts", req.params.id, req.session.organization_id, "Account");
     const from = dateOnly(req.query.from, "from", { defaultValue: "1900-01-01" });
     const to = dateOnly(req.query.to, "to", { defaultValue: todayIso() });
@@ -13652,8 +13652,8 @@ function partyInput(b, partial = false) {
     credit_limit: decimal(b.credit_limit, "credit_limit", { required: false, defaultValue: "0", scale: 2 })
   };
 }
-function registerMastersRoutes(app) {
-  app.get("/api/parties", authenticate, async (req, res) => {
+function registerMastersRoutes(app2) {
+  app2.get("/api/parties", authenticate, async (req, res) => {
     const params = [req.session.organization_id];
     let sql = "SELECT * FROM parties WHERE organization_id = $1 AND is_active = true";
     if (req.query.type) {
@@ -13667,7 +13667,7 @@ function registerMastersRoutes(app) {
     const r = await db.query(`${sql} ORDER BY name ASC LIMIT 1000`, params);
     return ok(req, res, r.rows, 200, { total_count: r.rows.length });
   });
-  app.post("/api/parties", authenticate, requirePermission(Permission.PARTIES_MANAGE), async (req, res) => {
+  app2.post("/api/parties", authenticate, requirePermission(Permission.PARTIES_MANAGE), async (req, res) => {
     const b = req.body || {};
     const code = str(b.code, "code", { max: 64 });
     const p = partyInput(b);
@@ -13679,7 +13679,7 @@ function registerMastersRoutes(app) {
     });
     return ok(req, res, { id, code, name: p.name, party_type: p.party_type }, 201);
   });
-  app.post("/api/parties/:id", authenticate, requirePermission(Permission.PARTIES_MANAGE), async (req, res) => {
+  app2.post("/api/parties/:id", authenticate, requirePermission(Permission.PARTIES_MANAGE), async (req, res) => {
     const out = await db.transaction(async (tx) => {
       const before = await requireOrgRow(tx, "parties", req.params.id, req.session.organization_id, "Party", { forUpdate: true });
       const p = partyInput({ ...before, ...req.body });
@@ -13691,7 +13691,7 @@ function registerMastersRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.get("/api/items", authenticate, async (req, res) => {
+  app2.get("/api/items", authenticate, async (req, res) => {
     const params = [req.session.organization_id];
     let where = "i.organization_id = $1 AND i.is_active = true";
     if (req.query.search) {
@@ -13702,7 +13702,7 @@ function registerMastersRoutes(app) {
        FROM items i WHERE ${where} ORDER BY i.name ASC LIMIT 2000`, params);
     return ok(req, res, r.rows, 200, { total_count: r.rows.length });
   });
-  app.post("/api/items", authenticate, requirePermission(Permission.ITEMS_MANAGE), async (req, res) => {
+  app2.post("/api/items", authenticate, requirePermission(Permission.ITEMS_MANAGE), async (req, res) => {
     const b = req.body || {};
     const org = req.session.organization_id;
     const code = str(b.code, "code", { max: 64 });
@@ -13728,7 +13728,7 @@ function registerMastersRoutes(app) {
     });
     return ok(req, res, { id, code, name }, 201);
   });
-  app.post("/api/items/:id", authenticate, requirePermission(Permission.ITEMS_MANAGE), async (req, res) => {
+  app2.post("/api/items/:id", authenticate, requirePermission(Permission.ITEMS_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const out = await db.transaction(async (tx) => {
       const before = await requireOrgRow(tx, "items", req.params.id, org, "Item", { forUpdate: true });
@@ -13841,10 +13841,10 @@ var AR_READ = [Permission.AR_INVOICE_MANAGE, Permission.PAYMENT_MANAGE, Permissi
 async function audit(req, tx, action, type, id, before, after) {
   await auditLogger.record({ organization_id: req.session.organization_id, user_id: req.session.user_id, action, entity_type: type, entity_id: id, before_state: before, after_state: after, correlation_id: req.correlationId }, tx);
 }
-function registerSalesRoutes(app) {
+function registerSalesRoutes(app2) {
   const salesRead = requireAnyPermission(...SALES_READ);
   const arRead = requireAnyPermission(...AR_READ);
-  app.get("/api/sales/orders", authenticate, salesRead, async (req, res) => {
+  app2.get("/api/sales/orders", authenticate, salesRead, async (req, res) => {
     const { limit, offset } = pagination(req.query);
     const params = [req.session.organization_id];
     let where = "so.organization_id = $1";
@@ -13856,7 +13856,7 @@ function registerSalesRoutes(app) {
        WHERE ${where} ORDER BY so.order_date DESC, so.created_at DESC LIMIT ${limit} OFFSET ${offset}`, params);
     return ok(req, res, r.rows, 200, { total_count: r.rows.length, limit, offset });
   });
-  app.get("/api/sales/orders/:id", authenticate, salesRead, async (req, res) => {
+  app2.get("/api/sales/orders/:id", authenticate, salesRead, async (req, res) => {
     const r = await db.query(`SELECT so.*, p.name as party_name, p.code as party_code FROM sales_orders so JOIN parties p ON p.id = so.party_id
        WHERE so.id::text = $1 AND so.organization_id = $2`, [req.params.id, req.session.organization_id]);
     if (!r.rows[0])
@@ -13865,7 +13865,7 @@ function registerSalesRoutes(app) {
        WHERE sol.sales_order_id = $1 ORDER BY sol.line_number ASC`, [r.rows[0].id]);
     return ok(req, res, { ...r.rows[0], lines: lines.rows });
   });
-  app.post("/api/sales/orders", authenticate, requirePermission(Permission.SALES_ORDER_MANAGE), async (req, res) => {
+  app2.post("/api/sales/orders", authenticate, requirePermission(Permission.SALES_ORDER_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const party_id = uuid(req.body?.party_id, "party_id");
     const order_date = dateOnly(req.body?.order_date, "order_date", { defaultValue: todayIso() });
@@ -13891,7 +13891,7 @@ function registerSalesRoutes(app) {
     });
     return ok(req, res, out, 201);
   });
-  app.post("/api/sales/orders/:id/confirm", authenticate, requirePermission(Permission.SALES_ORDER_MANAGE), async (req, res) => {
+  app2.post("/api/sales/orders/:id/confirm", authenticate, requirePermission(Permission.SALES_ORDER_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const out = await db.transaction(async (tx) => {
       const so = await requireOrgRow(tx, "sales_orders", req.params.id, org, "Sales order", { forUpdate: true });
@@ -13903,7 +13903,7 @@ function registerSalesRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/sales/orders/:id/cancel", authenticate, requirePermission(Permission.SALES_ORDER_MANAGE), async (req, res) => {
+  app2.post("/api/sales/orders/:id/cancel", authenticate, requirePermission(Permission.SALES_ORDER_MANAGE), async (req, res) => {
     const reason = str(req.body?.reason, "reason", { max: 500 });
     const out = await db.transaction(async (tx) => {
       const so = await transition(tx, { table: "sales_orders", id: req.params.id, organizationId: req.session.organization_id, from: ["DRAFT", "CONFIRMED"], to: "CANCELLED", label: "Sales order", set: { updated_at: (/* @__PURE__ */ new Date()).toISOString() } });
@@ -13912,7 +13912,7 @@ function registerSalesRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/sales/orders/:id/fulfill", authenticate, requirePermission(Permission.INVENTORY_MANAGE), async (req, res) => {
+  app2.post("/api/sales/orders/:id/fulfill", authenticate, requirePermission(Permission.INVENTORY_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const shipment_date = dateOnly(req.body?.shipment_date, "shipment_date", { defaultValue: todayIso() });
     const bodyWarehouse = optionalUuid(req.body?.warehouse_id, "warehouse_id");
@@ -13980,13 +13980,13 @@ function registerSalesRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.get("/api/ar/invoices", authenticate, arRead, async (req, res) => {
+  app2.get("/api/ar/invoices", authenticate, arRead, async (req, res) => {
     const { limit, offset } = pagination(req.query);
     const r = await db.query(`SELECT ai.*, p.name as party_name, p.code as party_code FROM ar_invoices ai JOIN parties p ON p.id = ai.party_id
        WHERE ai.organization_id = $1 ORDER BY ai.invoice_date DESC, ai.created_at DESC LIMIT ${limit} OFFSET ${offset}`, [req.session.organization_id]);
     return ok(req, res, r.rows, 200, { total_count: r.rows.length, limit, offset });
   });
-  app.get("/api/ar/invoices/:id", authenticate, arRead, async (req, res) => {
+  app2.get("/api/ar/invoices/:id", authenticate, arRead, async (req, res) => {
     const r = await db.query(`SELECT ai.*, p.name as party_name, p.code as party_code FROM ar_invoices ai JOIN parties p ON p.id = ai.party_id
        WHERE ai.id::text = $1 AND ai.organization_id = $2`, [req.params.id, req.session.organization_id]);
     if (!r.rows[0])
@@ -13997,7 +13997,7 @@ function registerSalesRoutes(app) {
        WHERE a.invoice_id = $1 AND a.invoice_type = 'AR' AND a.reversed_at IS NULL ORDER BY a.allocated_date`, [r.rows[0].id]);
     return ok(req, res, { ...r.rows[0], lines: lines.rows, allocations: allocations.rows });
   });
-  app.post("/api/ar/invoices", authenticate, requirePermission(Permission.AR_INVOICE_MANAGE), async (req, res) => {
+  app2.post("/api/ar/invoices", authenticate, requirePermission(Permission.AR_INVOICE_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const party_id = uuid(req.body?.party_id, "party_id");
     const sales_order_id = optionalUuid(req.body?.sales_order_id, "sales_order_id");
@@ -14047,7 +14047,7 @@ function registerSalesRoutes(app) {
     });
     return ok(req, res, out, 201);
   });
-  app.post("/api/ar/invoices/:id/post", authenticate, requirePermission(Permission.AR_INVOICE_MANAGE), async (req, res) => {
+  app2.post("/api/ar/invoices/:id/post", authenticate, requirePermission(Permission.AR_INVOICE_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const out = await db.transaction(async (tx) => {
       const inv = await transition(tx, { table: "ar_invoices", id: req.params.id, organizationId: org, from: ["DRAFT"], to: "POSTED", label: "AR invoice", set: { posted_by: req.session.user_id, updated_at: (/* @__PURE__ */ new Date()).toISOString() } });
@@ -14089,7 +14089,7 @@ function registerSalesRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/ar/invoices/:id/cancel", authenticate, requirePermission(Permission.AR_INVOICE_MANAGE), async (req, res) => {
+  app2.post("/api/ar/invoices/:id/cancel", authenticate, requirePermission(Permission.AR_INVOICE_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const out = await db.transaction(async (tx) => {
       const inv = await transition(tx, { table: "ar_invoices", id: req.params.id, organizationId: org, from: ["DRAFT"], to: "CANCELLED", label: "AR invoice", set: { updated_at: (/* @__PURE__ */ new Date()).toISOString() } });
@@ -14103,7 +14103,7 @@ function registerSalesRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.get("/api/ar/aging", authenticate, arRead, async (req, res) => {
+  app2.get("/api/ar/aging", authenticate, arRead, async (req, res) => {
     const asOf = dateOnly(req.query.as_of_date, "as_of_date", { defaultValue: todayIso() });
     const r = await db.query(`SELECT ai.id, ai.invoice_number, ai.due_date, ai.outstanding_amount, p.id as party_id, p.name as party_name
        FROM ar_invoices ai JOIN parties p ON p.id = ai.party_id
@@ -14177,8 +14177,8 @@ function variance(cls, budget, actual) {
 async function copyLines(q, from, to, org) {
   await q.query(`INSERT INTO epm_budget_lines (organization_id, budget_id, account_id, period_month, amount) SELECT organization_id, $2, account_id, period_month, amount FROM epm_budget_lines WHERE budget_id = $1 AND organization_id = $3`, [from, to, org]);
 }
-function registerBudgetRoutes(app) {
-  defineResource(app, {
+function registerBudgetRoutes(app2) {
+  defineResource(app2, {
     path: "/api/epm/budgets",
     table: "epm_budgets",
     label: "Budget",
@@ -14244,7 +14244,7 @@ function registerBudgetRoutes(app) {
       archive: { from: ["DRAFT", "SUPERSEDED"], to: "ARCHIVED", permission: Permission.BUDGET_MANAGE }
     }
   });
-  app.post("/api/epm/budgets/:id/revise", authenticate, requireAnyPermission(Permission.BUDGET_MANAGE), requireModule("EPM", "command"), async (req, res) => {
+  app2.post("/api/epm/budgets/:id/revise", authenticate, requireAnyPermission(Permission.BUDGET_MANAGE), requireModule("EPM", "command"), async (req, res) => {
     const out = await unitOfWork(req, async (ctx) => {
       const b = await loadRow(ctx.tx, "epm_budgets", req.params.id, ctx.org, "Budget", true);
       if (b.status !== "APPROVED")
@@ -14261,7 +14261,7 @@ function registerBudgetRoutes(app) {
     });
     return ok(req, res, out, 201);
   });
-  app.post("/api/epm/budgets/:id/lines", authenticate, requireAnyPermission(Permission.BUDGET_MANAGE), requireModule("EPM", "command"), async (req, res) => {
+  app2.post("/api/epm/budgets/:id/lines", authenticate, requireAnyPermission(Permission.BUDGET_MANAGE), requireModule("EPM", "command"), async (req, res) => {
     const lines = req.body?.lines;
     if (!Array.isArray(lines) || !lines.length || lines.length > 500)
       throw validationError("lines must be a non-empty array (\u2264 500)", { field: "lines" });
@@ -14302,7 +14302,7 @@ function registerBudgetRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.get("/api/epm/budgets/:id/variance", authenticate, requireAnyPermission(...VIEW), async (req, res) => {
+  app2.get("/api/epm/budgets/:id/variance", authenticate, requireAnyPermission(...VIEW), async (req, res) => {
     const org = req.session.organization_id;
     const b = await loadRow(db, "epm_budgets", req.params.id, org, "Budget");
     const through = req.query.through_month ? int(req.query.through_month, "through_month", { min: 1, max: 12 }) : 12;
@@ -14332,7 +14332,7 @@ function registerBudgetRoutes(app) {
     };
     return ok(req, res, { budget: { id: b.id, code: b.code, version: b.version, status: b.status, fiscal_year: b.fiscal_year }, through_month: through, period: { from, to }, rows, totals });
   });
-  app.get("/api/epm/summary", authenticate, requireAnyPermission(...VIEW), async (req, res) => {
+  app2.get("/api/epm/summary", authenticate, requireAnyPermission(...VIEW), async (req, res) => {
     const org = req.session.organization_id;
     const r = (await db.query(`SELECT status, COUNT(*)::int n FROM epm_budgets WHERE organization_id = $1 GROUP BY status`, [org])).rows;
     const by = Object.fromEntries(r.map((x) => [x.status, x.n]));
@@ -14418,8 +14418,8 @@ async function pricePerformance(q, org, partyId, period) {
   const index = Math.round(Number(row.paid) / bench * 1e4) / 1e4;
   return { index, score: priceScoreFromIndex(index), items: row.items };
 }
-function registerSupplierRoutes(app) {
-  defineResource(app, {
+function registerSupplierRoutes(app2) {
+  defineResource(app2, {
     path: "/api/sup/profiles",
     table: "sup_profiles",
     label: "Supplier profile",
@@ -14491,7 +14491,7 @@ function registerSupplierRoutes(app) {
       }
     }
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/sup/certificates",
     table: "sup_certificates",
     label: "Certificate",
@@ -14521,7 +14521,7 @@ function registerSupplierRoutes(app) {
     },
     commands: { revoke: { from: ["ACTIVE"], to: "REVOKED", permission: Permission.SUPPLIER_MANAGE } }
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/sup/scorecards",
     table: "sup_scorecards",
     label: "Scorecard",
@@ -14582,7 +14582,7 @@ function registerSupplierRoutes(app) {
     },
     commands: { finalise: { from: ["DRAFT"], to: "FINAL", permission: Permission.SUPPLIER_MANAGE } }
   });
-  app.get("/api/sup/summary", authenticate, requireAnyPermission(...VIEW2), async (req, res) => {
+  app2.get("/api/sup/summary", authenticate, requireAnyPermission(...VIEW2), async (req, res) => {
     const org = req.session.organization_id;
     const s = (await db.query(`SELECT status, COUNT(*)::int n FROM sup_profiles WHERE organization_id = $1 GROUP BY status`, [org])).rows;
     const exp2 = (await db.query(`SELECT COUNT(*) FILTER (WHERE expires_on < CURRENT_DATE)::int expired, COUNT(*) FILTER (WHERE expires_on >= CURRENT_DATE AND expires_on < CURRENT_DATE + 30)::int expiring FROM sup_certificates WHERE organization_id = $1 AND status = 'ACTIVE'`, [org])).rows[0];
@@ -14609,10 +14609,10 @@ var AP_READ = [Permission.AP_INVOICE_MANAGE, Permission.PAYMENT_MANAGE, Permissi
 async function audit3(req, tx, action, type, id, before, after) {
   await auditLogger.record({ organization_id: req.session.organization_id, user_id: req.session.user_id, action, entity_type: type, entity_id: id, before_state: before, after_state: after, correlation_id: req.correlationId }, tx);
 }
-function registerProcurementRoutes(app) {
+function registerProcurementRoutes(app2) {
   const poRead = requireAnyPermission(...PO_READ);
   const apRead = requireAnyPermission(...AP_READ);
-  app.get("/api/procurement/orders", authenticate, poRead, async (req, res) => {
+  app2.get("/api/procurement/orders", authenticate, poRead, async (req, res) => {
     const { limit, offset } = pagination(req.query);
     const r = await db.query(`SELECT po.*, p.name as party_name, p.code as party_code FROM purchase_orders po JOIN parties p ON p.id = po.party_id
        WHERE po.organization_id = $1 ORDER BY po.po_date DESC, po.created_at DESC LIMIT ${limit} OFFSET ${offset}`, [req.session.organization_id]);
@@ -14621,7 +14621,7 @@ function registerProcurementRoutes(app) {
     }
     return ok(req, res, r.rows, 200, { total_count: r.rows.length, limit, offset });
   });
-  app.post("/api/procurement/orders", authenticate, requirePermission(Permission.PURCHASE_ORDER_MANAGE), async (req, res) => {
+  app2.post("/api/procurement/orders", authenticate, requirePermission(Permission.PURCHASE_ORDER_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const party_id = uuid(req.body?.party_id, "party_id");
     const po_date = dateOnly(req.body?.po_date, "po_date", { defaultValue: todayIso() });
@@ -14647,7 +14647,7 @@ function registerProcurementRoutes(app) {
     });
     return ok(req, res, out, 201);
   });
-  app.post("/api/procurement/orders/:id/approve", authenticate, requirePermission(Permission.PURCHASE_ORDER_MANAGE), async (req, res) => {
+  app2.post("/api/procurement/orders/:id/approve", authenticate, requirePermission(Permission.PURCHASE_ORDER_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const out = await db.transaction(async (tx) => {
       const po = await requireOrgRow(tx, "purchase_orders", req.params.id, org, "Purchase order", { forUpdate: true });
@@ -14665,7 +14665,7 @@ function registerProcurementRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/procurement/orders/:id/cancel", authenticate, requirePermission(Permission.PURCHASE_ORDER_MANAGE), async (req, res) => {
+  app2.post("/api/procurement/orders/:id/cancel", authenticate, requirePermission(Permission.PURCHASE_ORDER_MANAGE), async (req, res) => {
     const reason = str(req.body?.reason, "reason", { max: 500 });
     const out = await db.transaction(async (tx) => {
       const po = await requireOrgRow(tx, "purchase_orders", req.params.id, req.session.organization_id, "Purchase order", { forUpdate: true });
@@ -14678,7 +14678,7 @@ function registerProcurementRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/procurement/orders/:id/receive", authenticate, requirePermission(Permission.INVENTORY_MANAGE), async (req, res) => {
+  app2.post("/api/procurement/orders/:id/receive", authenticate, requirePermission(Permission.INVENTORY_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const receipt_date = dateOnly(req.body?.receipt_date, "receipt_date", { defaultValue: todayIso() });
     const bodyWarehouse = optionalUuid(req.body?.warehouse_id, "warehouse_id");
@@ -14763,13 +14763,13 @@ function registerProcurementRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.get("/api/ap/invoices", authenticate, apRead, async (req, res) => {
+  app2.get("/api/ap/invoices", authenticate, apRead, async (req, res) => {
     const { limit, offset } = pagination(req.query);
     const r = await db.query(`SELECT ai.*, p.name as party_name, p.code as party_code FROM ap_invoices ai JOIN parties p ON p.id = ai.party_id
        WHERE ai.organization_id = $1 ORDER BY ai.invoice_date DESC, ai.created_at DESC LIMIT ${limit} OFFSET ${offset}`, [req.session.organization_id]);
     return ok(req, res, r.rows, 200, { total_count: r.rows.length, limit, offset });
   });
-  app.post("/api/ap/invoices", authenticate, requirePermission(Permission.AP_INVOICE_MANAGE), async (req, res) => {
+  app2.post("/api/ap/invoices", authenticate, requirePermission(Permission.AP_INVOICE_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const party_id = uuid(req.body?.party_id, "party_id");
     const purchase_order_id = optionalUuid(req.body?.purchase_order_id, "purchase_order_id");
@@ -14827,7 +14827,7 @@ function registerProcurementRoutes(app) {
     });
     return ok(req, res, out, 201);
   });
-  app.post("/api/ap/invoices/:id/post", authenticate, requirePermission(Permission.AP_INVOICE_MANAGE), async (req, res) => {
+  app2.post("/api/ap/invoices/:id/post", authenticate, requirePermission(Permission.AP_INVOICE_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const out = await db.transaction(async (tx) => {
       const inv = await transition(tx, { table: "ap_invoices", id: req.params.id, organizationId: org, from: ["DRAFT"], to: "POSTED", label: "AP invoice", set: { posted_by: req.session.user_id, updated_at: (/* @__PURE__ */ new Date()).toISOString() } });
@@ -14875,7 +14875,7 @@ function registerProcurementRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/ap/invoices/:id/cancel", authenticate, requirePermission(Permission.AP_INVOICE_MANAGE), async (req, res) => {
+  app2.post("/api/ap/invoices/:id/cancel", authenticate, requirePermission(Permission.AP_INVOICE_MANAGE), async (req, res) => {
     const out = await db.transaction(async (tx) => {
       const inv = await transition(tx, { table: "ap_invoices", id: req.params.id, organizationId: req.session.organization_id, from: ["DRAFT"], to: "CANCELLED", label: "AP invoice" });
       const lines = (await tx.query(`SELECT * FROM ap_invoice_lines WHERE invoice_id = $1 AND purchase_order_line_id IS NOT NULL`, [inv.id])).rows;
@@ -14998,18 +14998,18 @@ async function recordPayment(req, kind) {
     return { id: paymentId, payment_number: paymentNumber, status: "POSTED", amount: new Money(amount).format(), allocated_amount: allocTotal.format(), unallocated_amount: unallocated.format(), posted_journal_id: posted?.journalId ?? null };
   });
 }
-function registerPaymentsRoutes(app) {
+function registerPaymentsRoutes(app2) {
   const payRead = requireAnyPermission(Permission.PAYMENT_MANAGE, Permission.AR_INVOICE_MANAGE, Permission.AP_INVOICE_MANAGE, Permission.FINANCE_REPORTS_VIEW, Permission.TREASURY_BANK_RECONCILE);
-  app.get("/api/payments", authenticate, payRead, async (req, res) => {
+  app2.get("/api/payments", authenticate, payRead, async (req, res) => {
     const { limit, offset } = pagination(req.query);
     const r = await db.query(`SELECT pm.*, p.name as party_name, p.code as party_code, a.name as bank_account_name
        FROM payments pm JOIN parties p ON p.id = pm.party_id LEFT JOIN accounts a ON a.id = pm.bank_account_id
        WHERE pm.organization_id = $1 ORDER BY pm.payment_date DESC, pm.created_at DESC LIMIT ${limit} OFFSET ${offset}`, [req.session.organization_id]);
     return ok(req, res, r.rows, 200, { total_count: r.rows.length, limit, offset });
   });
-  app.post("/api/payments/receipt", authenticate, requirePermission(Permission.PAYMENT_MANAGE), async (req, res) => ok(req, res, await recordPayment(req, "RECEIPT"), 201));
-  app.post("/api/payments/disbursement", authenticate, requirePermission(Permission.PAYMENT_MANAGE), async (req, res) => ok(req, res, await recordPayment(req, "DISBURSEMENT"), 201));
-  app.post("/api/payments/:id/cancel", authenticate, requirePermission(Permission.PAYMENT_MANAGE), async (req, res) => {
+  app2.post("/api/payments/receipt", authenticate, requirePermission(Permission.PAYMENT_MANAGE), async (req, res) => ok(req, res, await recordPayment(req, "RECEIPT"), 201));
+  app2.post("/api/payments/disbursement", authenticate, requirePermission(Permission.PAYMENT_MANAGE), async (req, res) => ok(req, res, await recordPayment(req, "DISBURSEMENT"), 201));
+  app2.post("/api/payments/:id/cancel", authenticate, requirePermission(Permission.PAYMENT_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const reason = str(req.body?.reason, "reason", { max: 500 });
     const reversal_date = dateOnly(req.body?.reversal_date, "reversal_date", { defaultValue: todayIso() });
@@ -15084,13 +15084,13 @@ async function lockStatementLine(q, org, lineId) {
     throw new ApiError(409, ErrorCode.STATEMENT_ALREADY_RECONCILED, "Statement is already reconciled");
   return r.rows[0];
 }
-function registerTreasuryRoutes(app) {
+function registerTreasuryRoutes(app2) {
   const treasuryRead = requireAnyPermission(Permission.TREASURY_BANK_RECONCILE, Permission.TREASURY_FX_MANAGE, Permission.FINANCE_REPORTS_VIEW, Permission.PAYMENT_MANAGE);
-  app.get("/api/fx/rates", authenticate, treasuryRead, async (req, res) => {
+  app2.get("/api/fx/rates", authenticate, treasuryRead, async (req, res) => {
     const r = await db.query("SELECT * FROM exchange_rates WHERE organization_id = $1 ORDER BY effective_date DESC, from_currency ASC", [req.session.organization_id]);
     return ok(req, res, r.rows, 200, { total_count: r.rows.length });
   });
-  app.post("/api/fx/rates", authenticate, requirePermission(Permission.TREASURY_FX_MANAGE), async (req, res) => {
+  app2.post("/api/fx/rates", authenticate, requirePermission(Permission.TREASURY_FX_MANAGE), async (req, res) => {
     const from = str(req.body?.from_currency, "from_currency", { max: 3 }).toUpperCase();
     const to = str(req.body?.to_currency, "to_currency", { max: 3 }).toUpperCase();
     if (!CCY.test(from) || !CCY.test(to))
@@ -15110,14 +15110,14 @@ function registerTreasuryRoutes(app) {
     });
     return ok(req, res, out, 201);
   });
-  app.get("/api/treasury/statements", authenticate, treasuryRead, async (req, res) => {
+  app2.get("/api/treasury/statements", authenticate, treasuryRead, async (req, res) => {
     const r = await db.query(`SELECT bs.*, a.name as bank_account_name, a.code as bank_account_code,
               (SELECT COUNT(*) FROM bank_statement_lines l WHERE l.statement_id = bs.id) AS line_count,
               (SELECT COUNT(*) FROM bank_statement_lines l WHERE l.statement_id = bs.id AND l.is_matched) AS matched_count
        FROM bank_statements bs JOIN accounts a ON a.id = bs.bank_account_id WHERE bs.organization_id = $1 ORDER BY bs.statement_date DESC`, [req.session.organization_id]);
     return ok(req, res, r.rows, 200, { total_count: r.rows.length });
   });
-  app.get("/api/treasury/statements/:id", authenticate, treasuryRead, async (req, res) => {
+  app2.get("/api/treasury/statements/:id", authenticate, treasuryRead, async (req, res) => {
     const org = req.session.organization_id;
     const st = (await db.query(`SELECT bs.*, a.name as bank_account_name, a.code as bank_account_code FROM bank_statements bs JOIN accounts a ON a.id = bs.bank_account_id WHERE bs.id::text = $1 AND bs.organization_id = $2`, [req.params.id, org])).rows[0];
     if (!st)
@@ -15131,7 +15131,7 @@ function registerTreasuryRoutes(app) {
     const summary = BankReconciliationEngine.computeReconciliation({ statementOpeningBalance: st.opening_balance, statementClosingBalance: st.closing_balance, glBalanceAsOfDate: glBalance.toFixed(8), statementLines: lines });
     return ok(req, res, { ...st, lines, summary, gl_balance: glBalance.format(), unreconciled_gl_lines: gl.filter((l) => !l.matched_statement_line_id) });
   });
-  app.post("/api/treasury/statements/upload", authenticate, requirePermission(Permission.TREASURY_BANK_RECONCILE), async (req, res) => {
+  app2.post("/api/treasury/statements/upload", authenticate, requirePermission(Permission.TREASURY_BANK_RECONCILE), async (req, res) => {
     const org = req.session.organization_id;
     const bank_account_id = uuid(req.body?.bank_account_id, "bank_account_id");
     const bank = (await db.query(`SELECT * FROM accounts WHERE id = $1 AND organization_id = $2 AND level = 4`, [bank_account_id, org])).rows[0];
@@ -15168,7 +15168,7 @@ function registerTreasuryRoutes(app) {
     });
     return ok(req, res, { id: statementId, statement_reference, status: "UPLOADED", line_count: lines.length }, 201);
   });
-  app.post("/api/treasury/reconciliation/match", authenticate, requirePermission(Permission.TREASURY_BANK_RECONCILE), async (req, res) => {
+  app2.post("/api/treasury/reconciliation/match", authenticate, requirePermission(Permission.TREASURY_BANK_RECONCILE), async (req, res) => {
     const org = req.session.organization_id;
     const statement_line_id = uuid(req.body?.statement_line_id, "statement_line_id");
     const journal_line_id = optionalUuid(req.body?.journal_line_id, "journal_line_id");
@@ -15195,7 +15195,7 @@ function registerTreasuryRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/treasury/statements/:id/auto-match", authenticate, requirePermission(Permission.TREASURY_BANK_RECONCILE), async (req, res) => {
+  app2.post("/api/treasury/statements/:id/auto-match", authenticate, requirePermission(Permission.TREASURY_BANK_RECONCILE), async (req, res) => {
     const org = req.session.organization_id;
     const toleranceDays = int(req.body?.date_tolerance_days, "date_tolerance_days", { min: 0, max: 31, defaultValue: 5 });
     const out = await db.transaction(async (tx) => {
@@ -15215,7 +15215,7 @@ function registerTreasuryRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/treasury/reconciliation/sign-off", authenticate, requirePermission(Permission.TREASURY_BANK_RECONCILE), async (req, res) => {
+  app2.post("/api/treasury/reconciliation/sign-off", authenticate, requirePermission(Permission.TREASURY_BANK_RECONCILE), async (req, res) => {
     const org = req.session.organization_id;
     const statement_id = uuid(req.body?.statement_id, "statement_id");
     const notes = optionalStr(req.body?.notes, "notes", 2e3);
@@ -15254,7 +15254,7 @@ function registerTreasuryRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.get("/api/onboarding/profile", authenticate, requireAnyPermission(Permission.ONBOARDING_MANAGE, Permission.ORG_MANAGE, Permission.FINANCE_REPORTS_VIEW), async (req, res) => {
+  app2.get("/api/onboarding/profile", authenticate, requireAnyPermission(Permission.ONBOARDING_MANAGE, Permission.ORG_MANAGE, Permission.FINANCE_REPORTS_VIEW), async (req, res) => {
     const profileRes = await db.query("SELECT * FROM onboarding_profiles WHERE organization_id = $1 LIMIT 1", [
       req.session.organization_id
     ]);
@@ -15272,7 +15272,7 @@ function registerTreasuryRoutes(app) {
       }
     });
   });
-  app.post("/api/onboarding/provision", authenticate, requirePermission(Permission.ONBOARDING_MANAGE), async (req, res) => {
+  app2.post("/api/onboarding/provision", authenticate, requirePermission(Permission.ONBOARDING_MANAGE), async (req, res) => {
     const { industry_template } = req.body;
     const validTemplates = ["WHOLESALE_DISTRIBUTION", "SERVICES_CONSULTING", "LIGHT_MANUFACTURING", "CUSTOM"];
     if (!validTemplates.includes(industry_template)) {
@@ -15365,16 +15365,16 @@ async function requirePayrollPeriod(periodId, monthYear, organizationId) {
   }
   return period;
 }
-function registerHrmRoutes(app) {
+function registerHrmRoutes(app2) {
   const hrRead = requireAnyPermission(Permission.HRM_MANAGE, Permission.PAYROLL_MANAGE, Permission.FINANCE_REPORTS_VIEW);
-  app.get("/api/hrm/departments", authenticate, hrRead, async (req, res) => {
+  app2.get("/api/hrm/departments", authenticate, hrRead, async (req, res) => {
     const result = await db.query(`SELECT * FROM departments WHERE organization_id = $1 AND legal_entity_id = $2 ORDER BY code ASC`, [
       req.session.organization_id,
       req.session.legal_entity_id
     ]);
     return ok(req, res, result.rows, 200, { total_count: result.rows.length });
   });
-  app.post("/api/hrm/departments", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
+  app2.post("/api/hrm/departments", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
     const code = str(req.body?.code, "code", { max: 32 });
     const name = str(req.body?.name, "name", { max: 255 });
     const cost_center_code = optionalStr(req.body?.cost_center_code, "cost_center_code", 64);
@@ -15384,13 +15384,13 @@ function registerHrmRoutes(app) {
     const dept = (await db.query(`SELECT * FROM departments WHERE id = $1`, [deptId])).rows[0];
     return ok(req, res, dept, 201);
   });
-  app.get("/api/hrm/designations", authenticate, hrRead, async (req, res) => {
+  app2.get("/api/hrm/designations", authenticate, hrRead, async (req, res) => {
     const result = await db.query(`SELECT d.*, dept.name as department_name
        FROM designations d LEFT JOIN departments dept ON dept.id = d.department_id
        WHERE d.organization_id = $1 AND d.legal_entity_id = $2 ORDER BY d.code ASC`, [req.session.organization_id, req.session.legal_entity_id]);
     return ok(req, res, result.rows, 200, { total_count: result.rows.length });
   });
-  app.post("/api/hrm/designations", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
+  app2.post("/api/hrm/designations", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
     const code = str(req.body?.code, "code", { max: 32 });
     const title = str(req.body?.title, "title", { max: 255 });
     const department_id = optionalUuid(req.body?.department_id, "department_id");
@@ -15401,14 +15401,14 @@ function registerHrmRoutes(app) {
     const desig = (await db.query(`SELECT * FROM designations WHERE id = $1`, [desigId])).rows[0];
     return ok(req, res, desig, 201);
   });
-  app.get("/api/hrm/salary-structures", authenticate, requireAnyPermission(Permission.HRM_MANAGE, Permission.PAYROLL_MANAGE), async (req, res) => {
+  app2.get("/api/hrm/salary-structures", authenticate, requireAnyPermission(Permission.HRM_MANAGE, Permission.PAYROLL_MANAGE), async (req, res) => {
     const result = await db.query(`SELECT * FROM salary_structures WHERE organization_id = $1 AND legal_entity_id = $2 ORDER BY name ASC`, [
       req.session.organization_id,
       req.session.legal_entity_id
     ]);
     return ok(req, res, result.rows, 200, { total_count: result.rows.length });
   });
-  app.post("/api/hrm/salary-structures", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
+  app2.post("/api/hrm/salary-structures", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
     const b = req.body || {};
     const name = str(b.name, "name", { max: 255 });
     const currency = optionalStr(b.currency, "currency", 3) || "PKR";
@@ -15438,7 +15438,7 @@ function registerHrmRoutes(app) {
     const struct = (await db.query(`SELECT * FROM salary_structures WHERE id = $1`, [structId])).rows[0];
     return ok(req, res, struct, 201);
   });
-  app.get("/api/hrm/employees", authenticate, hrRead, async (req, res) => {
+  app2.get("/api/hrm/employees", authenticate, hrRead, async (req, res) => {
     const result = await db.query(`SELECT e.*, dept.name as department_name, desig.title as designation_title,
               ss.id as salary_structure_id, ss.name as salary_structure_name, ss.basic_salary, ss.gross_salary
        FROM employees e
@@ -15479,7 +15479,7 @@ function registerHrmRoutes(app) {
     }));
     return ok(req, res, formatted, 200, { total_count: formatted.length, sensitive_fields: sensitive ? "visible" : "masked" });
   });
-  app.post("/api/hrm/employees", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
+  app2.post("/api/hrm/employees", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
     const b = req.body || {};
     const org = req.session.organization_id;
     const joining_date = dateOnly(b.joining_date, "joining_date");
@@ -15536,7 +15536,7 @@ function registerHrmRoutes(app) {
     });
     return ok(req, res, emp, 201);
   });
-  app.post("/api/hrm/employees/:id/status", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
+  app2.post("/api/hrm/employees/:id/status", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
     const status = oneOf(req.body?.status, "status", EMPLOYEE_STATUSES);
     const effective_date = dateOnly(req.body?.effective_date, "effective_date");
     const reason = str(req.body?.reason, "reason", { max: 500 });
@@ -15559,14 +15559,14 @@ function registerHrmRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/hrm/payroll/calculate", authenticate, requirePermission(Permission.PAYROLL_MANAGE), async (req, res) => {
+  app2.post("/api/hrm/payroll/calculate", authenticate, requirePermission(Permission.PAYROLL_MANAGE), async (req, res) => {
     const period_id = str(req.body?.period_id, "period_id", { max: 64 });
     const month_year = str(req.body?.month_year, "month_year", { pattern: /^\d{4}-\d{2}$/, max: 7 });
     await requirePayrollPeriod(period_id, month_year, req.session.organization_id);
     const { items, totals } = await loadPayrollInputs(req.session.legal_entity_id, req.session.organization_id);
     return ok(req, res, { period_id, month_year, totals, items });
   });
-  app.get("/api/hrm/payroll-runs", authenticate, requireAnyPermission(Permission.PAYROLL_MANAGE, Permission.PAYROLL_APPROVE), async (req, res) => {
+  app2.get("/api/hrm/payroll-runs", authenticate, requireAnyPermission(Permission.PAYROLL_MANAGE, Permission.PAYROLL_APPROVE), async (req, res) => {
     const runsRes = await db.query(`SELECT pr.*, fp.period_name as period_name
        FROM payroll_runs pr LEFT JOIN fiscal_periods fp ON fp.id = pr.period_id
        WHERE pr.organization_id = $1 AND pr.legal_entity_id = $2
@@ -15580,7 +15580,7 @@ function registerHrmRoutes(app) {
     }
     return ok(req, res, runsWithItems, 200, { total_count: runsWithItems.length });
   });
-  app.post("/api/hrm/payroll-runs", authenticate, requirePermission(Permission.PAYROLL_MANAGE), async (req, res) => {
+  app2.post("/api/hrm/payroll-runs", authenticate, requirePermission(Permission.PAYROLL_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const period_id = str(req.body?.period_id, "period_id", { max: 64 });
     const month_year = str(req.body?.month_year, "month_year", { pattern: /^\d{4}-\d{2}$/, max: 7 });
@@ -15652,7 +15652,7 @@ function registerHrmRoutes(app) {
     });
     return ok(req, res, { ...run, totals, items }, 201);
   });
-  app.post("/api/hrm/payroll-runs/:id/approve", authenticate, requirePermission(Permission.PAYROLL_APPROVE), async (req, res) => {
+  app2.post("/api/hrm/payroll-runs/:id/approve", authenticate, requirePermission(Permission.PAYROLL_APPROVE), async (req, res) => {
     const out = await db.transaction(async (tx) => {
       const run = await requireOrgRow(tx, "payroll_runs", req.params.id, req.session.organization_id, "Payroll run", { forUpdate: true });
       if (run.created_by === req.session.user_id) {
@@ -15672,7 +15672,7 @@ function registerHrmRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/hrm/payroll-runs/:id/post", authenticate, requirePermission(Permission.PAYROLL_POST), async (req, res) => {
+  app2.post("/api/hrm/payroll-runs/:id/post", authenticate, requirePermission(Permission.PAYROLL_POST), async (req, res) => {
     const out = await db.transaction(async (tx) => {
       const run = await requireOrgRow(tx, "payroll_runs", req.params.id, req.session.organization_id, "Payroll run", { forUpdate: true });
       if (run.status !== "APPROVED") {
@@ -15728,7 +15728,7 @@ function registerHrmRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/hrm/payroll-runs/:id/disburse", authenticate, requirePermission(Permission.PAYROLL_DISBURSE), async (req, res) => {
+  app2.post("/api/hrm/payroll-runs/:id/disburse", authenticate, requirePermission(Permission.PAYROLL_DISBURSE), async (req, res) => {
     const bank_account_id = optionalUuid(req.body?.bank_account_id, "bank_account_id");
     const payment_date = dateOnly(req.body?.payment_date, "payment_date", { required: false });
     const out = await db.transaction(async (tx) => {
@@ -15783,7 +15783,7 @@ function registerHrmRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/hrm/payroll-runs/:id/cancel", authenticate, requirePermission(Permission.PAYROLL_MANAGE), async (req, res) => {
+  app2.post("/api/hrm/payroll-runs/:id/cancel", authenticate, requirePermission(Permission.PAYROLL_MANAGE), async (req, res) => {
     const reason = str(req.body?.reason, "reason", { max: 500 });
     const out = await db.transaction(async (tx) => {
       const run = await transition(tx, {
@@ -15800,7 +15800,7 @@ function registerHrmRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.get("/api/hrm/advances", authenticate, hrRead, async (req, res) => {
+  app2.get("/api/hrm/advances", authenticate, hrRead, async (req, res) => {
     const result = await db.query(`SELECT a.*, e.employee_number, e.first_name || ' ' || e.last_name AS employee_name
        FROM hrm_advances a
        JOIN employees e ON e.id = a.employee_id
@@ -15808,7 +15808,7 @@ function registerHrmRoutes(app) {
        ORDER BY a.created_at DESC`, [req.session.organization_id]);
     return ok(req, res, result.rows, 200, { total_count: result.rows.length });
   });
-  app.post("/api/hrm/advances", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
+  app2.post("/api/hrm/advances", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
     const employee_id = str(req.body?.employee_id, "employee_id");
     const advance_type = oneOf(req.body?.advance_type, "advance_type", ["CASH", "TRAVEL", "PARTS_FLOAT", "EMERGENCY_LOAN"]);
     const amount = decimal(req.body?.amount, "amount", { sign: "positive" });
@@ -15823,7 +15823,7 @@ function registerHrmRoutes(app) {
     const row = (await db.query(`SELECT * FROM hrm_advances WHERE id = $1`, [advId])).rows[0];
     return ok(req, res, row, 201);
   });
-  app.post("/api/hrm/advances/:id/approve", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
+  app2.post("/api/hrm/advances/:id/approve", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
     const out = await db.transaction(async (tx) => {
       const adv = await requireOrgRow(tx, "hrm_advances", req.params.id, req.session.organization_id, "Staff advance", { forUpdate: true });
       if (adv.status !== "DRAFT" && adv.status !== "SUBMITTED") {
@@ -15837,7 +15837,7 @@ function registerHrmRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/hrm/advances/:id/disburse", authenticate, requirePermission(Permission.PAYROLL_DISBURSE), async (req, res) => {
+  app2.post("/api/hrm/advances/:id/disburse", authenticate, requirePermission(Permission.PAYROLL_DISBURSE), async (req, res) => {
     const payment_date = dateOnly(req.body?.payment_date, "payment_date", { required: false }) || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     const out = await db.transaction(async (tx) => {
       const adv = await requireOrgRow(tx, "hrm_advances", req.params.id, req.session.organization_id, "Staff advance", { forUpdate: true });
@@ -15879,11 +15879,11 @@ function registerHrmRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.get("/api/hrm/geofences", authenticate, hrRead, async (req, res) => {
+  app2.get("/api/hrm/geofences", authenticate, hrRead, async (req, res) => {
     const result = await db.query(`SELECT * FROM hrm_geofence_zones WHERE organization_id = $1 ORDER BY code ASC`, [req.session.organization_id]);
     return ok(req, res, result.rows, 200, { total_count: result.rows.length });
   });
-  app.post("/api/hrm/geofences", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
+  app2.post("/api/hrm/geofences", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
     const code = str(req.body?.code, "code", { max: 32 });
     const name = str(req.body?.name, "name", { max: 255 });
     const latitude = Number(req.body?.latitude);
@@ -15896,11 +15896,11 @@ function registerHrmRoutes(app) {
     const row = (await db.query(`SELECT * FROM hrm_geofence_zones WHERE id = $1`, [geoId])).rows[0];
     return ok(req, res, row, 201);
   });
-  app.get("/api/hrm/shifts", authenticate, hrRead, async (req, res) => {
+  app2.get("/api/hrm/shifts", authenticate, hrRead, async (req, res) => {
     const result = await db.query(`SELECT * FROM hrm_shifts WHERE organization_id = $1 ORDER BY code ASC`, [req.session.organization_id]);
     return ok(req, res, result.rows, 200, { total_count: result.rows.length });
   });
-  app.post("/api/hrm/shifts", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
+  app2.post("/api/hrm/shifts", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
     const code = str(req.body?.code, "code", { max: 32 });
     const name = str(req.body?.name, "name", { max: 255 });
     const start_time = str(req.body?.start_time, "start_time", { max: 5 });
@@ -15914,7 +15914,7 @@ function registerHrmRoutes(app) {
     const row = (await db.query(`SELECT * FROM hrm_shifts WHERE id = $1`, [shiftId])).rows[0];
     return ok(req, res, row, 201);
   });
-  app.get("/api/hrm/attendance", authenticate, hrRead, async (req, res) => {
+  app2.get("/api/hrm/attendance", authenticate, hrRead, async (req, res) => {
     const date = req.query?.date ? String(req.query.date) : null;
     const params = [req.session.organization_id];
     let query = `
@@ -15934,7 +15934,7 @@ function registerHrmRoutes(app) {
     const result = await db.query(query, params);
     return ok(req, res, result.rows, 200, { total_count: result.rows.length });
   });
-  app.post("/api/hrm/attendance/check-in", authenticate, async (req, res) => {
+  app2.post("/api/hrm/attendance/check-in", authenticate, async (req, res) => {
     const employee_id = str(req.body?.employee_id, "employee_id");
     const work_date = dateOnly(req.body?.work_date, "work_date", { required: false }) || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     const shift_id = optionalUuid(req.body?.shift_id, "shift_id");
@@ -15962,7 +15962,7 @@ function registerHrmRoutes(app) {
     const row = (await db.query(`SELECT * FROM hrm_attendance_logs WHERE employee_id = $1 AND work_date = $2`, [employee_id, work_date])).rows[0];
     return ok(req, res, row, 201);
   });
-  app.post("/api/hrm/attendance/check-out", authenticate, async (req, res) => {
+  app2.post("/api/hrm/attendance/check-out", authenticate, async (req, res) => {
     const employee_id = str(req.body?.employee_id, "employee_id");
     const work_date = dateOnly(req.body?.work_date, "work_date", { required: false }) || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     const log3 = (await db.query(`SELECT * FROM hrm_attendance_logs WHERE employee_id = $1 AND work_date = $2 AND organization_id = $3`, [employee_id, work_date, req.session.organization_id])).rows[0];
@@ -15975,11 +15975,11 @@ function registerHrmRoutes(app) {
     const row = (await db.query(`SELECT * FROM hrm_attendance_logs WHERE employee_id = $1 AND work_date = $2`, [employee_id, work_date])).rows[0];
     return ok(req, res, row);
   });
-  app.get("/api/hrm/leave-types", authenticate, hrRead, async (req, res) => {
+  app2.get("/api/hrm/leave-types", authenticate, hrRead, async (req, res) => {
     const result = await db.query(`SELECT * FROM hrm_leave_types WHERE organization_id = $1 ORDER BY code ASC`, [req.session.organization_id]);
     return ok(req, res, result.rows, 200, { total_count: result.rows.length });
   });
-  app.post("/api/hrm/leave-types", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
+  app2.post("/api/hrm/leave-types", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
     const code = str(req.body?.code, "code", { max: 32 });
     const name = str(req.body?.name, "name", { max: 255 });
     const annual_quota = Number(req.body?.annual_quota || 0);
@@ -15991,7 +15991,7 @@ function registerHrmRoutes(app) {
     const row = (await db.query(`SELECT * FROM hrm_leave_types WHERE id = $1`, [typeId])).rows[0];
     return ok(req, res, row, 201);
   });
-  app.get("/api/hrm/leave-allocations", authenticate, hrRead, async (req, res) => {
+  app2.get("/api/hrm/leave-allocations", authenticate, hrRead, async (req, res) => {
     const year = Number(req.query?.year || (/* @__PURE__ */ new Date()).getFullYear());
     const result = await db.query(`SELECT la.*, e.employee_number, e.first_name || ' ' || e.last_name AS employee_name, lt.name AS leave_type_name, lt.code AS leave_type_code
        FROM hrm_leave_allocations la
@@ -16001,7 +16001,7 @@ function registerHrmRoutes(app) {
        ORDER BY e.employee_number ASC`, [req.session.organization_id, year]);
     return ok(req, res, result.rows, 200, { total_count: result.rows.length });
   });
-  app.post("/api/hrm/leave-allocations", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
+  app2.post("/api/hrm/leave-allocations", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
     const employee_id = str(req.body?.employee_id, "employee_id");
     const leave_type_id = str(req.body?.leave_type_id, "leave_type_id");
     const year = Number(req.body?.year || (/* @__PURE__ */ new Date()).getFullYear());
@@ -16013,7 +16013,7 @@ function registerHrmRoutes(app) {
     const row = (await db.query(`SELECT * FROM hrm_leave_allocations WHERE id = $1`, [allocId])).rows[0];
     return ok(req, res, row, 201);
   });
-  app.get("/api/hrm/expenses", authenticate, hrRead, async (req, res) => {
+  app2.get("/api/hrm/expenses", authenticate, hrRead, async (req, res) => {
     const result = await db.query(`SELECT exp.*, e.employee_number, e.first_name || ' ' || e.last_name AS employee_name
        FROM hrm_expense_claims exp
        JOIN employees e ON e.id = exp.employee_id
@@ -16021,7 +16021,7 @@ function registerHrmRoutes(app) {
        ORDER BY exp.claim_date DESC, exp.created_at DESC`, [req.session.organization_id]);
     return ok(req, res, result.rows, 200, { total_count: result.rows.length });
   });
-  app.post("/api/hrm/expenses", authenticate, async (req, res) => {
+  app2.post("/api/hrm/expenses", authenticate, async (req, res) => {
     const employee_id = str(req.body?.employee_id, "employee_id");
     const claim_date = dateOnly(req.body?.claim_date, "claim_date", { required: false }) || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     const category = oneOf(req.body?.category, "category", ["TRAVEL", "FUEL", "TOOLS", "PARTS", "FOOD", "OTHER"]);
@@ -16036,7 +16036,7 @@ function registerHrmRoutes(app) {
     const row = (await db.query(`SELECT * FROM hrm_expense_claims WHERE id = $1`, [expId])).rows[0];
     return ok(req, res, row, 201);
   });
-  app.post("/api/hrm/expenses/:id/approve", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
+  app2.post("/api/hrm/expenses/:id/approve", authenticate, requirePermission(Permission.HRM_MANAGE), async (req, res) => {
     const out = await db.transaction(async (tx) => {
       const exp2 = await requireOrgRow(tx, "hrm_expense_claims", req.params.id, req.session.organization_id, "Expense claim", { forUpdate: true });
       if (exp2.status !== "SUBMITTED") {
@@ -16050,7 +16050,7 @@ function registerHrmRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/hrm/expenses/:id/settle", authenticate, requirePermission(Permission.PAYROLL_DISBURSE), async (req, res) => {
+  app2.post("/api/hrm/expenses/:id/settle", authenticate, requirePermission(Permission.PAYROLL_DISBURSE), async (req, res) => {
     const payment_date = dateOnly(req.body?.payment_date, "payment_date", { required: false }) || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     const out = await db.transaction(async (tx) => {
       const exp2 = await requireOrgRow(tx, "hrm_expense_claims", req.params.id, req.session.organization_id, "Expense claim", { forUpdate: true });
@@ -16123,9 +16123,9 @@ async function audit4(req, tx, action, entityType, entityId, before, after) {
     correlation_id: req.correlationId
   }, tx);
 }
-function registerInventoryRoutes(app) {
+function registerInventoryRoutes(app2) {
   const invRead = requireAnyPermission(...INVENTORY_READ);
-  app.get("/api/inventory/warehouses", authenticate, invRead, async (req, res) => {
+  app2.get("/api/inventory/warehouses", authenticate, invRead, async (req, res) => {
     const warehouses = (await db.query(`SELECT * FROM warehouses WHERE organization_id = $1 ORDER BY is_default DESC, name ASC`, [req.session.organization_id])).rows;
     for (const wh of warehouses) {
       wh.zones = (await db.query(`SELECT * FROM warehouse_zones WHERE warehouse_id = $1 ORDER BY code ASC`, [wh.id])).rows;
@@ -16133,7 +16133,7 @@ function registerInventoryRoutes(app) {
     }
     return ok(req, res, warehouses, 200, { total_count: warehouses.length });
   });
-  app.post("/api/inventory/warehouses", authenticate, requirePermission(Permission.WAREHOUSE_MANAGE), async (req, res) => {
+  app2.post("/api/inventory/warehouses", authenticate, requirePermission(Permission.WAREHOUSE_MANAGE), async (req, res) => {
     const code = str(req.body?.code, "code", { max: 32 });
     const name = str(req.body?.name, "name", { max: 255 });
     const address = optionalStr(req.body?.address, "address", 1e3);
@@ -16153,7 +16153,7 @@ function registerInventoryRoutes(app) {
     });
     return ok(req, res, wh, 201);
   });
-  app.post("/api/inventory/warehouses/:id/zones", authenticate, requirePermission(Permission.WAREHOUSE_MANAGE), async (req, res) => {
+  app2.post("/api/inventory/warehouses/:id/zones", authenticate, requirePermission(Permission.WAREHOUSE_MANAGE), async (req, res) => {
     await requireOrgRow(db, "warehouses", req.params.id, req.session.organization_id, "Warehouse");
     const code = str(req.body?.code, "code", { max: 32 });
     const name = str(req.body?.name, "name", { max: 255 });
@@ -16161,7 +16161,7 @@ function registerInventoryRoutes(app) {
     const r = await db.query(`INSERT INTO warehouse_zones (warehouse_id, code, name, zone_type) VALUES ($1, $2, $3, $4) RETURNING *`, [req.params.id, code, name, zone_type]);
     return ok(req, res, r.rows[0], 201);
   });
-  app.post("/api/inventory/warehouses/:id/bins", authenticate, requirePermission(Permission.WAREHOUSE_MANAGE), async (req, res) => {
+  app2.post("/api/inventory/warehouses/:id/bins", authenticate, requirePermission(Permission.WAREHOUSE_MANAGE), async (req, res) => {
     await requireOrgRow(db, "warehouses", req.params.id, req.session.organization_id, "Warehouse");
     const bin_code = str(req.body?.bin_code, "bin_code", { max: 64 });
     const zone_id = optionalUuid(req.body?.zone_id, "zone_id");
@@ -16179,7 +16179,7 @@ function registerInventoryRoutes(app) {
     ]);
     return ok(req, res, r.rows[0], 201);
   });
-  app.get("/api/inventory/fifo/layers", authenticate, invRead, async (req, res) => {
+  app2.get("/api/inventory/fifo/layers", authenticate, invRead, async (req, res) => {
     const itemId = optionalUuid(req.query.item_id, "item_id");
     const r = await db.query(`SELECT l.id, l.item_id, i.code AS item_code, i.name AS item_name, l.received_date, l.layer_source, l.qty_original::text, l.qty_remaining::text, l.unit_cost::text,
               (l.qty_remaining * l.unit_cost)::text AS remaining_value, w.code AS warehouse_code
@@ -16188,7 +16188,7 @@ function registerInventoryRoutes(app) {
        ORDER BY i.code, l.received_date, l.seq LIMIT 500`, [req.session.organization_id, itemId ?? null]);
     return ok(req, res, r.rows);
   });
-  app.post("/api/inventory/fifo/reconcile-layers", authenticate, requirePermission(Permission.INVENTORY_MANAGE), async (req, res) => {
+  app2.post("/api/inventory/fifo/reconcile-layers", authenticate, requirePermission(Permission.INVENTORY_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const out = await db.transaction(async (tx) => {
       if (await costingMethod(tx, org) !== "FIFO")
@@ -16200,7 +16200,7 @@ function registerInventoryRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.get("/api/inventory/stock", authenticate, invRead, async (req, res) => {
+  app2.get("/api/inventory/stock", authenticate, invRead, async (req, res) => {
     const org = req.session.organization_id;
     const warehouse_id = optionalUuid(req.query.warehouse_id, "warehouse_id");
     await assertOrgRef(db, "warehouses", warehouse_id, org, "warehouse_id");
@@ -16222,7 +16222,7 @@ function registerInventoryRoutes(app) {
     }));
     return ok(req, res, rows, 200, { total_count: rows.length, warehouse_id });
   });
-  app.get("/api/inventory/items/:id/movements", authenticate, invRead, async (req, res) => {
+  app2.get("/api/inventory/items/:id/movements", authenticate, invRead, async (req, res) => {
     await requireOrgRow(db, "items", req.params.id, req.session.organization_id, "Item");
     const r = await db.query(`SELECT sm.*, w.code as warehouse_code FROM stock_movements sm LEFT JOIN warehouses w ON w.id = sm.location_id
        WHERE sm.organization_id = $1 AND sm.item_id = $2 ORDER BY sm.movement_date ASC, sm.created_at ASC LIMIT 5000`, [req.session.organization_id, req.params.id]);
@@ -16233,12 +16233,12 @@ function registerInventoryRoutes(app) {
     });
     return ok(req, res, rows, 200, { total_count: rows.length });
   });
-  app.get("/api/inventory/lots", authenticate, invRead, async (req, res) => {
+  app2.get("/api/inventory/lots", authenticate, invRead, async (req, res) => {
     const r = await db.query(`SELECT l.*, i.code as item_code, i.name as item_name FROM item_lots l JOIN items i ON l.item_id = i.id
        WHERE l.organization_id = $1 ORDER BY l.created_at DESC`, [req.session.organization_id]);
     return ok(req, res, r.rows, 200, { total_count: r.rows.length });
   });
-  app.post("/api/inventory/lots", authenticate, requirePermission(Permission.INVENTORY_MANAGE), async (req, res) => {
+  app2.post("/api/inventory/lots", authenticate, requirePermission(Permission.INVENTORY_MANAGE), async (req, res) => {
     const item_id = uuid(req.body?.item_id, "item_id");
     await assertOrgRef(db, "items", item_id, req.session.organization_id, "item_id");
     const lot_number = str(req.body?.lot_number, "lot_number", { max: 64 });
@@ -16250,14 +16250,14 @@ function registerInventoryRoutes(app) {
     const r = await db.query(`INSERT INTO item_lots (item_id, lot_number, manufacture_date, expiry_date, status, organization_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`, [item_id, lot_number, manufacture_date, expiry_date, status, req.session.organization_id]);
     return ok(req, res, r.rows[0], 201);
   });
-  app.get("/api/inventory/serials", authenticate, invRead, async (req, res) => {
+  app2.get("/api/inventory/serials", authenticate, invRead, async (req, res) => {
     const r = await db.query(`SELECT s.*, i.code as item_code, i.name as item_name, w.name as warehouse_name, b.bin_code
        FROM item_serials s JOIN items i ON s.item_id = i.id
        LEFT JOIN warehouses w ON s.warehouse_id = w.id LEFT JOIN warehouse_bins b ON s.bin_id = b.id
        WHERE s.organization_id = $1 ORDER BY s.created_at DESC`, [req.session.organization_id]);
     return ok(req, res, r.rows, 200, { total_count: r.rows.length });
   });
-  app.post("/api/inventory/serials", authenticate, requirePermission(Permission.INVENTORY_MANAGE), async (req, res) => {
+  app2.post("/api/inventory/serials", authenticate, requirePermission(Permission.INVENTORY_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const item_id = uuid(req.body?.item_id, "item_id");
     const serial_number = str(req.body?.serial_number, "serial_number", { max: 128 });
@@ -16274,7 +16274,7 @@ function registerInventoryRoutes(app) {
     const r = await db.query(`INSERT INTO item_serials (item_id, serial_number, warehouse_id, bin_id, status, organization_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`, [item_id, serial_number, warehouse_id, bin_id, status, org]);
     return ok(req, res, r.rows[0], 201);
   });
-  app.get("/api/inventory/transfers", authenticate, invRead, async (req, res) => {
+  app2.get("/api/inventory/transfers", authenticate, invRead, async (req, res) => {
     const transfers = (await db.query(`SELECT t.*, sw.name as source_warehouse_name, dw.name as destination_warehouse_name
          FROM stock_transfers t JOIN warehouses sw ON t.source_warehouse_id = sw.id JOIN warehouses dw ON t.destination_warehouse_id = dw.id
          WHERE t.organization_id = $1 ORDER BY t.created_at DESC`, [req.session.organization_id])).rows;
@@ -16283,7 +16283,7 @@ function registerInventoryRoutes(app) {
     }
     return ok(req, res, transfers, 200, { total_count: transfers.length });
   });
-  app.post("/api/inventory/transfers", authenticate, requirePermission(Permission.INVENTORY_TRANSFER), async (req, res) => {
+  app2.post("/api/inventory/transfers", authenticate, requirePermission(Permission.INVENTORY_TRANSFER), async (req, res) => {
     const org = req.session.organization_id;
     const source_warehouse_id = uuid(req.body?.source_warehouse_id, "source_warehouse_id");
     const destination_warehouse_id = uuid(req.body?.destination_warehouse_id, "destination_warehouse_id");
@@ -16312,7 +16312,7 @@ function registerInventoryRoutes(app) {
     });
     return ok(req, res, transfer, 201);
   });
-  app.post("/api/inventory/transfers/:id/ship", authenticate, requirePermission(Permission.INVENTORY_TRANSFER), async (req, res) => {
+  app2.post("/api/inventory/transfers/:id/ship", authenticate, requirePermission(Permission.INVENTORY_TRANSFER), async (req, res) => {
     const org = req.session.organization_id;
     const out = await db.transaction(async (tx) => {
       const t = await transition(tx, {
@@ -16348,7 +16348,7 @@ function registerInventoryRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/inventory/transfers/:id/receive", authenticate, requirePermission(Permission.INVENTORY_TRANSFER), async (req, res) => {
+  app2.post("/api/inventory/transfers/:id/receive", authenticate, requirePermission(Permission.INVENTORY_TRANSFER), async (req, res) => {
     const org = req.session.organization_id;
     const out = await db.transaction(async (tx) => {
       const t = await transition(tx, {
@@ -16383,7 +16383,7 @@ function registerInventoryRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.get("/api/inventory/counts", authenticate, invRead, async (req, res) => {
+  app2.get("/api/inventory/counts", authenticate, invRead, async (req, res) => {
     const counts = (await db.query(`SELECT c.*, w.name as warehouse_name FROM inventory_counts c JOIN warehouses w ON c.warehouse_id = w.id
          WHERE c.organization_id = $1 ORDER BY c.created_at DESC`, [req.session.organization_id])).rows;
     for (const c of counts) {
@@ -16391,7 +16391,7 @@ function registerInventoryRoutes(app) {
     }
     return ok(req, res, counts, 200, { total_count: counts.length });
   });
-  app.post("/api/inventory/counts", authenticate, requirePermission(Permission.INVENTORY_COUNT), async (req, res) => {
+  app2.post("/api/inventory/counts", authenticate, requirePermission(Permission.INVENTORY_COUNT), async (req, res) => {
     const org = req.session.organization_id;
     const warehouse_id = uuid(req.body?.warehouse_id, "warehouse_id");
     const period_id = str(req.body?.period_id, "period_id", { max: 64 });
@@ -16416,7 +16416,7 @@ function registerInventoryRoutes(app) {
     });
     return ok(req, res, count, 201);
   });
-  app.post("/api/inventory/counts/:id/record", authenticate, requirePermission(Permission.INVENTORY_COUNT), async (req, res) => {
+  app2.post("/api/inventory/counts/:id/record", authenticate, requirePermission(Permission.INVENTORY_COUNT), async (req, res) => {
     const org = req.session.organization_id;
     const counts = arrayOf(req.body?.counts, "counts", { min: 1, max: 5e3 }).map((c, i) => ({
       item_id: uuid(c?.item_id, `counts[${i}].item_id`),
@@ -16454,7 +16454,7 @@ function registerInventoryRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/inventory/counts/:id/reconcile-and-post", authenticate, requirePermission(Permission.INVENTORY_ADJUST), async (req, res) => {
+  app2.post("/api/inventory/counts/:id/reconcile-and-post", authenticate, requirePermission(Permission.INVENTORY_ADJUST), async (req, res) => {
     const org = req.session.organization_id;
     const out = await db.transaction(async (tx) => {
       const count = await requireOrgRow(tx, "inventory_counts", req.params.id, org, "Count sheet", { forUpdate: true });
@@ -16566,9 +16566,9 @@ async function accountId(q, org, code) {
     throw new ApiError(400, ErrorCode.MAPPING_MISSING, `Required GL account ${code} not found in COA`);
   return r.rows[0].id;
 }
-function registerManufacturingRoutes(app) {
+function registerManufacturingRoutes(app2) {
   const mfgRead = requireAnyPermission(...MFG_READ);
-  app.get("/api/manufacturing/boms", authenticate, mfgRead, async (req, res) => {
+  app2.get("/api/manufacturing/boms", authenticate, mfgRead, async (req, res) => {
     const boms = (await db.query(`SELECT b.*, i.code as finished_item_code, i.name as finished_item_name FROM bill_of_materials b
          JOIN items i ON b.finished_item_id = i.id WHERE b.organization_id = $1 ORDER BY b.created_at DESC`, [req.session.organization_id])).rows;
     for (const b of boms) {
@@ -16577,7 +16577,7 @@ function registerManufacturingRoutes(app) {
     }
     return ok(req, res, boms, 200, { total_count: boms.length });
   });
-  app.post("/api/manufacturing/boms", authenticate, requirePermission(Permission.BOM_MANAGE), async (req, res) => {
+  app2.post("/api/manufacturing/boms", authenticate, requirePermission(Permission.BOM_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const finished_item_id = uuid(req.body?.finished_item_id, "finished_item_id");
     const name = str(req.body?.name, "name", { max: 255 });
@@ -16622,7 +16622,7 @@ function registerManufacturingRoutes(app) {
     });
     return ok(req, res, bom, 201);
   });
-  app.get("/api/manufacturing/work-orders", authenticate, mfgRead, async (req, res) => {
+  app2.get("/api/manufacturing/work-orders", authenticate, mfgRead, async (req, res) => {
     const wos = (await db.query(`SELECT wo.*, b.name as bom_name, i.code as finished_item_code, i.name as finished_item_name, w.name as warehouse_name
          FROM work_orders wo JOIN bill_of_materials b ON wo.bom_id = b.id JOIN items i ON wo.finished_item_id = i.id
          JOIN warehouses w ON wo.warehouse_id = w.id WHERE wo.organization_id = $1 ORDER BY wo.created_at DESC`, [req.session.organization_id])).rows;
@@ -16632,14 +16632,14 @@ function registerManufacturingRoutes(app) {
     }
     return ok(req, res, wos, 200, { total_count: wos.length });
   });
-  app.get("/api/manufacturing/work-orders/:id/requirements", authenticate, mfgRead, async (req, res) => {
+  app2.get("/api/manufacturing/work-orders/:id/requirements", authenticate, mfgRead, async (req, res) => {
     const wo = await requireOrgRow(db, "work_orders", req.params.id, req.session.organization_id, "Work order");
     const bom = await requireOrgRow(db, "bill_of_materials", wo.bom_id, req.session.organization_id, "BOM");
     const bomItems = (await db.query(`SELECT bi.*, i.unit_cost FROM bom_items bi JOIN items i ON i.id = bi.component_item_id WHERE bi.bom_id = $1`, [bom.id])).rows;
     const exploded = ManufacturingEngine.explodeBOM({ ...bom, items: bomItems }, wo.target_qty, Object.fromEntries(bomItems.map((b) => [b.component_item_id, b.unit_cost])));
     return ok(req, res, exploded);
   });
-  app.post("/api/manufacturing/work-orders", authenticate, requirePermission(Permission.WORK_ORDER_MANAGE), async (req, res) => {
+  app2.post("/api/manufacturing/work-orders", authenticate, requirePermission(Permission.WORK_ORDER_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const bom_id = uuid(req.body?.bom_id, "bom_id");
     const warehouse_id = uuid(req.body?.warehouse_id, "warehouse_id");
@@ -16663,7 +16663,7 @@ function registerManufacturingRoutes(app) {
     });
     return ok(req, res, wo, 201);
   });
-  app.post("/api/manufacturing/work-orders/:id/release", authenticate, requirePermission(Permission.WORK_ORDER_RELEASE), async (req, res) => {
+  app2.post("/api/manufacturing/work-orders/:id/release", authenticate, requirePermission(Permission.WORK_ORDER_RELEASE), async (req, res) => {
     const wo = await transition(db, {
       table: "work_orders",
       id: req.params.id,
@@ -16675,7 +16675,7 @@ function registerManufacturingRoutes(app) {
     });
     return ok(req, res, { id: wo.id, status: "RELEASED" });
   });
-  app.post("/api/manufacturing/work-orders/:id/cancel", authenticate, requirePermission(Permission.WORK_ORDER_MANAGE), async (req, res) => {
+  app2.post("/api/manufacturing/work-orders/:id/cancel", authenticate, requirePermission(Permission.WORK_ORDER_MANAGE), async (req, res) => {
     const out = await db.transaction(async (tx) => {
       const wo = await requireOrgRow(tx, "work_orders", req.params.id, req.session.organization_id, "Work order", { forUpdate: true });
       const cons = await tx.query(`SELECT 1 FROM work_order_consumptions WHERE work_order_id = $1 LIMIT 1`, [wo.id]);
@@ -16686,7 +16686,7 @@ function registerManufacturingRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/manufacturing/work-orders/:id/consume", authenticate, requirePermission(Permission.WORK_ORDER_CONSUME), async (req, res) => {
+  app2.post("/api/manufacturing/work-orders/:id/consume", authenticate, requirePermission(Permission.WORK_ORDER_CONSUME), async (req, res) => {
     const org = req.session.organization_id;
     const component_item_id = uuid(req.body?.component_item_id, "component_item_id");
     const consumed_qty = decimal(req.body?.consumed_qty, "consumed_qty", { sign: "positive" });
@@ -16745,7 +16745,7 @@ function registerManufacturingRoutes(app) {
     });
     return ok(req, res, out, 201);
   });
-  app.post("/api/manufacturing/work-orders/:id/complete", authenticate, requirePermission(Permission.WORK_ORDER_COMPLETE), async (req, res) => {
+  app2.post("/api/manufacturing/work-orders/:id/complete", authenticate, requirePermission(Permission.WORK_ORDER_COMPLETE), async (req, res) => {
     const org = req.session.organization_id;
     const posting_date = dateOnly(req.body?.posting_date, "posting_date", { defaultValue: todayIso() });
     const out = await db.transaction(async (tx) => {
@@ -16830,8 +16830,8 @@ init_state();
 init_posting2();
 init_validate();
 import crypto16 from "node:crypto";
-function registerProjectsRoutes(app) {
-  app.get("/api/projects/cost-centers", authenticate, requirePermission(Permission.FINANCE_COA_VIEW), async (req, res) => {
+function registerProjectsRoutes(app2) {
+  app2.get("/api/projects/cost-centers", authenticate, requirePermission(Permission.FINANCE_COA_VIEW), async (req, res) => {
     const result = await db.query("SELECT * FROM cost_centers WHERE organization_id = $1 ORDER BY code ASC", [req.session.organization_id]);
     return res.json({
       success: true,
@@ -16839,7 +16839,7 @@ function registerProjectsRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/projects/cost-centers", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+  app2.post("/api/projects/cost-centers", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
     const { code, name, cost_center_type, manager_name } = req.body;
     if (!code || !name) {
       return res.status(400).json({
@@ -16856,7 +16856,7 @@ function registerProjectsRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.get("/api/projects", authenticate, requirePermission(Permission.FINANCE_REPORTS_VIEW), async (req, res) => {
+  app2.get("/api/projects", authenticate, requirePermission(Permission.FINANCE_REPORTS_VIEW), async (req, res) => {
     const result = await db.query(`SELECT p.*, c.name as customer_name, cc.name as cost_center_name 
        FROM projects p 
        LEFT JOIN parties c ON c.id = p.customer_id 
@@ -16869,7 +16869,7 @@ function registerProjectsRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/projects", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+  app2.post("/api/projects", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
     const { code, name, customer_id, manager_name, project_type, contract_value, budgeted_cost, retention_percentage, start_date, end_date, cost_center_id } = req.body;
     if (!code || !name || !start_date) {
       return res.status(400).json({
@@ -16903,7 +16903,7 @@ function registerProjectsRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.get("/api/projects/:id/wbs", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+  app2.get("/api/projects/:id/wbs", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
     const { id } = req.params;
     const result = await db.query("SELECT * FROM project_wbs_nodes WHERE project_id = $1 ORDER BY wbs_code ASC", [id]);
     return res.json({
@@ -16912,7 +16912,7 @@ function registerProjectsRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/projects/:id/wbs", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+  app2.post("/api/projects/:id/wbs", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
     const { id } = req.params;
     const { wbs_code, name, parent_id, budget_cost, progress_percentage, status } = req.body;
     if (!wbs_code || !name) {
@@ -16939,7 +16939,7 @@ function registerProjectsRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.get("/api/projects/:id/boq", authenticate, requirePermission(Permission.BOQ_MANAGE), async (req, res) => {
+  app2.get("/api/projects/:id/boq", authenticate, requirePermission(Permission.BOQ_MANAGE), async (req, res) => {
     const { id } = req.params;
     const boqRes = await db.query(`SELECT b.*, p.code as project_code, p.name as project_name 
        FROM bill_of_quantities b
@@ -16964,7 +16964,7 @@ function registerProjectsRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/projects/:id/boq", authenticate, requirePermission(Permission.BOQ_MANAGE), async (req, res) => {
+  app2.post("/api/projects/:id/boq", authenticate, requirePermission(Permission.BOQ_MANAGE), async (req, res) => {
     const { id } = req.params;
     const { boq_number, title, version, items } = req.body;
     if (!boq_number || !title || !items || !Array.isArray(items) || items.length === 0) {
@@ -17011,7 +17011,7 @@ function registerProjectsRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.get("/api/projects/:id/certificates", authenticate, requirePermission(Permission.PROGRESS_CERTIFY), async (req, res) => {
+  app2.get("/api/projects/:id/certificates", authenticate, requirePermission(Permission.PROGRESS_CERTIFY), async (req, res) => {
     const { id } = req.params;
     const certRes = await db.query(`SELECT pc.*, p.name as project_name 
        FROM progress_certificates pc 
@@ -17035,7 +17035,7 @@ function registerProjectsRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/projects/:id/certificates", authenticate, requirePermission(Permission.PROGRESS_CERTIFY), async (req, res) => {
+  app2.post("/api/projects/:id/certificates", authenticate, requirePermission(Permission.PROGRESS_CERTIFY), async (req, res) => {
     const { id } = req.params;
     const { certificate_number, boq_id, period_id, certificate_date, items } = req.body;
     if (!certificate_number || !boq_id || !period_id || !items || !Array.isArray(items) || items.length === 0) {
@@ -17127,7 +17127,7 @@ function registerProjectsRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/projects/:id/certificates/:certId/certify", authenticate, requirePermission(Permission.PROGRESS_CERTIFY), async (req, res) => {
+  app2.post("/api/projects/:id/certificates/:certId/certify", authenticate, requirePermission(Permission.PROGRESS_CERTIFY), async (req, res) => {
     const { id, certId } = req.params;
     const certRes = await db.query("SELECT * FROM progress_certificates WHERE id = $1 AND project_id = $2 AND organization_id = $3", [certId, id, req.session.organization_id]);
     if (certRes.rows.length === 0) {
@@ -17163,7 +17163,7 @@ function registerProjectsRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/projects/:id/certificates/:certId/generate-invoice", authenticate, requirePermission(Permission.PROGRESS_INVOICE), async (req, res) => {
+  app2.post("/api/projects/:id/certificates/:certId/generate-invoice", authenticate, requirePermission(Permission.PROGRESS_INVOICE), async (req, res) => {
     const { id, certId } = req.params;
     const certRes = await db.query(`SELECT pc.*, p.code as project_code, p.cost_center_id 
        FROM progress_certificates pc 
@@ -17321,13 +17321,13 @@ async function depreciateAsset(tx, ctx, assetId, periodId, periodMonths = 1) {
   ]);
   return { id: asset.id, asset_number: asset.asset_number, depreciation_amount: amount.format(), accumulated_depreciation: accumulatedAfter.format(), current_book_value: bookAfter.format(), status: newStatus, journal_id: posted?.journalId ?? null };
 }
-function registerAssetsRoutes(app) {
+function registerAssetsRoutes(app2) {
   const assetRead = requireAnyPermission(Permission.ASSET_MANAGE, Permission.ASSET_DEPRECIATE, Permission.ASSET_DISPOSE, Permission.FINANCE_REPORTS_VIEW, Permission.FINANCE_COA_VIEW);
-  app.get("/api/assets/categories", authenticate, assetRead, async (req, res) => {
+  app2.get("/api/assets/categories", authenticate, assetRead, async (req, res) => {
     const r = await db.query("SELECT * FROM asset_categories WHERE organization_id = $1 ORDER BY code ASC", [req.session.organization_id]);
     return ok(req, res, r.rows, 200, { total_count: r.rows.length });
   });
-  app.post("/api/assets/categories", authenticate, requirePermission(Permission.ASSET_MANAGE), async (req, res) => {
+  app2.post("/api/assets/categories", authenticate, requirePermission(Permission.ASSET_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const b = req.body || {};
     const code = str(b.code, "code", { max: 32 });
@@ -17353,17 +17353,17 @@ function registerAssetsRoutes(app) {
     ]);
     return ok(req, res, { id, code, name }, 201);
   });
-  app.get("/api/assets", authenticate, assetRead, async (req, res) => {
+  app2.get("/api/assets", authenticate, assetRead, async (req, res) => {
     const r = await db.query(`SELECT fa.*, ac.name as category_name FROM fixed_assets fa JOIN asset_categories ac ON ac.id = fa.category_id
        WHERE fa.organization_id = $1 ORDER BY fa.asset_number ASC`, [req.session.organization_id]);
     return ok(req, res, r.rows, 200, { total_count: r.rows.length });
   });
-  app.get("/api/assets/:id/schedule", authenticate, assetRead, async (req, res) => {
+  app2.get("/api/assets/:id/schedule", authenticate, assetRead, async (req, res) => {
     const asset = await requireOrgRow(db, "fixed_assets", req.params.id, req.session.organization_id, "Fixed asset");
     const r = await db.query(`SELECT e.*, fp.period_name FROM asset_depreciation_entries e JOIN fiscal_periods fp ON fp.id = e.period_id WHERE e.asset_id = $1 ORDER BY e.entry_date`, [asset.id]);
     return ok(req, res, { asset, entries: r.rows });
   });
-  app.post("/api/assets", authenticate, requirePermission(Permission.ASSET_MANAGE), async (req, res) => {
+  app2.post("/api/assets", authenticate, requirePermission(Permission.ASSET_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const b = req.body || {};
     const name = str(b.name, "name", { max: 255 });
@@ -17416,13 +17416,13 @@ function registerAssetsRoutes(app) {
     });
     return ok(req, res, out, 201);
   });
-  app.post("/api/assets/:id/depreciate", authenticate, requirePermission(Permission.ASSET_DEPRECIATE), async (req, res) => {
+  app2.post("/api/assets/:id/depreciate", authenticate, requirePermission(Permission.ASSET_DEPRECIATE), async (req, res) => {
     const period_id = str(req.body?.period_id, "period_id", { max: 64 });
     const months = int(req.body?.period_months, "period_months", { min: 1, max: 12, defaultValue: 1 });
     const out = await db.transaction((tx) => depreciateAsset(tx, { organizationId: req.session.organization_id, legalEntityId: req.session.legal_entity_id, userId: req.session.user_id, correlationId: req.correlationId }, req.params.id, period_id, months));
     return ok(req, res, out);
   });
-  app.post("/api/assets/depreciation-run", authenticate, requirePermission(Permission.ASSET_DEPRECIATE), async (req, res) => {
+  app2.post("/api/assets/depreciation-run", authenticate, requirePermission(Permission.ASSET_DEPRECIATE), async (req, res) => {
     const period_id = str(req.body?.period_id, "period_id", { max: 64 });
     await requireOrgRow(db, "fiscal_periods", period_id, req.session.organization_id, "Fiscal period");
     const assets = (await db.query(`SELECT id FROM fixed_assets WHERE organization_id = $1 AND status = 'ACTIVE' ORDER BY asset_number`, [req.session.organization_id])).rows;
@@ -17436,7 +17436,7 @@ function registerAssetsRoutes(app) {
     }
     return ok(req, res, results, 200, { posted: results.filter((r) => r.outcome === "POSTED").length, skipped: results.filter((r) => r.outcome === "SKIPPED").length });
   });
-  app.post("/api/assets/:id/dispose", authenticate, requirePermission(Permission.ASSET_DISPOSE), async (req, res) => {
+  app2.post("/api/assets/:id/dispose", authenticate, requirePermission(Permission.ASSET_DISPOSE), async (req, res) => {
     const org = req.session.organization_id;
     const proceeds = decimal(req.body?.proceeds, "proceeds", { required: false, defaultValue: "0", scale: 2 });
     const disposal_date = dateOnly(req.body?.disposal_date, "disposal_date", { defaultValue: todayIso() });
@@ -17855,11 +17855,11 @@ async function loadOrderBundle(q, org, orderId) {
   const register = (await q.query(`SELECT r.* FROM pos_registers r JOIN pos_sessions s ON s.register_id = r.id WHERE s.id = $1`, [o.rows[0].session_id])).rows[0];
   return { order: o.rows[0], lines: lines.rows, tenders: tenders.rows, register };
 }
-function registerPosRoutes(app) {
+function registerPosRoutes(app2) {
   const terminal = requirePermission(Permission.POS_TERMINAL);
   const manage = requirePermission(Permission.POS_REGISTER_MANAGE);
   const org = (req) => req.session.organization_id;
-  app.get("/api/pos/registers", authenticate, terminal, async (req, res) => {
+  app2.get("/api/pos/registers", authenticate, terminal, async (req, res) => {
     let r = await db.query(`SELECT pr.*, w.name AS warehouse_name,
          (SELECT row_to_json(x) FROM (SELECT ps.id, ps.cashier_id, ps.cashier_name, ps.opened_at FROM pos_sessions ps
             WHERE ps.register_id = pr.id AND ps.status = 'OPEN' LIMIT 1) x) AS open_session
@@ -17900,7 +17900,7 @@ Exchange within 14 days with receipt.')
       receipt_footer: optionalStr(body.receipt_footer, "receipt_footer", 500)
     };
   };
-  app.post("/api/pos/registers", authenticate, manage, async (req, res) => {
+  app2.post("/api/pos/registers", authenticate, manage, async (req, res) => {
     const register_code = str(req.body.register_code, "register_code", { max: 32 });
     const name = str(req.body.name, "name", { max: 255 });
     const f = await registerFields(req, req.body);
@@ -17929,7 +17929,7 @@ Exchange within 14 days with receipt.')
     });
     return ok(req, res, { id, register_code, name, ...f }, 201);
   });
-  app.post("/api/pos/registers/:id", authenticate, manage, async (req, res) => {
+  app2.post("/api/pos/registers/:id", authenticate, manage, async (req, res) => {
     const before = await requireOrgRow(db, "pos_registers", req.params.id, org(req), "POS register");
     const f = await registerFields(req, { ...before, ...req.body });
     const name = present(req.body.name) ? str(req.body.name, "name", { max: 255 }) : before.name;
@@ -17941,7 +17941,7 @@ Exchange within 14 days with receipt.')
     });
     return ok(req, res, { id: before.id, name, is_active, ...f });
   });
-  app.get("/api/pos/catalog", authenticate, terminal, async (req, res) => {
+  app2.get("/api/pos/catalog", authenticate, terminal, async (req, res) => {
     const register = req.query.register_id ? await requireOrgRow(db, "pos_registers", String(req.query.register_id), org(req), "POS register") : null;
     const wh = register ? await stockWarehouse(db, org(req), register) : await defaultWarehouseId(db, org(req));
     const items = await db.query(`SELECT i.id, i.code, i.name, i.item_type, i.uom, i.unit_price::text, i.tax_rate::text, i.barcode, i.plu_code, i.is_weighed, i.category,
@@ -17952,7 +17952,7 @@ Exchange within 14 days with receipt.')
     const promotions = await activePromotions(db, org(req), todayIso());
     return ok(req, res, { items: items.rows, promotions, loyalty: DEFAULT_LOYALTY, scale_barcodes: DEFAULT_SCALE_CONFIG, register, generated_at: (/* @__PURE__ */ new Date()).toISOString() });
   });
-  app.get("/api/pos/lookup", authenticate, terminal, async (req, res) => {
+  app2.get("/api/pos/lookup", authenticate, terminal, async (req, res) => {
     const code = str(req.query.code, "code", { max: 64 }).trim();
     const parsed = parseScan(code);
     const sel = `SELECT id, code, name, item_type, uom, unit_price::text, tax_rate::text, barcode, plu_code, is_weighed, category FROM items WHERE organization_id = $1 AND is_active = true`;
@@ -17971,7 +17971,7 @@ Exchange within 14 days with receipt.')
       throw notFound(`Item for code ${code}`);
     return ok(req, res, { item: r.rows[0], quantity: "1", scan: parsed });
   });
-  app.get("/api/pos/customers", authenticate, terminal, async (req, res) => {
+  app2.get("/api/pos/customers", authenticate, terminal, async (req, res) => {
     const q = String(req.query.q || "").trim().slice(0, 64);
     const r = await db.query(`SELECT p.id, p.code, p.name, p.phone, p.email, COALESCE(la.points_balance,0) AS points_balance, COALESCE(la.tier,'STANDARD') AS tier,
          COALESCE((SELECT SUM(balance) FROM pos_stored_value_accounts sv WHERE sv.customer_id = p.id AND sv.kind = 'STORE_CREDIT'),0)::text AS store_credit
@@ -17981,7 +17981,7 @@ Exchange within 14 days with receipt.')
        ORDER BY p.name LIMIT 25`, [org(req), q]);
     return ok(req, res, r.rows);
   });
-  app.post("/api/pos/customers", authenticate, terminal, async (req, res) => {
+  app2.post("/api/pos/customers", authenticate, terminal, async (req, res) => {
     const name = str(req.body.name, "name", { max: 255 });
     const phone = str(req.body.phone, "phone", { max: 32, pattern: /^[0-9+\-\s()]{7,32}$/ });
     const email = optionalStr(req.body.email, "email", 255);
@@ -17997,11 +17997,11 @@ Exchange within 14 days with receipt.')
     });
     return ok(req, res, { id, name, phone, points_balance: 0 }, 201);
   });
-  app.get("/api/pos/promotions", authenticate, terminal, async (req, res) => {
+  app2.get("/api/pos/promotions", authenticate, terminal, async (req, res) => {
     const r = await db.query(`SELECT * FROM pos_promotions WHERE organization_id = $1 ORDER BY is_active DESC, priority DESC, code`, [org(req)]);
     return ok(req, res, r.rows);
   });
-  app.post("/api/pos/promotions", authenticate, manage, async (req, res) => {
+  app2.post("/api/pos/promotions", authenticate, manage, async (req, res) => {
     const code = str(req.body.code, "code", { max: 32, pattern: /^[A-Z0-9_-]+$/i }).toUpperCase();
     const name = str(req.body.name, "name", { max: 255 });
     const type = oneOf(req.body.promo_type, "promo_type", ["BOGO", "MIX_MATCH", "BUNDLE", "TIERED", "COUPON", "CART_PERCENT"]);
@@ -18020,7 +18020,7 @@ Exchange within 14 days with receipt.')
     });
     return ok(req, res, { id, code, name, promo_type: type }, 201);
   });
-  app.post("/api/pos/promotions/:id/toggle", authenticate, manage, async (req, res) => {
+  app2.post("/api/pos/promotions/:id/toggle", authenticate, manage, async (req, res) => {
     const p = await requireOrgRow(db, "pos_promotions", req.params.id, org(req), "Promotion");
     await db.transaction(async (tx) => {
       await tx.query(`UPDATE pos_promotions SET is_active = NOT is_active WHERE id = $1`, [p.id]);
@@ -18028,7 +18028,7 @@ Exchange within 14 days with receipt.')
     });
     return ok(req, res, { id: p.id, is_active: !p.is_active });
   });
-  app.post("/api/pos/manager-pin", authenticate, manage, async (req, res) => {
+  app2.post("/api/pos/manager-pin", authenticate, manage, async (req, res) => {
     const pin = str(req.body.pin, "pin", { max: 8, pattern: /^\d{4,8}$/ });
     const password = str(req.body.current_password, "current_password", { max: 200 });
     const u = await db.query(`SELECT password_hash FROM users WHERE id = $1`, [req.session.user_id]);
@@ -18046,7 +18046,7 @@ Exchange within 14 days with receipt.')
     });
     return ok(req, res, { updated: true });
   });
-  app.post("/api/pos/approvals", authenticate, terminal, async (req, res) => {
+  app2.post("/api/pos/approvals", authenticate, terminal, async (req, res) => {
     const { session, register } = await loadSession(db, req, req.body.session_id);
     const action = oneOf(req.body.action, "action", POS_ACTIONS);
     const pin = str(req.body.pin, "pin", { max: 8 });
@@ -18069,7 +18069,7 @@ Exchange within 14 days with receipt.')
     });
     return ok(req, res, { approval_id: id, action, approved_by: approver.userId, approver_name: approver.name, expires_in_seconds: 300 }, 201);
   });
-  app.get("/api/pos/sessions/active", authenticate, terminal, async (req, res) => {
+  app2.get("/api/pos/sessions/active", authenticate, terminal, async (req, res) => {
     const params = [org(req), req.session.user_id];
     let where = `ps.organization_id = $1 AND ps.status = 'OPEN'`;
     if (req.query.register_id) {
@@ -18082,7 +18082,7 @@ Exchange within 14 days with receipt.')
        WHERE ${where} ORDER BY (ps.cashier_id = $2) DESC, ps.opened_at DESC LIMIT 1`, params);
     return ok(req, res, r.rows[0] || null);
   });
-  app.post("/api/pos/sessions/open", authenticate, terminal, async (req, res) => {
+  app2.post("/api/pos/sessions/open", authenticate, terminal, async (req, res) => {
     const register = await requireOrgRow(db, "pos_registers", req.body.register_id, org(req), "POS register");
     if (!register.is_active)
       throw invalidState("Register is inactive");
@@ -18113,23 +18113,23 @@ Exchange within 14 days with receipt.')
     }
     return ok(req, res, { id, register_id: register.id, opening_float: floatStr, status: "OPEN", business_date: businessDate }, 201);
   });
-  app.get("/api/pos/sessions/:id/x-report", authenticate, terminal, async (req, res) => {
+  app2.get("/api/pos/sessions/:id/x-report", authenticate, terminal, async (req, res) => {
     const { session, register } = await loadSession(db, req, req.params.id, { mustBeOpen: false });
     const totals = await sessionTotals(db, session.id);
     return ok(req, res, { report_type: "X", register_code: register.register_code, generated_at: (/* @__PURE__ */ new Date()).toISOString(), ...totals });
   });
-  app.get("/api/pos/sessions/:id/z-report", authenticate, terminal, async (req, res) => {
+  app2.get("/api/pos/sessions/:id/z-report", authenticate, terminal, async (req, res) => {
     const { session } = await loadSession(db, req, req.params.id, { mustBeOpen: false });
     if (!session.z_report)
       throw invalidState("The Z report is produced when the shift is closed");
     return ok(req, res, typeof session.z_report === "string" ? JSON.parse(session.z_report) : session.z_report);
   });
-  app.get("/api/pos/sessions/:id/audit", authenticate, terminal, async (req, res) => {
+  app2.get("/api/pos/sessions/:id/audit", authenticate, terminal, async (req, res) => {
     const { session } = await loadSession(db, req, req.params.id, { mustBeOpen: false });
     const r = await db.query(`SELECT e.*, u.name AS user_name FROM pos_audit_events e LEFT JOIN users u ON u.id = e.user_id WHERE e.session_id = $1 ORDER BY e.created_at DESC, e.id LIMIT 500`, [session.id]);
     return ok(req, res, r.rows);
   });
-  app.post("/api/pos/sessions/:id/cash-movements", authenticate, terminal, async (req, res) => {
+  app2.post("/api/pos/sessions/:id/cash-movements", authenticate, terminal, async (req, res) => {
     const type = oneOf(req.body.movement_type, "movement_type", ["PAID_IN", "PAID_OUT", "SAFE_DROP"]);
     const amount = decimal(req.body.amount, "amount", { sign: "positive" });
     const reason = str(req.body.reason, "reason", { max: 500 });
@@ -18168,7 +18168,7 @@ Exchange within 14 days with receipt.')
     return ok(req, res, out, 201);
   });
   const CLIENT_EVENTS = ["LINE_VOIDED", "CART_VOIDED", "SCAN_NOT_FOUND", "PRICE_CHECK", "QTY_CHANGED"];
-  app.post("/api/pos/sessions/:id/events", authenticate, terminal, async (req, res) => {
+  app2.post("/api/pos/sessions/:id/events", authenticate, terminal, async (req, res) => {
     const type = oneOf(req.body.event_type, "event_type", CLIENT_EVENTS);
     const raw = req.body.details && typeof req.body.details === "object" && !Array.isArray(req.body.details) ? req.body.details : {};
     const details = JSON.parse(JSON.stringify(raw, (_k, v) => typeof v === "string" ? v.slice(0, 200) : v));
@@ -18178,7 +18178,7 @@ Exchange within 14 days with receipt.')
     await posEvent(db, req, { registerId: register.id, sessionId: session.id, type, details });
     return ok(req, res, { recorded: true, event_type: type }, 201);
   });
-  app.post("/api/pos/sessions/:id/drawer-open", authenticate, terminal, async (req, res) => {
+  app2.post("/api/pos/sessions/:id/drawer-open", authenticate, terminal, async (req, res) => {
     const reason = str(req.body.reason, "reason", { max: 200 });
     const out = await db.transaction(async (tx) => {
       const { session, register } = await loadSession(tx, req, req.params.id);
@@ -18190,7 +18190,7 @@ Exchange within 14 days with receipt.')
     });
     return ok(req, res, out);
   });
-  app.post("/api/pos/sessions/:id/close", authenticate, requirePermission(Permission.POS_SESSION_CLOSE), async (req, res) => {
+  app2.post("/api/pos/sessions/:id/close", authenticate, requirePermission(Permission.POS_SESSION_CLOSE), async (req, res) => {
     let counted = null;
     let count = null;
     if (Array.isArray(req.body.closing_count)) {
@@ -18291,7 +18291,7 @@ Exchange within 14 days with receipt.')
     });
     return ok(req, res, out);
   });
-  app.get("/api/pos/holds", authenticate, terminal, async (req, res) => {
+  app2.get("/api/pos/holds", authenticate, terminal, async (req, res) => {
     const params = [org(req)];
     let where = `h.organization_id = $1 AND h.status = 'HELD'`;
     if (req.query.register_id) {
@@ -18302,7 +18302,7 @@ Exchange within 14 days with receipt.')
        FROM pos_held_carts h JOIN users u ON u.id = h.held_by WHERE ${where} ORDER BY h.created_at`, params);
     return ok(req, res, r.rows);
   });
-  app.post("/api/pos/holds", authenticate, terminal, async (req, res) => {
+  app2.post("/api/pos/holds", authenticate, terminal, async (req, res) => {
     const cart = req.body.cart;
     if (!cart || typeof cart !== "object" || !Array.isArray(cart.lines) || cart.lines.length === 0)
       throw validationError("cart.lines is required", { field: "cart" });
@@ -18324,7 +18324,7 @@ Exchange within 14 days with receipt.')
     });
     return ok(req, res, out, 201);
   });
-  app.post("/api/pos/holds/:id/recall", authenticate, terminal, async (req, res) => {
+  app2.post("/api/pos/holds/:id/recall", authenticate, terminal, async (req, res) => {
     const out = await db.transaction(async (tx) => {
       const h = await requireOrgRow(tx, "pos_held_carts", req.params.id, org(req), "Held cart", { forUpdate: true });
       const { session, register } = await loadSession(tx, req, req.body.session_id || h.session_id);
@@ -18344,7 +18344,7 @@ Exchange within 14 days with receipt.')
     });
     return ok(req, res, out);
   });
-  app.post("/api/pos/holds/:id/discard", authenticate, terminal, async (req, res) => {
+  app2.post("/api/pos/holds/:id/discard", authenticate, terminal, async (req, res) => {
     const out = await db.transaction(async (tx) => {
       const h = await requireOrgRow(tx, "pos_held_carts", req.params.id, org(req), "Held cart", { forUpdate: true });
       await loadSession(tx, req, h.session_id, { mustBeOpen: false });
@@ -18354,7 +18354,7 @@ Exchange within 14 days with receipt.')
     });
     return ok(req, res, out);
   });
-  app.post("/api/pos/price", authenticate, terminal, async (req, res) => {
+  app2.post("/api/pos/price", authenticate, terminal, async (req, res) => {
     const lines = normalizeLines(req.body);
     const items = await db.query(`SELECT * FROM items WHERE organization_id = $1 AND id = ANY($2::uuid[])`, [org(req), [...new Set(lines.map((l) => l.item_id))]]);
     const byId = new Map(items.rows.map((i) => [i.id, i]));
@@ -18381,7 +18381,7 @@ Exchange within 14 days with receipt.')
     const priced = engine(() => priceCart(cart, { promotions, couponCodes: coupons, cartDiscount: parseDiscount(req.body.cart_discount, "cart_discount") }));
     return ok(req, res, priced);
   });
-  app.post("/api/pos/orders", authenticate, terminal, async (req, res) => {
+  app2.post("/api/pos/orders", authenticate, terminal, async (req, res) => {
     const lines = normalizeLines(req.body);
     const clientRef = optionalStr(req.body.client_ref, "client_ref", 64);
     const coupons = Array.isArray(req.body.coupon_codes) ? req.body.coupon_codes.slice(0, 10).map((c) => String(c).trim().toUpperCase()).filter(Boolean) : [];
@@ -18661,7 +18661,7 @@ Exchange within 14 days with receipt.')
       replayed: result.replayed
     }, result.replayed ? 200 : 201);
   });
-  app.get("/api/pos/orders", authenticate, terminal, async (req, res) => {
+  app2.get("/api/pos/orders", authenticate, terminal, async (req, res) => {
     const params = [org(req)];
     let where = "o.organization_id = $1";
     if (req.query.session_id) {
@@ -18687,16 +18687,16 @@ Exchange within 14 days with receipt.')
       throw notFound("POS order");
     return r.rows[0].id;
   };
-  app.get("/api/pos/orders/:id", authenticate, terminal, async (req, res) => {
+  app2.get("/api/pos/orders/:id", authenticate, terminal, async (req, res) => {
     const b = await loadOrderBundle(db, org(req), await resolveOrderId(req));
     const returns = await db.query(`SELECT * FROM pos_returns WHERE original_order_id = $1 ORDER BY created_at`, [b.order.id]);
     return ok(req, res, { ...b.order, lines: b.lines, tenders: b.tenders, returns: returns.rows });
   });
-  app.get("/api/pos/orders/:id/receipt", authenticate, terminal, async (req, res) => {
+  app2.get("/api/pos/orders/:id/receipt", authenticate, terminal, async (req, res) => {
     const b = await loadOrderBundle(db, org(req), await resolveOrderId(req));
     return ok(req, res, renderReceipt(b.order, b.lines, b.tenders, b.register));
   });
-  app.post("/api/pos/orders/:id/reprint", authenticate, terminal, async (req, res) => {
+  app2.post("/api/pos/orders/:id/reprint", authenticate, terminal, async (req, res) => {
     const id = await resolveOrderId(req);
     const out = await db.transaction(async (tx) => {
       const b = await loadOrderBundle(tx, org(req), id);
@@ -18706,7 +18706,7 @@ Exchange within 14 days with receipt.')
     });
     return ok(req, res, out);
   });
-  app.post("/api/pos/orders/:id/void", authenticate, terminal, async (req, res) => {
+  app2.post("/api/pos/orders/:id/void", authenticate, terminal, async (req, res) => {
     const reason = str(req.body.reason, "reason", { max: 500 });
     const id = await resolveOrderId(req);
     const out = await db.transaction(async (tx) => {
@@ -18795,7 +18795,7 @@ Exchange within 14 days with receipt.')
     });
     return ok(req, res, out);
   });
-  app.post("/api/pos/returns", authenticate, terminal, async (req, res) => {
+  app2.post("/api/pos/returns", authenticate, terminal, async (req, res) => {
     const reason = str(req.body.reason, "reason", { max: 500 });
     const restock = bool(req.body.restock, true);
     const refundTo = oneOf(req.body.refund_to, "refund_to", ["ORIGINAL", "STORE_CREDIT", "CASH"], "ORIGINAL");
@@ -19013,7 +19013,7 @@ Exchange within 14 days with receipt.')
     });
     return ok(req, res, out, 201);
   });
-  app.get("/api/pos/stored-value/:code", authenticate, terminal, async (req, res) => {
+  app2.get("/api/pos/stored-value/:code", authenticate, terminal, async (req, res) => {
     const kind = oneOf(req.query.kind, "kind", ["GIFT_CARD", "STORE_CREDIT"], "GIFT_CARD");
     const r = await db.query(`SELECT id, kind, code, balance::text, is_active, customer_id FROM pos_stored_value_accounts WHERE organization_id = $1 AND kind = $2 AND code = $3`, [
       org(req),
@@ -19024,7 +19024,7 @@ Exchange within 14 days with receipt.')
       throw notFound(kind === "GIFT_CARD" ? "Gift card" : "Store credit");
     return ok(req, res, r.rows[0]);
   });
-  app.post("/api/pos/gift-cards", authenticate, terminal, async (req, res) => {
+  app2.post("/api/pos/gift-cards", authenticate, terminal, async (req, res) => {
     const amount = decimal(req.body.amount, "amount", { sign: "positive" });
     if (new Money(amount).gt("100000"))
       throw validationError("Gift card value cannot exceed 100,000", { field: "amount" });
@@ -19445,8 +19445,8 @@ async function billSubscription(ctx, id, asOf, maxPeriods = 12) {
   await ctx.tx.query(`UPDATE com_subscriptions SET next_bill_date = $2, status = $3, revision = revision + 1, updated_at = NOW() WHERE id = $1`, [s.id, ended ? null : next, ended ? "ENDED" : "ACTIVE"]);
   return { subscription: s.number, invoices, next_bill_date: ended ? null : next, ended };
 }
-function registerSubscriptionRoutes(app) {
-  defineResource(app, {
+function registerSubscriptionRoutes(app2) {
+  defineResource(app2, {
     path: "/api/com/plans",
     table: "com_plans",
     label: "Plan",
@@ -19477,7 +19477,7 @@ function registerSubscriptionRoutes(app) {
     },
     commands: { retire: { from: ["ACTIVE"], to: "RETIRED", permission: Permission.SUBSCRIPTION_MANAGE } }
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/com/subscriptions",
     table: "com_subscriptions",
     label: "Subscription",
@@ -19586,7 +19586,7 @@ function registerSubscriptionRoutes(app) {
       }
     }
   });
-  app.post("/api/com/billing-run", authenticate, requireAnyPermission(Permission.SUBSCRIPTION_BILL), requireModule("COM", "command"), async (req, res) => {
+  app2.post("/api/com/billing-run", authenticate, requireAnyPermission(Permission.SUBSCRIPTION_BILL), requireModule("COM", "command"), async (req, res) => {
     const asOf = req.body?.as_of ? dateOnly(req.body.as_of, "as_of") : todayIso();
     const maxPeriods = req.body?.max_periods ? int(req.body.max_periods, "max_periods", { min: 1, max: 24 }) : 12;
     const org = req.session.organization_id;
@@ -19601,12 +19601,12 @@ function registerSubscriptionRoutes(app) {
     }
     return ok(req, res, { as_of: asOf, processed: results.length, invoices: results.reduce((a, r) => a + (r.invoices?.length || 0), 0), failed: results.filter((r) => r.error).length, results });
   });
-  app.post("/api/com/revenue/recognize", authenticate, requireAnyPermission(Permission.SUBSCRIPTION_BILL), requireModule("COM", "command"), async (req, res) => {
+  app2.post("/api/com/revenue/recognize", authenticate, requireAnyPermission(Permission.SUBSCRIPTION_BILL), requireModule("COM", "command"), async (req, res) => {
     const asOf = req.body?.as_of ? dateOnly(req.body.as_of, "as_of") : todayIso();
     const out = await unitOfWork(req, (ctx) => recognizeRevenue(ctx, asOf));
     return ok(req, res, { as_of: asOf, ...out });
   });
-  app.get("/api/com/summary", authenticate, requireAnyPermission(...VIEW3), async (req, res) => {
+  app2.get("/api/com/summary", authenticate, requireAnyPermission(...VIEW3), async (req, res) => {
     const org = req.session.organization_id;
     const subs = (await db.query(`SELECT s.status, s.quantity, s.discount_pct::text, s.cancelled_at, pl.price::text, pl.billing_interval FROM com_subscriptions s JOIN com_plans pl ON pl.id = s.plan_id WHERE s.organization_id = $1`, [org])).rows;
     const active = subs.filter((s) => s.status === "ACTIVE");
@@ -19722,8 +19722,8 @@ async function assessLateFees(ctx, asOf) {
     await audit2(ctx, "LATE_FEES_ASSESSED", "LOAN", ctx.org, void 0, { as_of: asOf, count: due.length, fee: fee.toFixed(2) });
   return { as_of: asOf, assessed: due.length, fees: fee.mul(due.length).toFixed(2), instalments: due.map((r) => `${r.number}#${r.seq}`) };
 }
-function registerLendingRoutes(app) {
-  defineResource(app, {
+function registerLendingRoutes(app2) {
+  defineResource(app2, {
     path: "/api/lnd/loans",
     table: "lnd_loans",
     label: "Loan",
@@ -19807,7 +19807,7 @@ function registerLendingRoutes(app) {
       }
     }
   });
-  app.post("/api/lnd/loans/:id/repayments", authenticate, requireAnyPermission(Permission.LOAN_POST), requireModule("LND", "command"), async (req, res) => {
+  app2.post("/api/lnd/loans/:id/repayments", authenticate, requireAnyPermission(Permission.LOAN_POST), requireModule("LND", "command"), async (req, res) => {
     const b = req.body || {};
     const paymentDate = b.payment_date ? dateOnly(b.payment_date, "payment_date") : todayIso();
     if (!/^\d+(\.\d{1,2})?$/.test(String(b.amount ?? "")) || !new Money(String(b.amount)).isPositive())
@@ -19867,16 +19867,16 @@ function registerLendingRoutes(app) {
     });
     return ok(req, res, out, 201);
   });
-  app.post("/api/lnd/interest/accrue", authenticate, requireAnyPermission(Permission.LOAN_POST), requireModule("LND", "command"), async (req, res) => {
+  app2.post("/api/lnd/interest/accrue", authenticate, requireAnyPermission(Permission.LOAN_POST), requireModule("LND", "command"), async (req, res) => {
     const asOf = req.body?.as_of ? dateOnly(req.body.as_of, "as_of") : todayIso();
     return ok(req, res, await unitOfWork(req, (ctx) => accrueInterest(ctx, asOf)));
   });
-  app.post("/api/lnd/late-fees/assess", authenticate, requireAnyPermission(Permission.LOAN_POST), requireModule("LND", "command"), async (req, res) => {
+  app2.post("/api/lnd/late-fees/assess", authenticate, requireAnyPermission(Permission.LOAN_POST), requireModule("LND", "command"), async (req, res) => {
     const asOf = req.body?.as_of ? dateOnly(req.body.as_of, "as_of") : todayIso();
     const out = await unitOfWork(req, (ctx) => assessLateFees(ctx, asOf));
     return ok(req, res, out);
   });
-  app.get("/api/lnd/summary", authenticate, requireAnyPermission(...VIEW4), async (req, res) => {
+  app2.get("/api/lnd/summary", authenticate, requireAnyPermission(...VIEW4), async (req, res) => {
     const org = req.session.organization_id;
     const l = (await db.query(`SELECT COUNT(*) FILTER (WHERE status='ACTIVE')::int active, COUNT(*) FILTER (WHERE status IN ('SUBMITTED','APPROVED'))::int pipeline, COALESCE(SUM(outstanding_principal) FILTER (WHERE status='ACTIVE'),0)::text outstanding FROM lnd_loans WHERE organization_id = $1`, [org])).rows[0];
     const o = (await db.query(`SELECT COALESCE(SUM(s.principal - s.paid_principal + s.interest - s.paid_interest + s.late_fee - s.paid_late_fee),0)::text overdue, COUNT(DISTINCT s.loan_id)::int overdue_loans FROM lnd_schedule s JOIN lnd_loans l ON l.id = s.loan_id WHERE l.organization_id = $1 AND l.status = 'ACTIVE' AND s.due_date < CURRENT_DATE AND (s.paid_principal < s.principal OR s.paid_interest < s.interest)`, [org])).rows[0];
@@ -20303,7 +20303,7 @@ async function runRule(db2, rule, opts) {
   const now = opts.now || /* @__PURE__ */ new Date();
   const spec = { schedule_kind: rule.schedule_kind, interval_minutes: rule.interval_minutes, run_at_local: String(rule.run_at_local || "06:00"), day_of_month: rule.day_of_month, timezone: rule.timezone };
   const key = opts.occurrence || occurrenceKey(spec, now);
-  const handler2 = JOB_HANDLERS[rule.job_type];
+  const handler = JOB_HANDLERS[rule.job_type];
   const claim = await db2.transaction(async (tx) => {
     const ins = await tx.query(`INSERT INTO automation_runs (organization_id, rule_id, rule_version, occurrence_key, trigger, triggered_by, status, lease_until)
        VALUES ($1,$2,$3,$4,$5,$6,'RUNNING',$7) ON CONFLICT (rule_id, occurrence_key) DO NOTHING RETURNING id, attempts`, [rule.organization_id, rule.id, rule.version, key, opts.trigger, opts.userId ?? null, new Date(now.getTime() + LEASE_MS).toISOString()]);
@@ -20325,11 +20325,11 @@ async function runRule(db2, rule, opts) {
   if ("running" in claim)
     return { run_id: claim.id, status: "SKIPPED_RUNNING" };
   try {
-    if (!handler2)
+    if (!handler)
       throw new Error(`No handler for job type ${rule.job_type}`);
     const config2 = typeof rule.config === "string" ? JSON.parse(rule.config) : rule.config || {};
     const result = await db2.transaction(async (tx) => {
-      const r = await handler2({ q: tx, orgId: rule.organization_id, rule, config: config2, today: localDate(now, rule.timezone || "Asia/Karachi"), now });
+      const r = await handler({ q: tx, orgId: rule.organization_id, rule, config: config2, today: localDate(now, rule.timezone || "Asia/Karachi"), now });
       const alerts = await upsertAlerts(tx, rule.organization_id, rule.id, claim.id, rule.owner_role, r.alerts, r.resolveScope);
       const summary = { ...r.summary, alerts };
       await tx.query(`UPDATE automation_runs SET status = 'SUCCEEDED', finished_at = NOW(), lease_until = NULL, summary = $2 WHERE id = $1`, [claim.id, JSON.stringify(summary)]);
@@ -20410,23 +20410,23 @@ async function validateTemplateLines(orgId, raw) {
     throw validationError(`Accounts must be active posting (leaf) accounts: ${missing.join(", ")}`);
   return { lines, total: dr.toFixed(2) };
 }
-function registerAutomationRoutes(app) {
+function registerAutomationRoutes(app2) {
   const view = requirePermission(Permission.AUTOMATION_VIEW);
   const manage = requirePermission(Permission.AUTOMATION_MANAGE);
   const run = requirePermission(Permission.AUTOMATION_RUN);
   const recurringRead = requireAnyPermission(Permission.AUTOMATION_VIEW, Permission.FINANCE_JOURNAL_CREATE, Permission.FINANCE_JOURNAL_APPROVE);
-  app.get("/api/automation/rules", authenticate, view, async (req, res) => {
+  app2.get("/api/automation/rules", authenticate, view, async (req, res) => {
     const org = req.session.organization_id;
     const r = await db.query(`SELECT r.*, (SELECT COUNT(*) FROM automation_alerts a WHERE a.rule_id = r.id AND a.status <> 'RESOLVED')::int AS open_alerts
          FROM automation_rules r WHERE r.organization_id = $1 ORDER BY r.code`, [org]);
     return ok(req, res, r.rows, 200, { total_count: r.rows.length });
   });
-  app.post("/api/automation/rules/install-defaults", authenticate, manage, async (req, res) => {
+  app2.post("/api/automation/rules/install-defaults", authenticate, manage, async (req, res) => {
     await ensureDefaultRules(db, req.session.organization_id);
     const r = await db.query(`SELECT COUNT(*)::int AS n FROM automation_rules WHERE organization_id = $1`, [req.session.organization_id]);
     return ok(req, res, { rules: r.rows[0].n });
   });
-  app.post("/api/automation/rules/:id", authenticate, manage, async (req, res) => {
+  app2.post("/api/automation/rules/:id", authenticate, manage, async (req, res) => {
     const org = req.session.organization_id;
     const out = await db.transaction(async (tx) => {
       const before = await requireOrgRow(tx, "automation_rules", req.params.id, org, "Automation rule", { forUpdate: true });
@@ -20469,7 +20469,7 @@ function registerAutomationRoutes(app) {
     return ok(req, res, out);
   });
   for (const action of ["pause", "resume"]) {
-    app.post(`/api/automation/rules/:id/${action}`, authenticate, manage, async (req, res) => {
+    app2.post(`/api/automation/rules/:id/${action}`, authenticate, manage, async (req, res) => {
       const org = req.session.organization_id;
       const reason = optionalStr(req.body?.reason, "reason", 500);
       const out = await db.transaction(async (tx) => {
@@ -20483,7 +20483,7 @@ function registerAutomationRoutes(app) {
       return ok(req, res, out);
     });
   }
-  app.post("/api/automation/rules/:id/run", authenticate, run, async (req, res) => {
+  app2.post("/api/automation/rules/:id/run", authenticate, run, async (req, res) => {
     const org = req.session.organization_id;
     const rule = await requireOrgRow(db, "automation_rules", req.params.id, org, "Automation rule");
     if (!rule.is_active)
@@ -20491,12 +20491,12 @@ function registerAutomationRoutes(app) {
     const outcome = await runRule(db, rule, { trigger: "MANUAL", userId: req.session.user_id, occurrence: `MANUAL:${crypto23.randomUUID()}` });
     return ok(req, res, outcome, outcome.status === "SUCCEEDED" ? 200 : 207);
   });
-  app.post("/api/automation/tick", authenticate, run, async (req, res) => {
+  app2.post("/api/automation/tick", authenticate, run, async (req, res) => {
     await ensureDefaultRules(db, req.session.organization_id);
     const results = await tick(db, /* @__PURE__ */ new Date(), req.session.organization_id);
     return ok(req, res, results);
   });
-  app.get("/api/automation/runs", authenticate, view, async (req, res) => {
+  app2.get("/api/automation/runs", authenticate, view, async (req, res) => {
     const org = req.session.organization_id;
     const params = [org];
     let where = "ar.organization_id = $1";
@@ -20513,7 +20513,7 @@ function registerAutomationRoutes(app) {
         WHERE ${where} ORDER BY ar.started_at DESC LIMIT ${limit}`, params);
     return ok(req, res, r.rows, 200, { total_count: r.rows.length });
   });
-  app.get("/api/automation/alerts", authenticate, view, async (req, res) => {
+  app2.get("/api/automation/alerts", authenticate, view, async (req, res) => {
     const org = req.session.organization_id;
     const params = [org];
     let where = "a.organization_id = $1";
@@ -20534,7 +20534,7 @@ function registerAutomationRoutes(app) {
     return ok(req, res, r.rows, 200, { total_count: r.rows.length, open_by_severity: Object.fromEntries(counts.rows.map((c) => [c.severity, c.n])) });
   });
   for (const action of ["acknowledge", "resolve"]) {
-    app.post(`/api/automation/alerts/:id/${action}`, authenticate, view, async (req, res) => {
+    app2.post(`/api/automation/alerts/:id/${action}`, authenticate, view, async (req, res) => {
       const org = req.session.organization_id;
       const note = optionalStr(req.body?.note, "note", 1e3);
       const out = await db.transaction(async (tx) => {
@@ -20550,13 +20550,13 @@ function registerAutomationRoutes(app) {
       return ok(req, res, out);
     });
   }
-  app.get("/api/automation/recurring-journals", authenticate, recurringRead, async (req, res) => {
+  app2.get("/api/automation/recurring-journals", authenticate, recurringRead, async (req, res) => {
     const r = await db.query(`SELECT t.*, cu.name AS created_by_name, au.name AS approved_by_name, j.journal_number AS last_journal_number
          FROM recurring_journal_templates t LEFT JOIN users cu ON cu.id = t.created_by LEFT JOIN users au ON au.id = t.approved_by
          LEFT JOIN journals j ON j.id = t.last_journal_id WHERE t.organization_id = $1 ORDER BY t.code`, [req.session.organization_id]);
     return ok(req, res, r.rows, 200, { total_count: r.rows.length });
   });
-  app.post("/api/automation/recurring-journals", authenticate, requirePermission(Permission.FINANCE_JOURNAL_CREATE), async (req, res) => {
+  app2.post("/api/automation/recurring-journals", authenticate, requirePermission(Permission.FINANCE_JOURNAL_CREATE), async (req, res) => {
     const org = req.session.organization_id;
     const code = str(req.body?.code, "code", { max: 64 }).toUpperCase();
     const name = str(req.body?.name, "name", { max: 255 });
@@ -20589,7 +20589,7 @@ function registerAutomationRoutes(app) {
     });
     return ok(req, res, out, 201);
   });
-  app.post("/api/automation/recurring-journals/:id/approve", authenticate, requirePermission(Permission.FINANCE_JOURNAL_APPROVE), async (req, res) => {
+  app2.post("/api/automation/recurring-journals/:id/approve", authenticate, requirePermission(Permission.FINANCE_JOURNAL_APPROVE), async (req, res) => {
     const org = req.session.organization_id;
     const out = await db.transaction(async (tx) => {
       const t = await requireOrgRow(tx, "recurring_journal_templates", req.params.id, org, "Recurring journal template", { forUpdate: true });
@@ -20604,7 +20604,7 @@ function registerAutomationRoutes(app) {
     return ok(req, res, out);
   });
   for (const action of ["pause", "end"]) {
-    app.post(`/api/automation/recurring-journals/:id/${action}`, authenticate, requireAnyPermission(Permission.FINANCE_JOURNAL_APPROVE, Permission.AUTOMATION_MANAGE), async (req, res) => {
+    app2.post(`/api/automation/recurring-journals/:id/${action}`, authenticate, requireAnyPermission(Permission.FINANCE_JOURNAL_APPROVE, Permission.AUTOMATION_MANAGE), async (req, res) => {
       const org = req.session.organization_id;
       const out = await db.transaction(async (tx) => {
         const t = await requireOrgRow(tx, "recurring_journal_templates", req.params.id, org, "Recurring journal template", { forUpdate: true });
@@ -20632,8 +20632,8 @@ init_numbering();
 init_validate();
 init_stock();
 import crypto24 from "node:crypto";
-function registerQualityRoutes(app) {
-  app.get("/api/quality/plans", authenticate, requirePermission(Permission.QUALITY_PLAN_MANAGE), async (req, res) => {
+function registerQualityRoutes(app2) {
+  app2.get("/api/quality/plans", authenticate, requirePermission(Permission.QUALITY_PLAN_MANAGE), async (req, res) => {
     const plansRes = await db.query(`SELECT qp.*, i.name as item_name, i.code as item_code 
        FROM quality_inspection_plans qp 
        LEFT JOIN items i ON i.id = qp.item_id 
@@ -20660,7 +20660,7 @@ function registerQualityRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/quality/plans", authenticate, requirePermission(Permission.QUALITY_PLAN_MANAGE), async (req, res) => {
+  app2.post("/api/quality/plans", authenticate, requirePermission(Permission.QUALITY_PLAN_MANAGE), async (req, res) => {
     const { plan_code, name, item_id, inspection_type, sample_size, params } = req.body;
     if (!plan_code || !name) {
       return res.status(400).json({
@@ -20705,7 +20705,7 @@ function registerQualityRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.get("/api/quality/lots", authenticate, requirePermission(Permission.QUALITY_INSPECT), async (req, res) => {
+  app2.get("/api/quality/lots", authenticate, requirePermission(Permission.QUALITY_INSPECT), async (req, res) => {
     const lotsRes = await db.query(`SELECT ql.*, i.name as item_name, i.code as item_code, u.name as inspector_name, sp.name AS supplier_name, po.po_number
        FROM quality_inspection_lots ql 
        JOIN items i ON i.id = ql.item_id 
@@ -20734,7 +20734,7 @@ function registerQualityRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/quality/lots", authenticate, requirePermission(Permission.QUALITY_INSPECT), async (req, res) => {
+  app2.post("/api/quality/lots", authenticate, requirePermission(Permission.QUALITY_INSPECT), async (req, res) => {
     const { lot_number, item_id, batch_number, quantity, purchase_order_id } = req.body;
     let { source_type, source_id } = req.body;
     if (!item_id || !quantity) {
@@ -20779,7 +20779,7 @@ function registerQualityRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/quality/lots/:id/inspect", authenticate, requirePermission(Permission.QUALITY_INSPECT), async (req, res) => {
+  app2.post("/api/quality/lots/:id/inspect", authenticate, requirePermission(Permission.QUALITY_INSPECT), async (req, res) => {
     const { id } = req.params;
     const { results, usage_decision_notes } = req.body;
     const lotRes = await db.query(`SELECT * FROM quality_inspection_lots WHERE id = $1 AND organization_id = $2`, [id, req.session.organization_id]);
@@ -20825,7 +20825,7 @@ function registerQualityRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.get("/api/quality/ncr", authenticate, requirePermission(Permission.QUALITY_NCR_MANAGE), async (req, res) => {
+  app2.get("/api/quality/ncr", authenticate, requirePermission(Permission.QUALITY_NCR_MANAGE), async (req, res) => {
     const result = await db.query(`SELECT ncr.*, ql.lot_number, i.name as item_name, i.code as item_code 
        FROM quality_non_conformance_reports ncr 
        JOIN quality_inspection_lots ql ON ql.id = ncr.lot_id 
@@ -20838,7 +20838,7 @@ function registerQualityRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/quality/ncr", authenticate, requirePermission(Permission.QUALITY_NCR_MANAGE), async (req, res) => {
+  app2.post("/api/quality/ncr", authenticate, requirePermission(Permission.QUALITY_NCR_MANAGE), async (req, res) => {
     const { lot_id, defect_severity, root_cause, corrective_action, disposition } = req.body;
     if (!lot_id) {
       return res.status(400).json({
@@ -20875,7 +20875,7 @@ function registerQualityRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/quality/ncr/:id/scrap", authenticate, requirePermission(Permission.QUALITY_NCR_MANAGE), async (req, res) => {
+  app2.post("/api/quality/ncr/:id/scrap", authenticate, requirePermission(Permission.QUALITY_NCR_MANAGE), async (req, res) => {
     const { id } = req.params;
     const ncrRes = await db.query(`SELECT ncr.*, ql.quantity, ql.lot_number, i.code as item_code, i.name as item_name, i.unit_cost 
        FROM quality_non_conformance_reports ncr 
@@ -20951,7 +20951,7 @@ function registerQualityRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.get("/api/quality/coa", authenticate, requirePermission(Permission.QUALITY_COA_MANAGE), async (req, res) => {
+  app2.get("/api/quality/coa", authenticate, requirePermission(Permission.QUALITY_COA_MANAGE), async (req, res) => {
     const result = await db.query(`SELECT coa.*, ql.lot_number, i.name as item_name, i.code as item_code, p.name as customer_name 
        FROM quality_certificates_of_analysis coa 
        JOIN quality_inspection_lots ql ON ql.id = coa.lot_id 
@@ -20965,7 +20965,7 @@ function registerQualityRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/quality/coa", authenticate, requirePermission(Permission.QUALITY_COA_MANAGE), async (req, res) => {
+  app2.post("/api/quality/coa", authenticate, requirePermission(Permission.QUALITY_COA_MANAGE), async (req, res) => {
     const { lot_id, customer_id, issue_date, certified_by } = req.body;
     if (!lot_id) {
       return res.status(400).json({
@@ -21013,8 +21013,8 @@ init_numbering();
 init_validate();
 init_stock();
 import crypto25 from "node:crypto";
-function registerMaintenanceRoutes(app) {
-  app.get("/api/maintenance/equipment", authenticate, requirePermission(Permission.EQUIPMENT_MANAGE), async (req, res) => {
+function registerMaintenanceRoutes(app2) {
+  app2.get("/api/maintenance/equipment", authenticate, requirePermission(Permission.EQUIPMENT_MANAGE), async (req, res) => {
     const result = await db.query(`SELECT me.*, fa.name as fixed_asset_name 
        FROM maintenance_equipment me 
        LEFT JOIN fixed_assets fa ON fa.id = me.fixed_asset_id 
@@ -21026,7 +21026,7 @@ function registerMaintenanceRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/maintenance/equipment", authenticate, requirePermission(Permission.EQUIPMENT_MANAGE), async (req, res) => {
+  app2.post("/api/maintenance/equipment", authenticate, requirePermission(Permission.EQUIPMENT_MANAGE), async (req, res) => {
     const { equipment_code, name, fixed_asset_id, category, location, criticality, serial_number } = req.body;
     if (!equipment_code || !name) {
       return res.status(400).json({
@@ -21055,7 +21055,7 @@ function registerMaintenanceRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.get("/api/maintenance/schedules", authenticate, requirePermission(Permission.PM_SCHEDULE_MANAGE), async (req, res) => {
+  app2.get("/api/maintenance/schedules", authenticate, requirePermission(Permission.PM_SCHEDULE_MANAGE), async (req, res) => {
     const result = await db.query(`SELECT ps.*, me.name as equipment_name, me.equipment_code 
        FROM pm_schedules ps 
        JOIN maintenance_equipment me ON me.id = ps.equipment_id 
@@ -21067,7 +21067,7 @@ function registerMaintenanceRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/maintenance/schedules", authenticate, requirePermission(Permission.PM_SCHEDULE_MANAGE), async (req, res) => {
+  app2.post("/api/maintenance/schedules", authenticate, requirePermission(Permission.PM_SCHEDULE_MANAGE), async (req, res) => {
     const { equipment_id, schedule_name, frequency_type, frequency_interval, next_due_date } = req.body;
     if (!equipment_id || !schedule_name || !frequency_interval) {
       return res.status(400).json({
@@ -21094,7 +21094,7 @@ function registerMaintenanceRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.get("/api/maintenance/work-orders", authenticate, requirePermission(Permission.MAINT_WORK_ORDER_MANAGE), async (req, res) => {
+  app2.get("/api/maintenance/work-orders", authenticate, requirePermission(Permission.MAINT_WORK_ORDER_MANAGE), async (req, res) => {
     const woRes = await db.query(`SELECT wo.*, me.name as equipment_name, me.equipment_code 
        FROM maintenance_work_orders wo 
        JOIN maintenance_equipment me ON me.id = wo.equipment_id 
@@ -21132,7 +21132,7 @@ function registerMaintenanceRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/maintenance/work-orders", authenticate, requirePermission(Permission.MAINT_WORK_ORDER_MANAGE), async (req, res) => {
+  app2.post("/api/maintenance/work-orders", authenticate, requirePermission(Permission.MAINT_WORK_ORDER_MANAGE), async (req, res) => {
     const { equipment_id, pm_schedule_id, order_type, priority, description, failure_code, start_date, parts, labor } = req.body;
     if (!equipment_id || !description) {
       return res.status(400).json({
@@ -21192,7 +21192,7 @@ function registerMaintenanceRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/maintenance/work-orders/:id/complete", authenticate, requirePermission(Permission.MAINT_WORK_ORDER_MANAGE), async (req, res) => {
+  app2.post("/api/maintenance/work-orders/:id/complete", authenticate, requirePermission(Permission.MAINT_WORK_ORDER_MANAGE), async (req, res) => {
     const { id } = req.params;
     const { downtime_hours } = req.body;
     const woRes = await db.query(`SELECT wo.*, me.equipment_code, me.name as equipment_name 
@@ -21274,7 +21274,7 @@ function registerMaintenanceRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.get("/api/maintenance/calibrations", authenticate, requirePermission(Permission.CALIBRATION_MANAGE), async (req, res) => {
+  app2.get("/api/maintenance/calibrations", authenticate, requirePermission(Permission.CALIBRATION_MANAGE), async (req, res) => {
     const result = await db.query(`SELECT ec.*, me.name as equipment_name, me.equipment_code 
        FROM equipment_calibrations ec 
        JOIN maintenance_equipment me ON me.id = ec.equipment_id 
@@ -21286,7 +21286,7 @@ function registerMaintenanceRoutes(app) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
-  app.post("/api/maintenance/calibrations", authenticate, requirePermission(Permission.CALIBRATION_MANAGE), async (req, res) => {
+  app2.post("/api/maintenance/calibrations", authenticate, requirePermission(Permission.CALIBRATION_MANAGE), async (req, res) => {
     const { equipment_id, calibration_certificate_no, calibration_date, expiry_date, calibration_agency, result, notes } = req.body;
     if (!equipment_id || !calibration_certificate_no) {
       return res.status(400).json({
@@ -21892,8 +21892,8 @@ registerSeeder("HRM_WORKMAN_EXTRA", async (q, c) => {
 });
 
 // apps/api/dist/routes/admin.js
-function registerAdminRoutes(app) {
-  app.post("/api/admin/seed", authenticate, requirePermission(Permission.ORG_MANAGE), async (req, res) => {
+function registerAdminRoutes(app2) {
+  app2.post("/api/admin/seed", authenticate, requirePermission(Permission.ORG_MANAGE), async (req, res) => {
     if (process.env.NODE_ENV === "production" && process.env.OMNYSYNC_DEMO_MODE !== "true") {
       throw new ApiError(403, ErrorCode.MODULE_NOT_READY, "Synthetic seeding is only available in demo/sandbox installations");
     }
@@ -21936,8 +21936,8 @@ async function ledgerTax(q, org, from, to) {
   const input = (by.get("114001") || Money.zero()).negated().round(2);
   return { output: output.toFixed(2), input: input.toFixed(2), net: output.sub(input).toFixed(2) };
 }
-function registerTaxRoutes(app) {
-  defineResource(app, {
+function registerTaxRoutes(app2) {
+  defineResource(app2, {
     path: "/api/tax/codes",
     table: "tax_codes",
     label: "Tax code",
@@ -21974,7 +21974,7 @@ function registerTaxRoutes(app) {
     },
     commands: { retire: { from: ["ACTIVE"], to: "RETIRED", permission: Permission.TAX_MANAGE } }
   });
-  app.post("/api/tax/calculate", authenticate, requireAnyPermission(Permission.TAX_VIEW, Permission.TAX_MANAGE), async (req, res) => {
+  app2.post("/api/tax/calculate", authenticate, requireAnyPermission(Permission.TAX_VIEW, Permission.TAX_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const lines = arrayOf(req.body?.lines, "lines", { min: 1, max: 200 });
     const codes = (await db.query(`SELECT * FROM tax_codes WHERE organization_id = $1`, [org])).rows;
@@ -21994,7 +21994,7 @@ function registerTaxRoutes(app) {
     });
     return ok(req, res, { lines: out, total_net: net.toFixed(2), total_tax: tax.toFixed(2), total_gross: net.add(tax).toFixed(2) });
   });
-  app.get("/api/tax/summary", authenticate, requireAnyPermission(Permission.TAX_VIEW, Permission.TAX_MANAGE), async (req, res) => {
+  app2.get("/api/tax/summary", authenticate, requireAnyPermission(Permission.TAX_VIEW, Permission.TAX_MANAGE), async (req, res) => {
     const org = req.session.organization_id;
     const y = todayIso().slice(0, 7);
     const t = await ledgerTax(db, org, `${y}-01`, todayIso());
@@ -22002,7 +22002,7 @@ function registerTaxRoutes(app) {
     const codes = (await db.query(`SELECT COUNT(*)::int n FROM tax_codes WHERE organization_id = $1 AND status = 'ACTIVE'`, [org])).rows[0].n;
     return ok(req, res, { month_to_date: t, returns: Object.fromEntries(counts.map((c) => [c.status, c.n])), active_codes: codes });
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/tax/returns",
     table: "tax_returns",
     label: "Tax return",
@@ -22158,15 +22158,15 @@ async function addBinQty(q, org, binId, itemId, delta, type, user, refType, refI
     user
   ]);
 }
-function registerWmsRoutes(app) {
-  app.get("/api/wms/bins", authenticate, requireAnyPermission(...WMS_READ), async (req, res) => {
+function registerWmsRoutes(app2) {
+  app2.get("/api/wms/bins", authenticate, requireAnyPermission(...WMS_READ), async (req, res) => {
     const r = await db.query(`SELECT b.id, b.bin_code, b.bin_type, b.capacity_qty, b.is_active, w.id AS warehouse_id, w.code AS warehouse_code, w.name AS warehouse_name,
               COALESCE((SELECT SUM(quantity) FROM bin_stock bs WHERE bs.bin_id = b.id),0)::text AS total_qty,
               (SELECT COUNT(*)::int FROM bin_stock bs WHERE bs.bin_id = b.id AND bs.quantity > 0) AS sku_count
        FROM warehouse_bins b JOIN warehouses w ON w.id = b.warehouse_id WHERE w.organization_id = $1 ORDER BY w.code, b.bin_code`, [req.session.organization_id]);
     return ok(req, res, r.rows.map((x) => ({ ...x, code: x.bin_code, status: x.is_active ? "ACTIVE" : "INACTIVE" })));
   });
-  app.post("/api/wms/bins", authenticate, requirePermission(Permission.WMS_MANAGE), requireModule("WMS", "create"), async (req, res) => {
+  app2.post("/api/wms/bins", authenticate, requirePermission(Permission.WMS_MANAGE), requireModule("WMS", "create"), async (req, res) => {
     const out = await unitOfWork(req, async (ctx) => {
       const wh = await loadRow(ctx.tx, "warehouses", req.body?.warehouse_id, ctx.org, "Warehouse");
       const code = str(req.body?.bin_code, "bin_code", { max: 32, pattern: /^[A-Z0-9-]+$/ });
@@ -22178,14 +22178,14 @@ function registerWmsRoutes(app) {
     });
     return ok(req, res, out, 201);
   });
-  app.get("/api/wms/bin-stock", authenticate, requireAnyPermission(...WMS_READ), async (req, res) => {
+  app2.get("/api/wms/bin-stock", authenticate, requireAnyPermission(...WMS_READ), async (req, res) => {
     const org = req.session.organization_id;
     const r = await db.query(`SELECT bs.bin_id || ':' || bs.item_id AS id, bs.quantity, b.bin_code, b.bin_type, w.code AS warehouse_code, i.code AS item_code, i.name AS item_name, bs.updated_at
        FROM bin_stock bs JOIN warehouse_bins b ON b.id = bs.bin_id JOIN warehouses w ON w.id = b.warehouse_id JOIN items i ON i.id = bs.item_id
        WHERE bs.organization_id = $1 AND bs.quantity > 0 ORDER BY w.code, b.bin_code, i.code`, [org]);
     return ok(req, res, r.rows);
   });
-  app.get("/api/wms/unbinned", authenticate, requireAnyPermission(...WMS_READ), async (req, res) => {
+  app2.get("/api/wms/unbinned", authenticate, requireAnyPermission(...WMS_READ), async (req, res) => {
     const org = req.session.organization_id;
     const whs = (await db.query(`SELECT id, code FROM warehouses WHERE organization_id = $1 AND is_active`, [org])).rows;
     const items = (await db.query(`SELECT id, code, name FROM items WHERE organization_id = $1 AND item_type = 'INVENTORY' ORDER BY code`, [org])).rows;
@@ -22202,7 +22202,7 @@ function registerWmsRoutes(app) {
       }
     return ok(req, res, out);
   });
-  app.post("/api/wms/putaway", authenticate, requireAnyPermission(Permission.WMS_MANAGE, Permission.WMS_PICK), requireModule("WMS"), async (req, res) => {
+  app2.post("/api/wms/putaway", authenticate, requireAnyPermission(Permission.WMS_MANAGE, Permission.WMS_PICK), requireModule("WMS"), async (req, res) => {
     const out = await unitOfWork(req, async (ctx) => {
       const bin = await loadBin(ctx.tx, ctx.org, req.body?.bin_id);
       const item = await loadRow(ctx.tx, "items", req.body?.item_id, ctx.org, "Item", true);
@@ -22225,7 +22225,7 @@ function registerWmsRoutes(app) {
     });
     return ok(req, res, out);
   });
-  app.post("/api/wms/move", authenticate, requireAnyPermission(Permission.WMS_MANAGE, Permission.WMS_PICK), requireModule("WMS"), async (req, res) => {
+  app2.post("/api/wms/move", authenticate, requireAnyPermission(Permission.WMS_MANAGE, Permission.WMS_PICK), requireModule("WMS"), async (req, res) => {
     const out = await unitOfWork(req, async (ctx) => {
       const from = await loadBin(ctx.tx, ctx.org, req.body?.from_bin_id);
       const to = await loadBin(ctx.tx, ctx.org, req.body?.to_bin_id);
@@ -22242,7 +22242,7 @@ function registerWmsRoutes(app) {
     });
     return ok(req, res, out);
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/wms/pick-lists",
     table: "pick_lists",
     label: "Pick list",
@@ -22273,7 +22273,7 @@ function registerWmsRoutes(app) {
       cancel: { from: ["OPEN", "PICKING"], to: "CANCELLED", permission: Permission.WMS_MANAGE }
     }
   });
-  app.post("/api/wms/pick-lists/generate", authenticate, requireAnyPermission(Permission.WMS_MANAGE, Permission.WMS_PICK), requireModule("WMS", "create"), async (req, res) => {
+  app2.post("/api/wms/pick-lists/generate", authenticate, requireAnyPermission(Permission.WMS_MANAGE, Permission.WMS_PICK), requireModule("WMS", "create"), async (req, res) => {
     const out = await unitOfWork(req, async (ctx) => {
       const so = await loadRow(ctx.tx, "sales_orders", req.body?.sales_order_id, ctx.org, "Sales order", true);
       if (so.status !== "CONFIRMED")
@@ -22307,7 +22307,7 @@ function registerWmsRoutes(app) {
     });
     return ok(req, res, out, 201);
   });
-  app.post("/api/wms/pick-lists/:id/lines/:lineId/confirm", authenticate, requireAnyPermission(Permission.WMS_PICK, Permission.WMS_MANAGE), requireModule("WMS"), async (req, res) => {
+  app2.post("/api/wms/pick-lists/:id/lines/:lineId/confirm", authenticate, requireAnyPermission(Permission.WMS_PICK, Permission.WMS_MANAGE), requireModule("WMS"), async (req, res) => {
     const out = await unitOfWork(req, async (ctx) => {
       const pl = await loadRow(ctx.tx, "pick_lists", req.params.id, ctx.org, "Pick list", true);
       if (pl.status !== "PICKING")
@@ -22483,8 +22483,8 @@ async function processEvents(db2, orgId) {
 // apps/api/dist/routes/automation-events.js
 var VIEW7 = [Permission.AUTOMATION_VIEW, Permission.AUTOMATION_MANAGE];
 var parse = (v) => typeof v === "string" ? JSON.parse(v) : v;
-function registerAutomationEventRoutes(app) {
-  app.get("/api/automation/event-catalog", authenticate, requireAnyPermission(...VIEW7), async (req, res) => {
+function registerAutomationEventRoutes(app2) {
+  app2.get("/api/automation/event-catalog", authenticate, requireAnyPermission(...VIEW7), async (req, res) => {
     const r = await db.query(`SELECT event_type, COUNT(*)::int AS count, MAX(created_at) AS last_seen FROM outbox_events WHERE organization_id = $1 GROUP BY event_type ORDER BY event_type`, [req.session.organization_id]);
     const out = [];
     for (const row of r.rows) {
@@ -22494,7 +22494,7 @@ function registerAutomationEventRoutes(app) {
     }
     return ok(req, res, out);
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/automation/event-rules",
     table: "automation_event_rules",
     label: "Event rule",
@@ -22546,7 +22546,7 @@ function registerAutomationEventRoutes(app) {
       pause: { from: ["PUBLISHED"], to: "PAUSED", permission: Permission.AUTOMATION_MANAGE }
     }
   });
-  app.post("/api/automation/event-rules/simulate", authenticate, requireAnyPermission(...VIEW7), async (req, res) => {
+  app2.post("/api/automation/event-rules/simulate", authenticate, requireAnyPermission(...VIEW7), async (req, res) => {
     const def = { event_type: req.body?.event_type, conditions: req.body?.conditions || [], actions: req.body?.actions || [] };
     const errs = validateDefinition(def);
     if (errs.length)
@@ -22559,16 +22559,16 @@ function registerAutomationEventRoutes(app) {
     });
     return ok(req, res, { evaluated: results.length, matched: results.filter((r) => r.matched).length, results });
   });
-  app.post("/api/automation/events/process", authenticate, requirePermission(Permission.AUTOMATION_RUN), async (req, res) => {
+  app2.post("/api/automation/events/process", authenticate, requirePermission(Permission.AUTOMATION_RUN), async (req, res) => {
     return ok(req, res, await processEvents(db, req.session.organization_id));
   });
-  app.get("/api/automation/tasks", authenticate, requireAnyPermission(...VIEW7), async (req, res) => {
+  app2.get("/api/automation/tasks", authenticate, requireAnyPermission(...VIEW7), async (req, res) => {
     const status = typeof req.query.status === "string" && req.query.status ? req.query.status : "OPEN";
     const r = await db.query(`SELECT t.*, r.code AS rule_code, r.name AS rule_name FROM automation_tasks t LEFT JOIN automation_event_rules r ON r.id = t.rule_id
        WHERE t.organization_id = $1 AND t.status = $2 ORDER BY t.due_date NULLS LAST, t.created_at DESC LIMIT 200`, [req.session.organization_id, status]);
     return ok(req, res, r.rows);
   });
-  app.post("/api/automation/tasks/:id/complete", authenticate, requireAnyPermission(...VIEW7), async (req, res) => {
+  app2.post("/api/automation/tasks/:id/complete", authenticate, requireAnyPermission(...VIEW7), async (req, res) => {
     const out = await unitOfWork(req, async (ctx) => {
       const r = await ctx.tx.query(`UPDATE automation_tasks SET status = 'DONE', completed_by = $3, completed_at = NOW() WHERE id::text = $1 AND organization_id = $2 AND status = 'OPEN' RETURNING *`, [req.params.id, ctx.org, ctx.user]);
       if (!r.rows[0]) {
@@ -22646,8 +22646,8 @@ async function recompute(q, org, sheet) {
   await q.query(`UPDATE tim_timesheets SET total_hours = $2, overtime_hours = $3, cost_amount = $4, revision = revision + 1, updated_at = NOW() WHERE id = $1`, [sheet.id, t.total_hours, t.overtime_hours, t.cost_amount]);
   return t;
 }
-function registerTimeRoutes(app) {
-  defineResource(app, {
+function registerTimeRoutes(app2) {
+  defineResource(app2, {
     path: "/api/time/timesheets",
     table: "tim_timesheets",
     label: "Timesheet",
@@ -22742,7 +22742,7 @@ function registerTimeRoutes(app) {
       }
     }
   });
-  app.post("/api/time/timesheets/:id/entries", authenticate, requireAnyPermission(Permission.TIME_SUBMIT), requireModule("TIM"), async (req, res) => {
+  app2.post("/api/time/timesheets/:id/entries", authenticate, requireAnyPermission(Permission.TIME_SUBMIT), requireModule("TIM"), async (req, res) => {
     const out = await unitOfWork(req, async (ctx) => {
       const sheet = await loadRow(ctx.tx, "tim_timesheets", req.params.id, ctx.org, "Timesheet", true);
       await assertOwnEmployee(ctx, sheet.employee_id);
@@ -22775,7 +22775,7 @@ function registerTimeRoutes(app) {
     });
     return ok(req, res, out, 201);
   });
-  app.post("/api/time/entries/:id/delete", authenticate, requireAnyPermission(Permission.TIME_SUBMIT), requireModule("TIM"), async (req, res) => {
+  app2.post("/api/time/entries/:id/delete", authenticate, requireAnyPermission(Permission.TIME_SUBMIT), requireModule("TIM"), async (req, res) => {
     const out = await unitOfWork(req, async (ctx) => {
       const e = (await ctx.tx.query(`SELECT * FROM tim_entries WHERE id::text = $1 AND organization_id = $2`, [req.params.id, ctx.org])).rows[0];
       if (!e)
@@ -22790,7 +22790,7 @@ function registerTimeRoutes(app) {
     });
     return ok(req, res, out);
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/time/leave",
     table: "tim_leave_requests",
     label: "Leave request",
@@ -22837,7 +22837,7 @@ function registerTimeRoutes(app) {
       cancel: { from: ["REQUESTED", "APPROVED"], to: "CANCELLED", permission: Permission.TIME_SUBMIT }
     }
   });
-  app.get("/api/time/employees", authenticate, requireAnyPermission(...VIEW8), async (req, res) => {
+  app2.get("/api/time/employees", authenticate, requireAnyPermission(...VIEW8), async (req, res) => {
     const org = req.session.organization_id;
     const self = isSelfService(req.session.permissions);
     const search = typeof req.query.search === "string" ? `%${req.query.search.slice(0, 80)}%` : null;
@@ -22847,7 +22847,7 @@ function registerTimeRoutes(app) {
        ORDER BY employee_number LIMIT 100`, [org, self ? req.session.user_id : null, search]);
     return ok(req, res, r.rows);
   });
-  app.get("/api/time/summary", authenticate, requireAnyPermission(...VIEW8), async (req, res) => {
+  app2.get("/api/time/summary", authenticate, requireAnyPermission(...VIEW8), async (req, res) => {
     const org = req.session.organization_id;
     const own = isSelfService(req.session.permissions) ? req.session.user_id : null;
     const scope = `AND ($2::uuid IS NULL OR employee_id IN (SELECT id FROM employees WHERE user_id = $2::uuid))`;
@@ -22878,8 +22878,8 @@ async function addEvent(ctx, shipmentId, e) {
      ON CONFLICT (shipment_id, event_at, code) DO NOTHING RETURNING *`, [ctx.org, shipmentId, e.event_at, e.code, e.location ?? null, e.note ?? null, e.source || "MANUAL", ctx.user]);
   return r.rows[0] || null;
 }
-function registerLogisticsRoutes(app) {
-  defineResource(app, {
+function registerLogisticsRoutes(app2) {
+  defineResource(app2, {
     path: "/api/log/carriers",
     table: "log_carriers",
     label: "Carrier",
@@ -22910,7 +22910,7 @@ function registerLogisticsRoutes(app) {
     },
     commands: { deactivate: { from: ["ACTIVE"], to: "INACTIVE" }, activate: { from: ["INACTIVE"], to: "ACTIVE" } }
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/log/shipments",
     table: "log_shipments",
     label: "Shipment",
@@ -23057,7 +23057,7 @@ function registerLogisticsRoutes(app) {
       }
     }
   });
-  app.post("/api/log/shipments/:id/events", authenticate, requireAnyPermission(Permission.LOGISTICS_MANAGE), requireModule("LOG"), async (req, res) => {
+  app2.post("/api/log/shipments/:id/events", authenticate, requireAnyPermission(Permission.LOGISTICS_MANAGE), requireModule("LOG"), async (req, res) => {
     const out = await unitOfWork(req, async (ctx) => {
       const s = await loadRow(ctx.tx, "log_shipments", req.params.id, ctx.org, "Shipment", true);
       if (["PLANNED", "CANCELLED", "DELIVERED"].includes(s.status))
@@ -23077,7 +23077,7 @@ function registerLogisticsRoutes(app) {
     });
     return ok(req, res, out, out.replayed ? 200 : 201);
   });
-  app.get("/api/log/summary", authenticate, requireAnyPermission(...VIEW9), async (req, res) => {
+  app2.get("/api/log/summary", authenticate, requireAnyPermission(...VIEW9), async (req, res) => {
     const org = req.session.organization_id;
     const r = (await db.query(`SELECT COUNT(*) FILTER (WHERE status IN ('BOOKED','IN_TRANSIT'))::int in_flight, COUNT(*) FILTER (WHERE status = 'EXCEPTION')::int exceptions,
           COUNT(*) FILTER (WHERE status NOT IN ('DELIVERED','CANCELLED') AND promised_date < CURRENT_DATE)::int late,
@@ -23225,13 +23225,13 @@ function window(query) {
   const from = query.from ? dateOnly(query.from, "from") : `${to.slice(0, 4)}-01-01`;
   return { from, to };
 }
-function registerBiRoutes(app) {
+function registerBiRoutes(app2) {
   const VIEW14 = [Permission.BI_VIEW, Permission.BI_MANAGE];
-  app.get("/api/bi/datasets", authenticate, requireAnyPermission(...VIEW14), async (req, res) => {
+  app2.get("/api/bi/datasets", authenticate, requireAnyPermission(...VIEW14), async (req, res) => {
     const perms2 = req.session.permissions;
     return ok(req, res, DATASETS.map(({ sql: _sql, ...d }) => ({ ...d, readable: canRead(perms2, d) })));
   });
-  app.get("/api/bi/datasets/:code/query", authenticate, requireAnyPermission(...VIEW14), async (req, res) => {
+  app2.get("/api/bi/datasets/:code/query", authenticate, requireAnyPermission(...VIEW14), async (req, res) => {
     const d = datasetByCode(req.params.code);
     if (!d)
       throw notFound("Dataset");
@@ -23247,7 +23247,7 @@ function registerBiRoutes(app) {
     }
     return ok(req, res, { dataset: d.code, from, to, dimension: d.dimension, measures: d.measures, rows });
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/bi/dashboards",
     table: "bi_dashboards",
     label: "Dashboard",
@@ -23285,7 +23285,7 @@ function registerBiRoutes(app) {
     },
     commands: { archive: { from: ["ACTIVE"], to: "ARCHIVED", permission: Permission.BI_MANAGE }, restore: { from: ["ARCHIVED"], to: "ACTIVE", permission: Permission.BI_MANAGE } }
   });
-  app.get("/api/bi/dashboards/:id/render", authenticate, requireAnyPermission(...VIEW14), async (req, res) => {
+  app2.get("/api/bi/dashboards/:id/render", authenticate, requireAnyPermission(...VIEW14), async (req, res) => {
     const org = req.session.organization_id;
     const r = await db.query(`SELECT * FROM bi_dashboards WHERE organization_id = $1 AND id::text = $2`, [org, req.params.id]);
     const dash = r.rows[0];
@@ -23380,8 +23380,8 @@ function inspectUpload(filename, mime, contentBase64) {
     throw validationError(`File content does not match ${mime}`, { field: "content_base64" });
   return { filename: clean, bytes, sha256: crypto27.createHash("sha256").update(bytes).digest("hex") };
 }
-function registerDocumentRoutes(app) {
-  defineResource(app, {
+function registerDocumentRoutes(app2) {
+  defineResource(app2, {
     path: "/api/doc/documents",
     table: "doc_documents",
     label: "Document",
@@ -23454,7 +23454,7 @@ function registerDocumentRoutes(app) {
       }
     }
   });
-  app.get("/api/doc/link-targets", authenticate, requireAnyPermission(Permission.DOC_MANAGE), async (req, res) => {
+  app2.get("/api/doc/link-targets", authenticate, requireAnyPermission(Permission.DOC_MANAGE), async (req, res) => {
     const type = String(req.query.type || "");
     const d = LINK_LABEL[type];
     if (!d)
@@ -23463,7 +23463,7 @@ function registerDocumentRoutes(app) {
     const r = await db.query(`SELECT x.id, ${d.label} AS label FROM ${d.from} WHERE x.organization_id = $1 AND ($2::text IS NULL OR ${d.label} ILIKE $2) ORDER BY ${d.order} LIMIT 200`, [req.session.organization_id, search]);
     return ok(req, res, r.rows.map((x) => ({ ...x, entity_type: type })));
   });
-  app.post("/api/doc/documents/:id/versions", authenticate, requireAnyPermission(Permission.DOC_MANAGE), requireModule("DOC"), async (req, res) => {
+  app2.post("/api/doc/documents/:id/versions", authenticate, requireAnyPermission(Permission.DOC_MANAGE), requireModule("DOC"), async (req, res) => {
     const out = await unitOfWork(req, async (ctx) => {
       const d = await loadRow(ctx.tx, "doc_documents", req.params.id, ctx.org, "Document", true);
       if (!["DRAFT", "APPROVED"].includes(d.status))
@@ -23482,7 +23482,7 @@ function registerDocumentRoutes(app) {
     });
     return ok(req, res, out, 201);
   });
-  app.get("/api/doc/documents/:id/versions/:v/download", authenticate, requireAnyPermission(...VIEW10), async (req, res) => {
+  app2.get("/api/doc/documents/:id/versions/:v/download", authenticate, requireAnyPermission(...VIEW10), async (req, res) => {
     const org = req.session.organization_id;
     const r = await db.query(`SELECT v.* FROM doc_versions v JOIN doc_documents d ON d.id = v.document_id WHERE d.organization_id = $1 AND d.id::text = $2 AND v.version_no = $3`, [org, req.params.id, Number(req.params.v) || 0]);
     const v = r.rows[0];
@@ -23499,7 +23499,7 @@ function registerDocumentRoutes(app) {
     res.setHeader("X-Content-SHA256", v.sha256);
     return res.send(bytes);
   });
-  app.get("/api/doc/summary", authenticate, requireAnyPermission(...VIEW10), async (req, res) => {
+  app2.get("/api/doc/summary", authenticate, requireAnyPermission(...VIEW10), async (req, res) => {
     const org = req.session.organization_id;
     const s = (await db.query(`SELECT COUNT(*) FILTER (WHERE status <> 'DELETED')::int documents, COUNT(*) FILTER (WHERE status = 'IN_REVIEW')::int in_review, COUNT(*) FILTER (WHERE legal_hold)::int on_hold,
           COUNT(*) FILTER (WHERE status <> 'DELETED' AND retention_until IS NOT NULL AND retention_until < CURRENT_DATE)::int retention_expired,
@@ -23533,8 +23533,8 @@ function checkOdometer(previous, next) {
     throw validationError(`A ${n.sub(p).toFixed(0)} km jump since the last fill looks wrong (max ${MAX_KM_JUMP} km)`, { field: "odometer_km" });
   return n.sub(p);
 }
-function registerFleetRoutes(app) {
-  defineResource(app, {
+function registerFleetRoutes(app2) {
+  defineResource(app2, {
     path: "/api/flt/vehicles",
     table: "flt_vehicles",
     label: "Vehicle",
@@ -23620,7 +23620,7 @@ function registerFleetRoutes(app) {
       }
     }
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/flt/assignments",
     table: "flt_assignments",
     label: "Assignment",
@@ -23659,7 +23659,7 @@ function registerFleetRoutes(app) {
       cancel: { from: ["BOOKED"], to: "CANCELLED", permission: Permission.FLEET_MANAGE }
     }
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/flt/fuel",
     table: "flt_fuel_logs",
     label: "Fuel log",
@@ -23729,7 +23729,7 @@ function registerFleetRoutes(app) {
       void: { from: ["LOGGED"], to: "VOID", permission: Permission.FLEET_MANAGE, fields: { void_reason: { type: "text", required: true } }, run: async (_c, _r, i) => ({ set: { void_reason: i.void_reason } }) }
     }
   });
-  app.get("/api/flt/summary", authenticate, requireAnyPermission(...VIEW11), async (req, res) => {
+  app2.get("/api/flt/summary", authenticate, requireAnyPermission(...VIEW11), async (req, res) => {
     const org = req.session.organization_id;
     const v = (await db.query(`SELECT COUNT(*) FILTER (WHERE status='ACTIVE')::int active, COUNT(*) FILTER (WHERE status='IN_MAINTENANCE')::int maintenance, COUNT(*) FILTER (WHERE status <> 'RETIRED' AND (insurance_expiry < CURRENT_DATE + 30 OR fitness_expiry < CURRENT_DATE + 30))::int compliance_due FROM flt_vehicles WHERE organization_id = $1`, [org])).rows[0];
     const f = (await db.query(`SELECT COALESCE(SUM(amount) FILTER (WHERE log_date >= date_trunc('month', CURRENT_DATE)),0)::text fuel_mtd, COALESCE(SUM(litres) FILTER (WHERE log_date >= date_trunc('month', CURRENT_DATE)),0)::text litres_mtd, ROUND(AVG(km_per_litre),2)::text avg_kmpl, COUNT(*) FILTER (WHERE status='LOGGED')::int unposted FROM flt_fuel_logs WHERE organization_id = $1 AND status <> 'VOID'`, [org])).rows[0];
@@ -23756,11 +23756,11 @@ function checkResidual(l, i, rl, ri) {
   if (rl != null && ri != null && score(rl, ri) > score(l, i))
     throw validationError("Residual score cannot exceed the inherent score", { field: "residual_likelihood" });
 }
-function registerGrcRoutes(app) {
+function registerGrcRoutes(app2) {
   const riskSel = `t.*, t.likelihood * t.impact AS inherent_score, t.residual_likelihood * t.residual_impact AS residual_score,
     (SELECT COUNT(*)::int FROM grc_controls c WHERE c.risk_id = t.id AND c.status <> 'RETIRED') AS controls,
     (SELECT COUNT(*)::int FROM grc_controls c WHERE c.risk_id = t.id AND c.status = 'DEFICIENT') AS deficient_controls`;
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/grc/risks",
     table: "grc_risks",
     label: "Risk",
@@ -23830,7 +23830,7 @@ function registerGrcRoutes(app) {
       reopen: { from: ["CLOSED", "ACCEPTED"], to: "OPEN", permission: Permission.GRC_MANAGE }
     }
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/grc/controls",
     table: "grc_controls",
     label: "Control",
@@ -23864,7 +23864,7 @@ function registerGrcRoutes(app) {
     detail: async (q, row) => ({ tests: (await q.query(`SELECT t.*, u.email AS tested_by_email FROM grc_control_tests t LEFT JOIN users u ON u.id = t.tested_by WHERE t.control_id = $1 ORDER BY t.test_date DESC, t.created_at DESC`, [row.id])).rows }),
     commands: { retire: { from: ["DESIGN", "OPERATING", "DEFICIENT"], to: "RETIRED", permission: Permission.GRC_MANAGE } }
   });
-  app.post("/api/grc/controls/:id/tests", authenticate, requireAnyPermission(Permission.GRC_MANAGE), requireModule("GRC", "command"), async (req, res) => {
+  app2.post("/api/grc/controls/:id/tests", authenticate, requireAnyPermission(Permission.GRC_MANAGE), requireModule("GRC", "command"), async (req, res) => {
     const b = req.body || {};
     const testDate = b.test_date ? dateOnly(b.test_date, "test_date") : todayIso();
     if (testDate > todayIso())
@@ -23900,7 +23900,7 @@ function registerGrcRoutes(app) {
     });
     return ok(req, res, out, 201);
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/grc/incidents",
     table: "grc_incidents",
     label: "Incident",
@@ -23955,7 +23955,7 @@ function registerGrcRoutes(app) {
       }
     }
   });
-  app.get("/api/grc/summary", authenticate, requireAnyPermission(...VIEW12), async (req, res) => {
+  app2.get("/api/grc/summary", authenticate, requireAnyPermission(...VIEW12), async (req, res) => {
     const org = req.session.organization_id;
     const risks = (await db.query(`SELECT likelihood, impact, residual_likelihood, residual_impact, status FROM grc_risks WHERE organization_id = $1 AND status <> 'CLOSED'`, [org])).rows;
     const heat = Array.from({ length: 5 }, () => Array(5).fill(0));
@@ -23986,8 +23986,8 @@ function splitName(full) {
     return { first: parts[0], last: "-" };
   return { first: parts.slice(0, -1).join(" "), last: parts[parts.length - 1] };
 }
-function registerTalentRoutes(app) {
-  defineResource(app, {
+function registerTalentRoutes(app2) {
+  defineResource(app2, {
     path: "/api/tal/requisitions",
     table: "tal_requisitions",
     label: "Requisition",
@@ -24045,7 +24045,7 @@ function registerTalentRoutes(app) {
       }
     }
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/tal/candidates",
     table: "tal_candidates",
     label: "Candidate",
@@ -24083,7 +24083,7 @@ function registerTalentRoutes(app) {
     }),
     commands: { archive: { from: ["ACTIVE"], to: "ARCHIVED", permission: Permission.TALENT_MANAGE }, restore: { from: ["ARCHIVED"], to: "ACTIVE", permission: Permission.TALENT_MANAGE } }
   });
-  defineResource(app, {
+  defineResource(app2, {
     path: "/api/tal/applications",
     table: "tal_applications",
     label: "Application",
@@ -24163,7 +24163,7 @@ function registerTalentRoutes(app) {
       withdraw: { from: ["APPLIED", "SCREENING", "INTERVIEW", "OFFER"], to: "WITHDRAWN", permission: Permission.TALENT_MANAGE }
     }
   });
-  app.post("/api/tal/applications/:id/interviews", authenticate, requireAnyPermission(Permission.TALENT_MANAGE), requireModule("TAL", "command"), async (req, res) => {
+  app2.post("/api/tal/applications/:id/interviews", authenticate, requireAnyPermission(Permission.TALENT_MANAGE), requireModule("TAL", "command"), async (req, res) => {
     const b = req.body || {};
     const date = b.interview_date ? dateOnly(b.interview_date, "interview_date") : todayIso();
     const interviewer = String(b.interviewer ?? "").trim();
@@ -24187,7 +24187,7 @@ function registerTalentRoutes(app) {
     });
     return ok(req, res, out, 201);
   });
-  app.get("/api/tal/summary", authenticate, requireAnyPermission(...VIEW13), async (req, res) => {
+  app2.get("/api/tal/summary", authenticate, requireAnyPermission(...VIEW13), async (req, res) => {
     const org = req.session.organization_id;
     const r = (await db.query(`SELECT COUNT(*) FILTER (WHERE status='OPEN')::int open_reqs, COALESCE(SUM(positions - filled) FILTER (WHERE status='OPEN'),0)::int open_positions FROM tal_requisitions WHERE organization_id = $1`, [org])).rows[0];
     const a = (await db.query(`SELECT status, COUNT(*)::int n FROM tal_applications WHERE organization_id = $1 GROUP BY status`, [org])).rows;
@@ -24201,10 +24201,10 @@ function registerTalentRoutes(app) {
 var __filename2 = fileURLToPath2(import.meta.url);
 var __dirname2 = path3.dirname(__filename2);
 function createApp() {
-  const app = express();
-  wrapAsyncRoutes(app);
-  app.disable("x-powered-by");
-  app.use((req, res, next) => {
+  const app2 = express();
+  wrapAsyncRoutes(app2);
+  app2.disable("x-powered-by");
+  app2.use((req, res, next) => {
     const incoming = req.headers["x-correlation-id"];
     req.correlationId = typeof incoming === "string" && /^[A-Za-z0-9._:-]{8,100}$/.test(incoming) ? incoming : crypto29.randomUUID();
     res.setHeader("x-correlation-id", req.correlationId);
@@ -24217,7 +24217,7 @@ function createApp() {
     });
     next();
   });
-  app.get(["/health", "/ping"], (_req, res) => {
+  app2.get(["/health", "/ping"], (_req, res) => {
     res.status(200).json({
       status: "healthy",
       service: "omnysync-erp",
@@ -24226,7 +24226,7 @@ function createApp() {
       keepAlive: getKeepAliveStatus()
     });
   });
-  app.get(["/api", "/api/health"], (_req, res) => {
+  app2.get(["/api", "/api/health"], (_req, res) => {
     res.status(200).json({
       success: true,
       data: {
@@ -24239,13 +24239,13 @@ function createApp() {
       }
     });
   });
-  app.get("/api/keep-alive/status", (_req, res) => {
+  app2.get("/api/keep-alive/status", (_req, res) => {
     res.status(200).json({
       success: true,
       data: getKeepAliveStatus()
     });
   });
-  app.post("/api/keep-alive/ping", async (req, res) => {
+  app2.post("/api/keep-alive/ping", async (req, res) => {
     const targetUrl = resolveKeepAliveUrl();
     if (!targetUrl) {
       return res.status(400).json({
@@ -24260,55 +24260,55 @@ function createApp() {
     });
   });
   const allowed = (process.env.OMNYSYNC_ALLOWED_ORIGINS || "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,*").split(",").map((o) => o.trim()).filter(Boolean);
-  app.use(cors({
+  app2.use(cors({
     origin: (origin, cb) => cb(null, !origin || allowed.includes("*") || allowed.includes(origin)),
     exposedHeaders: ["x-correlation-id", "idempotent-replay"]
   }));
   const smallJson = express.json({ limit: "1mb" });
   const uploadJson = express.json({ limit: "8mb" });
-  app.use((req, res, next) => /^\/api\/doc\/documents\/[^/]+\/versions$/.test(req.path) ? uploadJson(req, res, next) : smallJson(req, res, next));
-  app.use((_req, res, next) => {
+  app2.use((req, res, next) => /^\/api\/doc\/documents\/[^/]+\/versions$/.test(req.path) ? uploadJson(req, res, next) : smallJson(req, res, next));
+  app2.use((_req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("Cache-Control", "no-store");
     next();
   });
-  registerPlatformRoutes(app);
-  registerFinanceRoutes(app);
-  registerMastersRoutes(app);
-  registerSalesRoutes(app);
-  registerProcurementRoutes(app);
-  registerPaymentsRoutes(app);
-  registerTreasuryRoutes(app);
-  registerHrmRoutes(app);
-  registerInventoryRoutes(app);
-  registerManufacturingRoutes(app);
-  registerProjectsRoutes(app);
-  registerAssetsRoutes(app);
-  registerPosRoutes(app);
-  registerAutomationRoutes(app);
-  registerQualityRoutes(app);
-  registerMaintenanceRoutes(app);
-  registerAdminRoutes(app);
-  registerConfigRoutes(app);
-  registerTaxRoutes(app);
-  registerWmsRoutes(app);
-  registerAutomationEventRoutes(app);
-  registerServiceRoutes(app);
-  registerCrmRoutes(app);
-  registerTimeRoutes(app);
-  registerSupplierRoutes(app);
-  registerLogisticsRoutes(app);
-  registerBiRoutes(app);
-  registerDocumentRoutes(app);
-  registerFleetRoutes(app);
-  registerSubscriptionRoutes(app);
-  registerBudgetRoutes(app);
-  registerLendingRoutes(app);
-  registerGrcRoutes(app);
-  registerTalentRoutes(app);
-  app.use("/api", (req, res) => {
+  registerPlatformRoutes(app2);
+  registerFinanceRoutes(app2);
+  registerMastersRoutes(app2);
+  registerSalesRoutes(app2);
+  registerProcurementRoutes(app2);
+  registerPaymentsRoutes(app2);
+  registerTreasuryRoutes(app2);
+  registerHrmRoutes(app2);
+  registerInventoryRoutes(app2);
+  registerManufacturingRoutes(app2);
+  registerProjectsRoutes(app2);
+  registerAssetsRoutes(app2);
+  registerPosRoutes(app2);
+  registerAutomationRoutes(app2);
+  registerQualityRoutes(app2);
+  registerMaintenanceRoutes(app2);
+  registerAdminRoutes(app2);
+  registerConfigRoutes(app2);
+  registerTaxRoutes(app2);
+  registerWmsRoutes(app2);
+  registerAutomationEventRoutes(app2);
+  registerServiceRoutes(app2);
+  registerCrmRoutes(app2);
+  registerTimeRoutes(app2);
+  registerSupplierRoutes(app2);
+  registerLogisticsRoutes(app2);
+  registerBiRoutes(app2);
+  registerDocumentRoutes(app2);
+  registerFleetRoutes(app2);
+  registerSubscriptionRoutes(app2);
+  registerBudgetRoutes(app2);
+  registerLendingRoutes(app2);
+  registerGrcRoutes(app2);
+  registerTalentRoutes(app2);
+  app2.use("/api", (req, res) => {
     res.status(404).json({
       success: false,
       error: { code: "RESOURCE_NOT_FOUND", message: `No route ${req.method} ${req.path}`, correlation_id: req.correlationId }
@@ -24322,8 +24322,8 @@ function createApp() {
   const staticWebDir = candidateWebPaths.find((p) => fs2.existsSync(p));
   if (staticWebDir) {
     console.log(`[Omnysync Web Host] Serving production frontend build from ${staticWebDir}`);
-    app.use(express.static(staticWebDir));
-    app.get("*", (req, res, next) => {
+    app2.use(express.static(staticWebDir));
+    app2.get("*", (req, res, next) => {
       if (req.path.startsWith("/api"))
         return next();
       const indexFile = path3.join(staticWebDir, "index.html");
@@ -24334,38 +24334,15 @@ function createApp() {
       }
     });
   }
-  app.use(errorHandler);
-  return app;
+  app2.use(errorHandler);
+  return app2;
 }
 
 // api/index.ts
-var appInstance = null;
-function getApp() {
-  if (!appInstance) {
-    appInstance = createApp();
-  }
-  return appInstance;
-}
-function handler(req, res) {
-  try {
-    const app = getApp();
-    return app(req, res);
-  } catch (err) {
-    console.error("[Vercel Serverless Function Crash]:", err);
-    if (!res.headersSent) {
-      res.status(500).json({
-        success: false,
-        error: {
-          code: "SERVERLESS_FUNCTION_ERROR",
-          message: err?.message || String(err),
-          stack: err?.stack
-        }
-      });
-    }
-  }
-}
+var app = createApp();
+var api_default = app;
 export {
-  handler as default
+  api_default as default
 };
 /*! Bundled license information:
 
