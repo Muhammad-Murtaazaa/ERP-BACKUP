@@ -701,16 +701,20 @@ export const PosTerminalView: React.FC = () => {
             </div>
           </div>
           {bootError && <div className="mb-4"><Notice tone="danger">{bootError}</Notice></div>}
-          {registers.length === 0 ? (
+          {!bootError && registers.length === 0 ? (
             <div className="flex flex-col gap-4">
               <Notice tone="warning">No POS registers are set up yet for this organization.</Notice>
-              <div className="pt-2">
-                <Button size="md" onClick={createDefaultRegister} disabled={creatingReg}>
-                  {creatingReg ? 'Creating register…' : 'Quick Setup: Create Default Register (POS-01)'}
-                </Button>
-              </div>
+              {isManager ? (
+                <div className="pt-2">
+                  <Button size="md" onClick={createDefaultRegister} disabled={creatingReg}>
+                    {creatingReg ? 'Creating register…' : 'Quick Setup: Create Default Register (POS-01)'}
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-xs text-[#5E6A7D]">Please ask a store manager or administrator to configure a POS register for this organization.</p>
+              )}
             </div>
-          ) : (
+          ) : registers.length > 0 ? (
             <form className="flex flex-col gap-5" onSubmit={(e) => { e.preventDefault(); openShift(); }}>
               <div className="flex flex-col gap-1">
                 <Combobox label="Register" value={registerId} onChange={(e) => setRegisterId(e.target.value)} options={registers.map((r) => ({ value: r.id, label: `${r.register_code} · ${r.name}` }))} />
@@ -724,7 +728,7 @@ export const PosTerminalView: React.FC = () => {
                 <Button type="submit" size="lg" disabled={opening || !registerId}>{opening ? 'Opening…' : 'Open shift & start selling'}</Button>
               </div>
             </form>
-          )}
+          ) : null}
         </div>
       </div>
     );

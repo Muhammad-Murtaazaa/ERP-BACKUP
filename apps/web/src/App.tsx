@@ -194,7 +194,7 @@ export const App: React.FC = () => {
   };
 
   useEffect(() => {
-    loginAsPersona('accountant@omnysync.internal');
+    loginAsPersona('admin@omnysync.internal');
   }, []);
 
   // Dashboard Hub sub-items
@@ -465,8 +465,33 @@ export const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Right side placeholder */}
-        <div className="flex items-center gap-2 shrink-0"></div>
+        {/* Right side: Persona Switcher & Current User */}
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="hidden sm:flex items-center gap-2 bg-zinc-100/90 px-2.5 py-1 rounded-xl border border-zinc-200/80">
+            <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Persona:</span>
+            <select
+              value={currentUser?.email || 'admin@omnysync.internal'}
+              onChange={(e) => loginAsPersona(e.target.value)}
+              className="text-xs font-semibold text-zinc-800 bg-transparent border-none outline-none cursor-pointer pr-1"
+              aria-label="Switch active persona"
+            >
+              {personas.map((p) => (
+                <option key={p.email} value={p.email}>
+                  {p.name} ({p.role})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-full bg-[#5940B8] text-white flex items-center justify-center text-xs font-bold shrink-0">
+              {currentUser?.name ? currentUser.name.slice(0, 2).toUpperCase() : 'AD'}
+            </div>
+            <div className="hidden md:flex flex-col text-left leading-tight">
+              <span className="text-xs font-bold text-zinc-900 truncate max-w-[140px]">{currentUser?.name || 'Admin User'}</span>
+              <span className="text-[10px] text-zinc-500 font-medium truncate max-w-[140px]">{currentUser?.displayRole || 'System Administrator'}</span>
+            </div>
+          </div>
+        </div>
       </header>
 
       {/* ========================================================================= */}
