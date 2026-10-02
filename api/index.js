@@ -1,3 +1,4 @@
+import { createRequire } from 'module'; const require = createRequire(import.meta.url);
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -53922,11 +53923,11 @@ function createApp() {
   return app2;
 }
 
-// api/index.ts
+// scripts/api-entry.ts
 var app = createApp();
-var api_default = app;
+var api_entry_default = app;
 export {
-  api_default as default
+  api_entry_default as default
 };
 /*! Bundled license information:
 

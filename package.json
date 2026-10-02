@@ -9,7 +9,7 @@
     "apps/*"
   ],
   "scripts": {
-    "build:vercel-api": "npx esbuild scripts/api-entry.ts --bundle --platform=node --format=esm --external:@electric-sql/pglite --external:pg-native --outfile=api/index.js",
+    "build:vercel-api": "npx esbuild scripts/api-entry.ts --bundle --platform=node --format=esm --external:@electric-sql/pglite --external:pg-native \"--banner:js=import { createRequire } from 'module'; const require = createRequire(import.meta.url);\" --outfile=api/index.js",
     "build": "npm run build --workspace=@omnysync/contracts && npm run build --workspace=@omnysync/financial-engine && npm run build --workspace=@omnysync/platform && npm run build --workspace=@omnysync/ui && npm run build --workspace=@omnysync/api && npm run build --workspace=@omnysync/web && npm run build:vercel-api && node scripts/copy-dist.mjs",
     "build:api": "npm run build --workspace=@omnysync/contracts && npm run build --workspace=@omnysync/financial-engine && npm run build --workspace=@omnysync/platform && npm run build --workspace=@omnysync/api",
     "build:web": "npm run build --workspace=@omnysync/contracts && npm run build --workspace=@omnysync/financial-engine && npm run build --workspace=@omnysync/ui && npm run build --workspace=@omnysync/web",
