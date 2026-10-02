@@ -1,8 +1,21 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import path from 'node:path';
-import { PGlite } from '@electric-sql/pglite';
+// PGlite is loaded lazily (dynamic import) so it is not required when using PgPoolAdapter.
+// A static top-level import of @electric-sql/pglite would crash the Vercel serverless
+// function at startup even when DATABASE_URL is set and PGlite is never instantiated.
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
 import pg from 'pg';
+
+// Lazy loader — returns the PGlite constructor only when first called.
+let _PGlite: typeof PGliteType | undefined;
+async function loadPGlite(): Promise<typeof PGliteType> {
+  if (!_PGlite) {
+    const mod = await import('@electric-sql/pglite');
+    _PGlite = mod.PGlite;
+  }
+  return _PGlite!;
+}
 
 export interface QueryResult<T = any> {
   rows: T[];
@@ -48,39 +61,55 @@ class Mutex {
 const DATE_AS_STRING = { 1082: (v: string) => v };
 
 export class PGliteAdapter implements DbClient {
-  private pglite: PGlite;
+  // pglite is initialized lazily on first use via the `ready` promise.
+  private pglite: PGliteType | undefined;
+  private ready: Promise<PGliteType>;
   private mutex = new Mutex();
   private txContext = new AsyncLocalStorage<{ depth: number }>();
 
-  constructor(dataDirOrInstance?: string | PGlite) {
+  constructor(dataDirOrInstance?: string | PGliteType) {
+    this.ready = this._init(dataDirOrInstance);
+  }
+
+  private async _init(dataDirOrInstance?: string | PGliteType): Promise<PGliteType> {
+    const PGlite = await loadPGlite();
+
     if (dataDirOrInstance instanceof PGlite) {
       this.pglite = dataDirOrInstance;
-    } else {
-      if (typeof dataDirOrInstance === 'string' && dataDirOrInstance.length > 0) {
-        try {
-          const resolvedPath = path.resolve(dataDirOrInstance);
-          const parentDir = path.dirname(resolvedPath);
-          if (!fs.existsSync(parentDir)) {
-            fs.mkdirSync(parentDir, { recursive: true });
-          }
-        } catch {
-          // Fallback to default
-        }
-      }
+      return this.pglite;
+    }
+
+    if (typeof dataDirOrInstance === 'string' && dataDirOrInstance.length > 0) {
       try {
-        this.pglite = new PGlite(dataDirOrInstance);
-      } catch (err) {
-        console.warn('[PGliteAdapter] Could not initialize at path, falling back to in-memory:', err);
-        this.pglite = new PGlite();
+        const resolvedPath = path.resolve(dataDirOrInstance);
+        const parentDir = path.dirname(resolvedPath);
+        if (!fs.existsSync(parentDir)) {
+          fs.mkdirSync(parentDir, { recursive: true });
+        }
+      } catch {
+        // Fallback to default
       }
     }
+
+    try {
+      this.pglite = new PGlite(dataDirOrInstance as string | undefined);
+    } catch (err) {
+      console.warn('[PGliteAdapter] Could not initialize at path, falling back to in-memory:', err);
+      this.pglite = new PGlite();
+    }
+    return this.pglite;
+  }
+
+  private async getPGlite(): Promise<PGliteType> {
+    return this.pglite ?? this.ready;
   }
 
   private async rawQuery<T>(sql: string, params: any[]): Promise<QueryResult<T>> {
+    const pglite = await this.getPGlite();
     // DATE (oid 1082) stays a 'YYYY-MM-DD' string: calendar dates have no time zone, and
     // parsing them into JS Dates leaked "2026-03-01T00:00:00.000Z" into the UI/API and
     // risked off-by-one days when formatted in local time.
-    const res = await this.pglite.query(sql, params, { parsers: DATE_AS_STRING });
+    const res = await pglite.query(sql, params, { parsers: DATE_AS_STRING });
     const rows = (res.rows || []) as T[];
     return {
       rows,
@@ -101,31 +130,33 @@ export class PGliteAdapter implements DbClient {
   }
 
   async exec(sql: string): Promise<void> {
+    const pglite = await this.getPGlite();
     if (this.txContext.getStore()) {
-      await this.pglite.exec(sql);
+      await pglite.exec(sql);
       return;
     }
     const release = await this.mutex.acquire();
     try {
-      await this.pglite.exec(sql);
+      await pglite.exec(sql);
     } finally {
       release();
     }
   }
 
   async transaction<T>(callback: (client: DbClient) => Promise<T>): Promise<T> {
+    const pglite = await this.getPGlite();
     const store = this.txContext.getStore();
     if (store) {
       // Nested unit of work: use a savepoint inside the already-open transaction.
       const sp = `sp_${store.depth + 1}`;
       store.depth += 1;
-      await this.pglite.exec(`SAVEPOINT ${sp}`);
+      await pglite.exec(`SAVEPOINT ${sp}`);
       try {
         const result = await callback(this);
-        await this.pglite.exec(`RELEASE SAVEPOINT ${sp}`);
+        await pglite.exec(`RELEASE SAVEPOINT ${sp}`);
         return result;
       } catch (err) {
-        await this.pglite.exec(`ROLLBACK TO SAVEPOINT ${sp}`);
+        await pglite.exec(`ROLLBACK TO SAVEPOINT ${sp}`);
         throw err;
       } finally {
         store.depth -= 1;
@@ -135,13 +166,13 @@ export class PGliteAdapter implements DbClient {
     const release = await this.mutex.acquire();
     try {
       return await this.txContext.run({ depth: 0 }, async () => {
-        await this.pglite.exec('BEGIN');
+        await pglite.exec('BEGIN');
         try {
           const result = await callback(this);
-          await this.pglite.exec('COMMIT');
+          await pglite.exec('COMMIT');
           return result;
         } catch (err) {
-          await this.pglite.exec('ROLLBACK');
+          await pglite.exec('ROLLBACK');
           throw err;
         }
       });
@@ -151,7 +182,8 @@ export class PGliteAdapter implements DbClient {
   }
 
   async close(): Promise<void> {
-    await this.pglite.close();
+    const pglite = await this.getPGlite();
+    await pglite.close();
   }
 }
 

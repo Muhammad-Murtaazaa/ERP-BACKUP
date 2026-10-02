@@ -34186,8 +34186,14 @@ var init_esm = __esm({
 import { AsyncLocalStorage } from "node:async_hooks";
 import fs from "node:fs";
 import path from "node:path";
-import { PGlite } from "@electric-sql/pglite";
-var Mutex, DATE_AS_STRING, PGliteAdapter, PgPoolAdapter;
+async function loadPGlite() {
+  if (!_PGlite) {
+    const mod2 = await import("@electric-sql/pglite");
+    _PGlite = mod2.PGlite;
+  }
+  return _PGlite;
+}
+var _PGlite, Mutex, DATE_AS_STRING, PGliteAdapter, PgPoolAdapter;
 var init_driver = __esm({
   "packages/platform/dist/db/driver.js"() {
     "use strict";
@@ -34207,33 +34213,44 @@ var init_driver = __esm({
     };
     DATE_AS_STRING = { 1082: (v) => v };
     PGliteAdapter = class {
+      // pglite is initialized lazily on first use via the `ready` promise.
       pglite;
+      ready;
       mutex = new Mutex();
       txContext = new AsyncLocalStorage();
       constructor(dataDirOrInstance) {
+        this.ready = this._init(dataDirOrInstance);
+      }
+      async _init(dataDirOrInstance) {
+        const PGlite = await loadPGlite();
         if (dataDirOrInstance instanceof PGlite) {
           this.pglite = dataDirOrInstance;
-        } else {
-          if (typeof dataDirOrInstance === "string" && dataDirOrInstance.length > 0) {
-            try {
-              const resolvedPath = path.resolve(dataDirOrInstance);
-              const parentDir = path.dirname(resolvedPath);
-              if (!fs.existsSync(parentDir)) {
-                fs.mkdirSync(parentDir, { recursive: true });
-              }
-            } catch {
-            }
-          }
+          return this.pglite;
+        }
+        if (typeof dataDirOrInstance === "string" && dataDirOrInstance.length > 0) {
           try {
-            this.pglite = new PGlite(dataDirOrInstance);
-          } catch (err) {
-            console.warn("[PGliteAdapter] Could not initialize at path, falling back to in-memory:", err);
-            this.pglite = new PGlite();
+            const resolvedPath = path.resolve(dataDirOrInstance);
+            const parentDir = path.dirname(resolvedPath);
+            if (!fs.existsSync(parentDir)) {
+              fs.mkdirSync(parentDir, { recursive: true });
+            }
+          } catch {
           }
         }
+        try {
+          this.pglite = new PGlite(dataDirOrInstance);
+        } catch (err) {
+          console.warn("[PGliteAdapter] Could not initialize at path, falling back to in-memory:", err);
+          this.pglite = new PGlite();
+        }
+        return this.pglite;
+      }
+      async getPGlite() {
+        return this.pglite ?? this.ready;
       }
       async rawQuery(sql, params) {
-        const res = await this.pglite.query(sql, params, { parsers: DATE_AS_STRING });
+        const pglite = await this.getPGlite();
+        const res = await pglite.query(sql, params, { parsers: DATE_AS_STRING });
         const rows = res.rows || [];
         return {
           rows,
@@ -34252,29 +34269,31 @@ var init_driver = __esm({
         }
       }
       async exec(sql) {
+        const pglite = await this.getPGlite();
         if (this.txContext.getStore()) {
-          await this.pglite.exec(sql);
+          await pglite.exec(sql);
           return;
         }
         const release = await this.mutex.acquire();
         try {
-          await this.pglite.exec(sql);
+          await pglite.exec(sql);
         } finally {
           release();
         }
       }
       async transaction(callback) {
+        const pglite = await this.getPGlite();
         const store = this.txContext.getStore();
         if (store) {
           const sp = `sp_${store.depth + 1}`;
           store.depth += 1;
-          await this.pglite.exec(`SAVEPOINT ${sp}`);
+          await pglite.exec(`SAVEPOINT ${sp}`);
           try {
             const result = await callback(this);
-            await this.pglite.exec(`RELEASE SAVEPOINT ${sp}`);
+            await pglite.exec(`RELEASE SAVEPOINT ${sp}`);
             return result;
           } catch (err) {
-            await this.pglite.exec(`ROLLBACK TO SAVEPOINT ${sp}`);
+            await pglite.exec(`ROLLBACK TO SAVEPOINT ${sp}`);
             throw err;
           } finally {
             store.depth -= 1;
@@ -34283,13 +34302,13 @@ var init_driver = __esm({
         const release = await this.mutex.acquire();
         try {
           return await this.txContext.run({ depth: 0 }, async () => {
-            await this.pglite.exec("BEGIN");
+            await pglite.exec("BEGIN");
             try {
               const result = await callback(this);
-              await this.pglite.exec("COMMIT");
+              await pglite.exec("COMMIT");
               return result;
             } catch (err) {
-              await this.pglite.exec("ROLLBACK");
+              await pglite.exec("ROLLBACK");
               throw err;
             }
           });
@@ -34298,7 +34317,8 @@ var init_driver = __esm({
         }
       }
       async close() {
-        await this.pglite.close();
+        const pglite = await this.getPGlite();
+        await pglite.close();
       }
     };
     PgPoolAdapter = class {
