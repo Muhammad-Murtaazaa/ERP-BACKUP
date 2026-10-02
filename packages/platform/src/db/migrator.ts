@@ -12,7 +12,16 @@ export class DbMigrator {
 
   constructor(db: DbClient, migrationsDir?: string) {
     this.db = db;
-    this.migrationsDir = migrationsDir || path.join(__dirname, 'migrations');
+    const candidates = [
+      migrationsDir,
+      path.join(__dirname, 'migrations'),
+      path.join(__dirname, '../../src/db/migrations'),
+      path.join(__dirname, '../../../packages/platform/src/db/migrations'),
+      path.resolve(process.cwd(), 'packages/platform/src/db/migrations'),
+      path.resolve(process.cwd(), 'packages/platform/dist/db/migrations'),
+    ].filter(Boolean) as string[];
+
+    this.migrationsDir = candidates.find((d) => fs.existsSync(d)) || path.join(__dirname, 'migrations');
   }
 
   async runMigrations(): Promise<{ applied: string[]; alreadyApplied: string[] }> {

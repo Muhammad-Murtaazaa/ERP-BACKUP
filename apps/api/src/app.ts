@@ -77,7 +77,7 @@ export function createApp() {
     });
   });
 
-  app.get('/api/health', (_req: Request, res: Response) => {
+  app.get(['/api', '/api/health'], (_req: Request, res: Response) => {
     res.status(200).json({
       success: true,
       data: {

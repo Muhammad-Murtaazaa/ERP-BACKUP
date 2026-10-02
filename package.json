@@ -8,7 +8,7 @@
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build --workspace=@omnysync/contracts && npm run build --workspace=@omnysync/financial-engine && npm run build --workspace=@omnysync/platform && npm run build --workspace=@omnysync/ui && npm run build --workspace=@omnysync/api && npm run build --workspace=@omnysync/web",
+    "build": "npm run build --workspace=@omnysync/contracts && npm run build --workspace=@omnysync/financial-engine && npm run build --workspace=@omnysync/platform && npm run build --workspace=@omnysync/ui && npm run build --workspace=@omnysync/api && npm run build --workspace=@omnysync/web && node scripts/copy-dist.mjs",
     "build:api": "npm run build --workspace=@omnysync/contracts && npm run build --workspace=@omnysync/financial-engine && npm run build --workspace=@omnysync/platform && npm run build --workspace=@omnysync/api",
     "build:web": "npm run build --workspace=@omnysync/contracts && npm run build --workspace=@omnysync/financial-engine && npm run build --workspace=@omnysync/ui && npm run build --workspace=@omnysync/web",
     "start": "node --max-old-space-size=256 apps/api/dist/index.js",
@@ -16,8 +16,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
-    "migrate": "npm run migrate --workspace=@omnysync/platform",
-    "seed": "npm run seed --workspace=@omnysync/platform",
+    "migrate": "node scripts/db.mjs migrate",
+    "seed": "node scripts/db.mjs seed",
+    "db:migrate": "node scripts/db.mjs migrate",
+    "db:seed": "node scripts/db.mjs seed",
     "start:api": "npm run dev --workspace=@omnysync/api",
     "start:web": "npm run dev --workspace=@omnysync/web",
     "dev": "npm run dev --workspaces --if-present --parallel"

@@ -64,8 +64,8 @@ export async function startServer() {
   });
 }
 
-if (process.env.NODE_ENV !== 'test' && process.env.VITEST === undefined) {
+if (process.env.NODE_ENV !== 'test' && process.env.VITEST === undefined && !process.env.VERCEL) {
   startServer();
 }
 
-export { app, db };
+export { createApp, app, db };

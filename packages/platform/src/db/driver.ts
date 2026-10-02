@@ -159,7 +159,23 @@ export class PgPoolAdapter implements DbClient {
 
   constructor(connectionStringOrConfig: string | pg.PoolConfig) {
     if (typeof connectionStringOrConfig === 'string') {
-      this.pool = new pg.Pool({ connectionString: connectionStringOrConfig });
+      const isRemote =
+        /supabase|neon|pooler|render|railway|amazonaws\.com|azure/i.test(connectionStringOrConfig) ||
+        connectionStringOrConfig.includes('sslmode=') ||
+        process.env.DATABASE_SSL === 'true';
+
+      const config: pg.PoolConfig = {
+        connectionString: connectionStringOrConfig,
+        max: Number(process.env.DB_POOL_MAX || 10),
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 10000,
+      };
+
+      if (isRemote) {
+        config.ssl = { rejectUnauthorized: false };
+      }
+
+      this.pool = new pg.Pool(config);
     } else {
       this.pool = new pg.Pool(connectionStringOrConfig);
     }
