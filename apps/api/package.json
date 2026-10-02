@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./app": "./dist/app.js"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "vite-node --config ../../vitest.config.ts src/index.ts",
