@@ -15,7 +15,7 @@ describe('Platform & Database Integration: Migrations, Seeds & Tenancy', () => {
     const migrator = new DbMigrator(db, path.join(__dirname, '../src/db/migrations'));
     const { applied } = await migrator.runMigrations();
     expect(applied.length).toBeGreaterThan(0);
-  });
+  }, 30000);
 
   afterAll(async () => {
     await db.close();

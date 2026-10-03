@@ -599,6 +599,7 @@ registerSeeder('MANUFACTURING', async (q, c) => {
 
 registerSeeder('PROJECTS', async (q, c) => {
   const cust = (await q.query(`SELECT id FROM parties WHERE organization_id = $1 AND party_type IN ('CUSTOMER','BOTH') LIMIT 1`, [c.org])).rows[0];
+  const vendor = (await q.query(`SELECT id FROM parties WHERE organization_id = $1 AND party_type IN ('SUPPLIER','BOTH') LIMIT 1`, [c.org])).rows[0];
 
   const ccId = '95000000-0000-0000-0000-000000000001';
   await q.query(
@@ -611,18 +612,133 @@ registerSeeder('PROJECTS', async (q, c) => {
   const prjId = '95000000-0000-0000-0000-000000000002';
   await q.query(
     `INSERT INTO projects (id, organization_id, code, name, customer_id, manager_name, project_type, contract_value, budgeted_cost, retention_percentage, status, start_date, end_date, cost_center_id)
-     VALUES ($1, $2, 'PRJ-2026-001', 'Karachi Tier-3 Data Center Expansion', $3, 'Engr. Farhan Siddiqui', 'EPC', 35000000, 24000000, 5.0, 'IN_PROGRESS', '2026-01-15', '2026-12-31', $4)
+     VALUES ($1, $2, 'PRJ-2026-001', 'Karachi Tier-3 Data Center Expansion', $3, 'Engr. Farhan Siddiqui', 'EPC', 37500000, 24000000, 5.0, 'IN_PROGRESS', '2026-01-15', '2026-12-31', $4)
      ON CONFLICT (organization_id, code) DO NOTHING`,
     [prjId, c.org, cust?.id ?? null, ccId],
   );
 
   await q.query(
     `INSERT INTO project_wbs_nodes (id, project_id, wbs_code, name, budget_cost, progress_percentage, status)
-     VALUES (gen_random_uuid(), $1, '1.0', 'Civil & Raised Flooring', 6000000, 100, 'COMPLETED'),
+     VALUES (gen_random_uuid(), $1, '1.0', 'Civil & Substructure Foundation', 6000000, 100, 'COMPLETED'),
             (gen_random_uuid(), $1, '2.0', 'HVAC Precision Cooling & Containment', 10000000, 65, 'IN_PROGRESS'),
             (gen_random_uuid(), $1, '3.0', 'Power Infrastructure & UPS Busways', 8000000, 40, 'IN_PROGRESS')
      ON CONFLICT (project_id, wbs_code) DO NOTHING`,
     [prjId],
+  );
+
+  // BOQ
+  const boqId = '95000000-0000-0000-0000-000000000003';
+  await q.query(
+    `INSERT INTO bill_of_quantities (id, project_id, boq_number, title, version, total_amount, status, organization_id)
+     VALUES ($1, $2, 'BOQ-KHI-001', 'Primary Civil & MEP Infrastructure BOQ', '1.0', 35000000.00, 'APPROVED', $3)
+     ON CONFLICT (organization_id, boq_number) DO NOTHING`,
+    [boqId, prjId, c.org],
+  );
+
+  const boqItem1Id = '95000000-0000-0000-0000-000000000011';
+  const boqItem2Id = '95000000-0000-0000-0000-000000000012';
+  const boqItem3Id = '95000000-0000-0000-0000-000000000013';
+
+  await q.query(
+    `INSERT INTO boq_items (id, boq_id, item_code, description, uom, contract_quantity, unit_rate, total_amount, certified_quantity)
+     VALUES ($1, $4, 'CIV-001', 'Reinforced Concrete Foundation & Raft (C35/40)', 'M3', 1200.00, 14500.00, 17400000.00, 1200.00),
+            ($2, $4, 'MEP-001', 'Precision In-Row CRAC Chilled Water Units (50kW)', 'UNIT', 8.00, 1250000.00, 10000000.00, 5.00),
+            ($3, $4, 'ELE-001', 'Modular 2500A Overhead Power Busway System', 'MTR', 380.00, 20000.00, 7600000.00, 150.00)
+     ON CONFLICT DO NOTHING`,
+    [boqItem1Id, boqItem2Id, boqItem3Id, boqId],
+  );
+
+  // Subcontract
+  const subId = '95000000-0000-0000-0000-000000000021';
+  await q.query(
+    `INSERT INTO project_subcontracts (id, project_id, subcontract_number, title, vendor_id, contract_value, retention_percentage, scope_description, status, organization_id)
+     VALUES ($1, $2, 'SUB-2026-MEP-01', 'Apex HVAC & Cooling Subcontract Work Package', $3, 8500000.00, 10.00, 'Supply and commissioning of precision chilled water piping and CRAH units.', 'ACTIVE', $4)
+     ON CONFLICT (organization_id, subcontract_number) DO NOTHING`,
+    [subId, prjId, vendor?.id ?? null, c.org],
+  );
+
+  // Subcontract Claim
+  await q.query(
+    `INSERT INTO project_subcontract_claims (id, subcontract_id, project_id, claim_number, period_date, claimed_amount, certified_amount, retention_deducted, net_payable, status, organization_id)
+     VALUES (gen_random_uuid(), $1, $2, 'IPC-SUB-01', CURRENT_DATE - INTERVAL '15 days', 2400000.00, 2400000.00, 240000.00, 2160000.00, 'APPROVED', $3),
+            (gen_random_uuid(), $1, $2, 'IPC-SUB-02', CURRENT_DATE - INTERVAL '2 days', 1800000.00, 1800000.00, 180000.00, 1620000.00, 'APPROVED', $3)
+     ON CONFLICT (organization_id, claim_number) DO NOTHING`,
+    [subId, prjId, c.org],
+  );
+
+  // Daily Site Diary
+  const diaryId = '95000000-0000-0000-0000-000000000031';
+  await q.query(
+    `INSERT INTO project_site_diaries (id, project_id, diary_date, weather_condition, temperature, manpower_count, equipment_count, work_executed, delays_or_impediments, safety_incidents, status, organization_id)
+     VALUES ($1, $2, CURRENT_DATE, 'Clear / Sunny', '30°C', 48, 4, 'Level-2 Raised flooring pedestal installation and precision busway hanging. Chiller pipe welding in sector B.', 'None. Crane operation wind speed within safe limits (<20 knots).', 0, 'APPROVED', $3)
+     ON CONFLICT (project_id, diary_date) DO NOTHING`,
+    [diaryId, prjId, c.org],
+  );
+
+  await q.query(
+    `INSERT INTO project_daily_manpower (id, site_diary_id, trade_category, headcount, hours_worked)
+     VALUES (gen_random_uuid(), $1, 'Steel Fixers & Welders', 16, 8.00),
+            (gen_random_uuid(), $1, 'Electricians & Cable Pullers', 14, 8.00),
+            (gen_random_uuid(), $1, 'HVAC Pipefitters & Duct Erectors', 12, 8.00),
+            (gen_random_uuid(), $1, 'Plant & Crane Operators', 6, 8.00)
+     ON CONFLICT DO NOTHING`,
+    [diaryId],
+  );
+
+  await q.query(
+    `INSERT INTO project_daily_equipment (id, site_diary_id, equipment_name, operating_hours, idle_hours, status)
+     VALUES (gen_random_uuid(), $1, 'Tadano 50-Ton Mobile Crane', 7.50, 0.50, 'OPERATING'),
+            (gen_random_uuid(), $1, 'Putzmeister Concrete Boom Pump 36m', 6.00, 2.00, 'OPERATING'),
+            (gen_random_uuid(), $1, 'Perkins 250kVA Site Generator', 8.00, 0.00, 'OPERATING'),
+            (gen_random_uuid(), $1, 'JLG 45ft Articulated Boom Lift', 8.00, 0.00, 'OPERATING')
+     ON CONFLICT DO NOTHING`,
+    [diaryId],
+  );
+
+  // Material Receipts (MRN)
+  await q.query(
+    `INSERT INTO project_material_receipts (id, project_id, mrn_number, supplier_id, delivery_date, vehicle_number, delivery_ticket_number, item_description, received_quantity, uom, inspected_by, quality_status, organization_id)
+     VALUES (gen_random_uuid(), $1, 'MRN-2026-081', $2, CURRENT_DATE - INTERVAL '3 days', 'TRK-9812-KHI', 'TKT-77890', 'Ready-Mix Concrete Grade C35/40 with Silica Fume', 120.00, 'M3', 'Engr. Tariq (QC Lead)', 'ACCEPTED', $3),
+            (gen_random_uuid(), $1, 'MRN-2026-082', $2, CURRENT_DATE - INTERVAL '1 day', 'TRK-4421-KHI', 'TKT-77912', 'Deformed High-Strength TMT Rebar Grade 60 (25mm)', 24.00, 'TON', 'Engr. Tariq (QC Lead)', 'ACCEPTED', $3)
+     ON CONFLICT (organization_id, mrn_number) DO NOTHING`,
+    [prjId, vendor?.id ?? null, c.org],
+  );
+
+  // Variations & Change Orders
+  await q.query(
+    `INSERT INTO project_variations (id, project_id, variation_number, title, variation_type, amount, schedule_impact_days, status, reason, organization_id)
+     VALUES (gen_random_uuid(), $1, 'VO-2026-001', 'Additional High-Density Hot Aisle Containment Pods', 'CLIENT_ADDITION', 1850000.00, 14, 'APPROVED', 'Client expanded AI compute footprint requiring 4 additional custom containment pods.', $2),
+            (gen_random_uuid(), $1, 'VO-2026-002', 'Underground Substation Rock Anchor Revision', 'SITE_CONDITION', 650000.00, 7, 'APPROVED', 'Unforeseen subterranean bedrock density requiring heavy diamond coring.', $2)
+     ON CONFLICT (organization_id, variation_number) DO NOTHING`,
+    [prjId, c.org],
+  );
+
+  // RFIs
+  await q.query(
+    `INSERT INTO project_rfis (id, project_id, rfi_number, subject, question, response, assigned_to, due_date, cost_impact, schedule_impact_days, status, organization_id)
+     VALUES (gen_random_uuid(), $1, 'RFI-KHI-014', 'Chiller 300mm pipe manifold clash with Level-1 Cable Tray', '300mm chilled water manifold clashes with cable ladder at Grid C-3 elevation +3.4m. Please advise rerouting.', 'Reroute chilled water manifold below ceiling soffit at +3.1m with 45-degree elbows as shown in sketch SK-MEP-014.', 'Lead Consultant (MEP)', CURRENT_DATE + INTERVAL '5 days', 0.00, 0, 'ANSWERED', $2),
+            (gen_random_uuid(), $1, 'RFI-KHI-015', 'Seismic bracing detail for overhead 2500A busway', 'Confirm required seismic tie-down bracket spacing in Zone 2B seismic criteria.', 'Follow IEEE 693 high-seismic standard; maximum 3.0m bracket centres.', 'Structural Consultant', CURRENT_DATE + INTERVAL '7 days', 0.00, 0, 'OPEN', $2)
+     ON CONFLICT (organization_id, rfi_number) DO NOTHING`,
+    [prjId, c.org],
+  );
+
+  // Drawings
+  await q.query(
+    `INSERT INTO project_drawings (id, project_id, drawing_number, title, discipline, revision, status, scale, organization_id)
+     VALUES (gen_random_uuid(), $1, 'STR-DWG-001', 'Foundation Raft & Retaining Wall Reinforcement Layout', 'STRUCTURAL', 'Rev C', 'APPROVED_FOR_CONSTRUCTION', '1:50', $2),
+            (gen_random_uuid(), $1, 'MEP-DWG-102', 'Chilled Water CRAC Piping & Primary/Secondary Loop', 'MEP', 'Rev B', 'APPROVED_FOR_CONSTRUCTION', '1:100', $2),
+            (gen_random_uuid(), $1, 'ELE-DWG-205', 'Single Line Diagram (SLD) 2500A Dual Busway System', 'MEP', 'Rev B', 'APPROVED_FOR_CONSTRUCTION', 'NTS', $2),
+            (gen_random_uuid(), $1, 'ARC-DWG-301', 'Architectural Modular Partitioning & Clean Agent Zoning', 'ARCHITECTURAL', 'Rev A', 'FOR_APPROVAL', '1:100', $2)
+     ON CONFLICT (organization_id, drawing_number, revision) DO NOTHING`,
+    [prjId, c.org],
+  );
+
+  // BIM 3D Takeoff Model
+  await q.query(
+    `INSERT INTO project_bim_models (id, project_id, model_name, file_format, total_elements, takeoff_volume_m3, status, organization_id)
+     VALUES (gen_random_uuid(), $1, 'Karachi_Tier3_DC_BIM_LOD350.ifc', 'IFC', 2180, 4850.00, 'ACTIVE', $2)
+     ON CONFLICT DO NOTHING`,
+    [prjId, c.org],
   );
 });
 

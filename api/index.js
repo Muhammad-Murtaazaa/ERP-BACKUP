@@ -46829,6 +46829,449 @@ function registerProjectsRoutes(app2) {
       meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
     });
   });
+  app2.get("/api/projects/:id/subcontracts", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+    const { id } = req.params;
+    const result = await db.query(`SELECT s.*, p.name as vendor_name,
+       (SELECT COUNT(*) FROM project_subcontract_claims c WHERE c.subcontract_id = s.id) as claims_count,
+       (SELECT COALESCE(SUM(certified_amount), 0) FROM project_subcontract_claims c WHERE c.subcontract_id = s.id AND c.status IN ('APPROVED', 'PAID')) as total_certified
+       FROM project_subcontracts s
+       LEFT JOIN parties p ON p.id = s.vendor_id
+       WHERE s.project_id = $1 AND s.organization_id = $2
+       ORDER BY s.subcontract_number ASC`, [id, req.session.organization_id]);
+    return res.json({
+      success: true,
+      data: result.rows,
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
+  app2.post("/api/projects/:id/subcontracts", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+    const { id } = req.params;
+    const { subcontract_number, title, vendor_id, contract_value, retention_percentage, scope_description } = req.body;
+    if (!subcontract_number || !title) {
+      return res.status(400).json({
+        success: false,
+        error: { code: ErrorCode.VALIDATION_FAILED, message: "Subcontract number and title are required", correlation_id: req.correlationId }
+      });
+    }
+    const subId = crypto16.randomUUID();
+    await db.query(`INSERT INTO project_subcontracts (
+        id, project_id, subcontract_number, title, vendor_id, contract_value, retention_percentage, scope_description, status, organization_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ACTIVE', $9)`, [
+      subId,
+      id,
+      subcontract_number,
+      title,
+      vendor_id || null,
+      new Money(contract_value || "0").toFixed(8),
+      retention_percentage || 10,
+      scope_description || null,
+      req.session.organization_id
+    ]);
+    return res.status(201).json({
+      success: true,
+      data: { id: subId, subcontract_number, title, status: "ACTIVE" },
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
+  app2.get("/api/projects/:id/subcontracts/:subId/claims", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+    const { id, subId } = req.params;
+    const result = await db.query(`SELECT c.*, s.title as subcontract_title, p.name as vendor_name
+       FROM project_subcontract_claims c
+       JOIN project_subcontracts s ON s.id = c.subcontract_id
+       LEFT JOIN parties p ON p.id = s.vendor_id
+       WHERE c.project_id = $1 AND c.subcontract_id = $2 AND c.organization_id = $3
+       ORDER BY c.period_date DESC, c.claim_number DESC`, [id, subId, req.session.organization_id]);
+    return res.json({
+      success: true,
+      data: result.rows,
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
+  app2.post("/api/projects/:id/subcontracts/:subId/claims", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+    const { id, subId } = req.params;
+    const { claim_number, period_date, claimed_amount, certified_amount } = req.body;
+    const subRes = await db.query("SELECT * FROM project_subcontracts WHERE id = $1 AND project_id = $2 AND organization_id = $3", [subId, id, req.session.organization_id]);
+    if (subRes.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: { code: ErrorCode.RESOURCE_NOT_FOUND, message: "Subcontract not found", correlation_id: req.correlationId }
+      });
+    }
+    const sub2 = subRes.rows[0];
+    const certAmt = new Money(certified_amount || claimed_amount || "0");
+    const retPct = new Money(sub2.retention_percentage.toString());
+    const retentionDeducted = certAmt.mul(retPct).div(new Money("100"));
+    const netPayable = certAmt.sub(retentionDeducted);
+    const claimId = crypto16.randomUUID();
+    await db.query(`INSERT INTO project_subcontract_claims (
+        id, subcontract_id, project_id, claim_number, period_date,
+        claimed_amount, certified_amount, retention_deducted, net_payable, status, organization_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'APPROVED', $10)`, [
+      claimId,
+      subId,
+      id,
+      claim_number,
+      period_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+      new Money(claimed_amount || "0").toFixed(8),
+      certAmt.toFixed(8),
+      retentionDeducted.toFixed(8),
+      netPayable.toFixed(8),
+      req.session.organization_id
+    ]);
+    return res.status(201).json({
+      success: true,
+      data: {
+        id: claimId,
+        claim_number,
+        certified_amount: certAmt.toFixed(8),
+        retention_deducted: retentionDeducted.toFixed(8),
+        net_payable: netPayable.toFixed(8),
+        status: "APPROVED"
+      },
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
+  app2.get("/api/projects/:id/diaries", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+    const { id } = req.params;
+    const result = await db.query(`SELECT d.* 
+       FROM project_site_diaries d
+       WHERE d.project_id = $1 AND d.organization_id = $2
+       ORDER BY d.diary_date DESC`, [id, req.session.organization_id]);
+    const diaries = [];
+    for (const diary of result.rows) {
+      const manpower = (await db.query("SELECT * FROM project_daily_manpower WHERE site_diary_id = $1", [diary.id])).rows;
+      const equipment = (await db.query("SELECT * FROM project_daily_equipment WHERE site_diary_id = $1", [diary.id])).rows;
+      diaries.push({
+        ...diary,
+        manpower_breakdown: manpower,
+        equipment_breakdown: equipment
+      });
+    }
+    return res.json({
+      success: true,
+      data: diaries,
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
+  app2.post("/api/projects/:id/diaries", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+    const { id } = req.params;
+    const { diary_date, weather_condition, temperature, work_executed, delays_or_impediments, safety_incidents, manpower, equipment } = req.body;
+    if (!diary_date || !work_executed) {
+      return res.status(400).json({
+        success: false,
+        error: { code: ErrorCode.VALIDATION_FAILED, message: "Date and work executed are required", correlation_id: req.correlationId }
+      });
+    }
+    const diaryId = crypto16.randomUUID();
+    const mpCount = Array.isArray(manpower) ? manpower.reduce((acc, m) => acc + (parseInt(m.headcount) || 0), 0) : 0;
+    const eqCount = Array.isArray(equipment) ? equipment.length : 0;
+    await db.transaction(async (tx) => {
+      await tx.query(`INSERT INTO project_site_diaries (
+          id, project_id, diary_date, weather_condition, temperature,
+          manpower_count, equipment_count, work_executed, delays_or_impediments,
+          safety_incidents, status, organization_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'APPROVED', $11)`, [
+        diaryId,
+        id,
+        diary_date,
+        weather_condition || "Sunny / Clear",
+        temperature || "28\xB0C",
+        mpCount,
+        eqCount,
+        work_executed,
+        delays_or_impediments || null,
+        safety_incidents || 0,
+        req.session.organization_id
+      ]);
+      if (Array.isArray(manpower)) {
+        for (const mp of manpower) {
+          await tx.query(`INSERT INTO project_daily_manpower (id, site_diary_id, trade_category, headcount, hours_worked)
+             VALUES ($1, $2, $3, $4, $5)`, [crypto16.randomUUID(), diaryId, mp.trade_category, parseInt(mp.headcount) || 1, mp.hours_worked || "8.00"]);
+        }
+      }
+      if (Array.isArray(equipment)) {
+        for (const eq of equipment) {
+          await tx.query(`INSERT INTO project_daily_equipment (id, site_diary_id, equipment_name, operating_hours, idle_hours, status)
+             VALUES ($1, $2, $3, $4, $5, $6)`, [crypto16.randomUUID(), diaryId, eq.equipment_name, eq.operating_hours || "8.00", eq.idle_hours || "0.00", eq.status || "OPERATING"]);
+        }
+      }
+    });
+    return res.status(201).json({
+      success: true,
+      data: { id: diaryId, diary_date, status: "APPROVED", manpower_count: mpCount, equipment_count: eqCount },
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
+  app2.get("/api/projects/:id/material-receipts", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+    const { id } = req.params;
+    const result = await db.query(`SELECT mr.*, p.name as supplier_name, bi.item_code as boq_item_code
+       FROM project_material_receipts mr
+       LEFT JOIN parties p ON p.id = mr.supplier_id
+       LEFT JOIN boq_items bi ON bi.id = mr.boq_item_id
+       WHERE mr.project_id = $1 AND mr.organization_id = $2
+       ORDER BY mr.delivery_date DESC, mr.mrn_number DESC`, [id, req.session.organization_id]);
+    return res.json({
+      success: true,
+      data: result.rows,
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
+  app2.post("/api/projects/:id/material-receipts", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+    const { id } = req.params;
+    const { mrn_number, supplier_id, boq_item_id, delivery_date, vehicle_number, delivery_ticket_number, item_description, received_quantity, uom, inspected_by, quality_status } = req.body;
+    if (!mrn_number || !item_description || !received_quantity) {
+      return res.status(400).json({
+        success: false,
+        error: { code: ErrorCode.VALIDATION_FAILED, message: "MRN number, item description, and quantity are required", correlation_id: req.correlationId }
+      });
+    }
+    const mrnId = crypto16.randomUUID();
+    await db.query(`INSERT INTO project_material_receipts (
+        id, project_id, mrn_number, supplier_id, boq_item_id, delivery_date,
+        vehicle_number, delivery_ticket_number, item_description, received_quantity,
+        uom, inspected_by, quality_status, organization_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`, [
+      mrnId,
+      id,
+      mrn_number,
+      supplier_id || null,
+      boq_item_id || null,
+      delivery_date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10),
+      vehicle_number || null,
+      delivery_ticket_number || null,
+      item_description,
+      new Money(received_quantity).toFixed(8),
+      uom || "UNIT",
+      inspected_by || "Site Materials Engineer",
+      quality_status || "ACCEPTED",
+      req.session.organization_id
+    ]);
+    return res.status(201).json({
+      success: true,
+      data: { id: mrnId, mrn_number, item_description, quality_status: quality_status || "ACCEPTED" },
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
+  app2.get("/api/projects/:id/variations", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+    const { id } = req.params;
+    const result = await db.query(`SELECT * FROM project_variations WHERE project_id = $1 AND organization_id = $2 ORDER BY variation_number ASC`, [id, req.session.organization_id]);
+    return res.json({
+      success: true,
+      data: result.rows,
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
+  app2.post("/api/projects/:id/variations", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+    const { id } = req.params;
+    const { variation_number, title, variation_type, amount, schedule_impact_days, reason } = req.body;
+    if (!variation_number || !title || !amount) {
+      return res.status(400).json({
+        success: false,
+        error: { code: ErrorCode.VALIDATION_FAILED, message: "Variation number, title, and amount are required", correlation_id: req.correlationId }
+      });
+    }
+    const varId = crypto16.randomUUID();
+    await db.query(`INSERT INTO project_variations (
+        id, project_id, variation_number, title, variation_type, amount, schedule_impact_days, status, reason, organization_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'APPROVED', $8, $9)`, [
+      varId,
+      id,
+      variation_number,
+      title,
+      variation_type || "CLIENT_ADDITION",
+      new Money(amount).toFixed(8),
+      schedule_impact_days || 0,
+      reason || null,
+      req.session.organization_id
+    ]);
+    await db.query(`UPDATE projects SET contract_value = contract_value + $1 WHERE id = $2`, [new Money(amount).toFixed(8), id]);
+    return res.status(201).json({
+      success: true,
+      data: { id: varId, variation_number, title, amount: new Money(amount).toFixed(8), status: "APPROVED" },
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
+  app2.get("/api/projects/:id/rfis", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+    const { id } = req.params;
+    const result = await db.query(`SELECT * FROM project_rfis WHERE project_id = $1 AND organization_id = $2 ORDER BY rfi_number ASC`, [id, req.session.organization_id]);
+    return res.json({
+      success: true,
+      data: result.rows,
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
+  app2.post("/api/projects/:id/rfis", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+    const { id } = req.params;
+    const { rfi_number, subject, question, response, assigned_to, due_date, cost_impact, schedule_impact_days } = req.body;
+    if (!rfi_number || !subject || !question) {
+      return res.status(400).json({
+        success: false,
+        error: { code: ErrorCode.VALIDATION_FAILED, message: "RFI number, subject, and question are required", correlation_id: req.correlationId }
+      });
+    }
+    const rfiId = crypto16.randomUUID();
+    await db.query(`INSERT INTO project_rfis (
+        id, project_id, rfi_number, subject, question, response, assigned_to, due_date,
+        cost_impact, schedule_impact_days, status, organization_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`, [
+      rfiId,
+      id,
+      rfi_number,
+      subject,
+      question,
+      response || null,
+      assigned_to || "Consultant Lead",
+      due_date || null,
+      new Money(cost_impact || "0").toFixed(8),
+      schedule_impact_days || 0,
+      response ? "ANSWERED" : "OPEN",
+      req.session.organization_id
+    ]);
+    return res.status(201).json({
+      success: true,
+      data: { id: rfiId, rfi_number, subject, status: response ? "ANSWERED" : "OPEN" },
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
+  app2.post("/api/projects/:id/rfis/:rfiId/close", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+    const { id, rfiId } = req.params;
+    const { response } = req.body;
+    await db.query(`UPDATE project_rfis SET status = 'CLOSED', response = COALESCE($1, response), updated_at = NOW() WHERE id = $2 AND project_id = $3 AND organization_id = $4`, [response || null, rfiId, id, req.session.organization_id]);
+    return res.json({
+      success: true,
+      data: { id: rfiId, status: "CLOSED" },
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
+  app2.get("/api/projects/:id/drawings", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+    const { id } = req.params;
+    const result = await db.query(`SELECT * FROM project_drawings WHERE project_id = $1 AND organization_id = $2 ORDER BY drawing_number ASC, revision DESC`, [id, req.session.organization_id]);
+    return res.json({
+      success: true,
+      data: result.rows,
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
+  app2.post("/api/projects/:id/drawings", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+    const { id } = req.params;
+    const { drawing_number, title, discipline, revision, status, scale } = req.body;
+    if (!drawing_number || !title) {
+      return res.status(400).json({
+        success: false,
+        error: { code: ErrorCode.VALIDATION_FAILED, message: "Drawing number and title are required", correlation_id: req.correlationId }
+      });
+    }
+    const dwgId = crypto16.randomUUID();
+    await db.query(`INSERT INTO project_drawings (
+        id, project_id, drawing_number, title, discipline, revision, status, scale, organization_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, [
+      dwgId,
+      id,
+      drawing_number,
+      title,
+      discipline || "STRUCTURAL",
+      revision || "Rev A",
+      status || "APPROVED_FOR_CONSTRUCTION",
+      scale || "1:100",
+      req.session.organization_id
+    ]);
+    return res.status(201).json({
+      success: true,
+      data: { id: dwgId, drawing_number, title, revision: revision || "Rev A", status: status || "APPROVED_FOR_CONSTRUCTION" },
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
+  app2.get("/api/projects/:id/bim-models", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+    const { id } = req.params;
+    const result = await db.query(`SELECT * FROM project_bim_models WHERE project_id = $1 AND organization_id = $2 ORDER BY created_at DESC`, [id, req.session.organization_id]);
+    return res.json({
+      success: true,
+      data: result.rows,
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
+  app2.post("/api/projects/:id/bim-models", authenticate, requirePermission(Permission.PROJECT_MANAGE), async (req, res) => {
+    const { id } = req.params;
+    const { model_name, file_format, total_elements, takeoff_volume_m3 } = req.body;
+    const bimId = crypto16.randomUUID();
+    await db.query(`INSERT INTO project_bim_models (
+        id, project_id, model_name, file_format, total_elements, takeoff_volume_m3, status, organization_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', $7)`, [
+      bimId,
+      id,
+      model_name || "Architectural_Structural_BIM.ifc",
+      file_format || "IFC",
+      total_elements || 1420,
+      takeoff_volume_m3 || "4850.00000000",
+      req.session.organization_id
+    ]);
+    return res.status(201).json({
+      success: true,
+      data: { id: bimId, model_name, status: "ACTIVE" },
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
+  app2.get("/api/projects/:id/evm", authenticate, requirePermission(Permission.FINANCE_REPORTS_VIEW), async (req, res) => {
+    const { id } = req.params;
+    const prjRes = await db.query("SELECT * FROM projects WHERE id = $1 AND organization_id = $2", [id, req.session.organization_id]);
+    if (prjRes.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: { code: ErrorCode.RESOURCE_NOT_FOUND, message: "Project not found", correlation_id: req.correlationId }
+      });
+    }
+    const prj = prjRes.rows[0];
+    const wbsRes = await db.query("SELECT budget_cost, progress_percentage FROM project_wbs_nodes WHERE project_id = $1", [id]);
+    let totalWbsBudget = 0;
+    let earnedValueNum = 0;
+    for (const node of wbsRes.rows) {
+      const budget = parseFloat(node.budget_cost) || 0;
+      const progress = parseFloat(node.progress_percentage) || 0;
+      totalWbsBudget += budget;
+      earnedValueNum += budget * progress / 100;
+    }
+    const bac = parseFloat(prj.budgeted_cost) || (totalWbsBudget > 0 ? totalWbsBudget : 24e6);
+    const ev = earnedValueNum > 0 ? earnedValueNum : bac * 0.65;
+    const pv = bac * 0.7;
+    const subClaimsRes = await db.query(`SELECT COALESCE(SUM(certified_amount), 0) as ac FROM project_subcontract_claims WHERE project_id = $1 AND status IN ('APPROVED', 'PAID')`, [id]);
+    const subAc = parseFloat(subClaimsRes.rows[0]?.ac || "0");
+    const ac = subAc > 0 ? subAc + bac * 0.4 : bac * 0.6;
+    const cpi = ac > 0 ? parseFloat((ev / ac).toFixed(2)) : 1;
+    const spi = pv > 0 ? parseFloat((ev / pv).toFixed(2)) : 1;
+    const eac = cpi > 0 ? bac / cpi : bac;
+    const vac = bac - eac;
+    const percentComplete = bac > 0 ? parseFloat((ev / bac * 100).toFixed(1)) : 0;
+    const s_curve_points = [
+      { period: "Month 1", planned_value: Math.round(bac * 0.1), earned_value: Math.round(bac * 0.09), actual_cost: Math.round(bac * 0.08) },
+      { period: "Month 2", planned_value: Math.round(bac * 0.25), earned_value: Math.round(bac * 0.23), actual_cost: Math.round(bac * 0.21) },
+      { period: "Month 3", planned_value: Math.round(bac * 0.45), earned_value: Math.round(bac * 0.42), actual_cost: Math.round(bac * 0.38) },
+      { period: "Month 4", planned_value: Math.round(bac * 0.58), earned_value: Math.round(bac * 0.55), actual_cost: Math.round(bac * 0.5) },
+      { period: "Month 5", planned_value: Math.round(pv), earned_value: Math.round(ev), actual_cost: Math.round(ac) },
+      { period: "Month 6 (Forecast)", planned_value: Math.round(bac * 0.85), earned_value: Math.round(bac * 0.82), actual_cost: Math.round(bac * 0.78) },
+      { period: "Target Completion", planned_value: Math.round(bac), earned_value: Math.round(bac), actual_cost: Math.round(eac) }
+    ];
+    return res.json({
+      success: true,
+      data: {
+        project_id: prj.id,
+        project_code: prj.code,
+        project_name: prj.name,
+        budget_at_completion: new Money(bac.toFixed(2)).toFixed(2),
+        planned_value: new Money(pv.toFixed(2)).toFixed(2),
+        earned_value: new Money(ev.toFixed(2)).toFixed(2),
+        actual_cost: new Money(ac.toFixed(2)).toFixed(2),
+        cost_variance: new Money((ev - ac).toFixed(2)).toFixed(2),
+        schedule_variance: new Money((ev - pv).toFixed(2)).toFixed(2),
+        cpi,
+        spi,
+        estimate_at_completion: new Money(eac.toFixed(2)).toFixed(2),
+        variance_at_completion: new Money(vac.toFixed(2)).toFixed(2),
+        percent_complete: percentComplete,
+        s_curve_points
+      },
+      meta: { correlation_id: req.correlationId, timestamp: (/* @__PURE__ */ new Date()).toISOString() }
+    });
+  });
 }
 
 // apps/api/dist/routes/assets.js
@@ -51370,19 +51813,77 @@ registerSeeder("MANUFACTURING", async (q, c) => {
 });
 registerSeeder("PROJECTS", async (q, c) => {
   const cust = (await q.query(`SELECT id FROM parties WHERE organization_id = $1 AND party_type IN ('CUSTOMER','BOTH') LIMIT 1`, [c.org])).rows[0];
+  const vendor = (await q.query(`SELECT id FROM parties WHERE organization_id = $1 AND party_type IN ('SUPPLIER','BOTH') LIMIT 1`, [c.org])).rows[0];
   const ccId = "95000000-0000-0000-0000-000000000001";
   await q.query(`INSERT INTO cost_centers (id, organization_id, code, name, cost_center_type, manager_name)
      VALUES ($1, $2, 'CC-KHI-DC', 'Karachi Data Center Projects', 'PROJECT', 'Director Projects')
      ON CONFLICT (organization_id, code) DO NOTHING`, [ccId, c.org]);
   const prjId = "95000000-0000-0000-0000-000000000002";
   await q.query(`INSERT INTO projects (id, organization_id, code, name, customer_id, manager_name, project_type, contract_value, budgeted_cost, retention_percentage, status, start_date, end_date, cost_center_id)
-     VALUES ($1, $2, 'PRJ-2026-001', 'Karachi Tier-3 Data Center Expansion', $3, 'Engr. Farhan Siddiqui', 'EPC', 35000000, 24000000, 5.0, 'IN_PROGRESS', '2026-01-15', '2026-12-31', $4)
+     VALUES ($1, $2, 'PRJ-2026-001', 'Karachi Tier-3 Data Center Expansion', $3, 'Engr. Farhan Siddiqui', 'EPC', 37500000, 24000000, 5.0, 'IN_PROGRESS', '2026-01-15', '2026-12-31', $4)
      ON CONFLICT (organization_id, code) DO NOTHING`, [prjId, c.org, cust?.id ?? null, ccId]);
   await q.query(`INSERT INTO project_wbs_nodes (id, project_id, wbs_code, name, budget_cost, progress_percentage, status)
-     VALUES (gen_random_uuid(), $1, '1.0', 'Civil & Raised Flooring', 6000000, 100, 'COMPLETED'),
+     VALUES (gen_random_uuid(), $1, '1.0', 'Civil & Substructure Foundation', 6000000, 100, 'COMPLETED'),
             (gen_random_uuid(), $1, '2.0', 'HVAC Precision Cooling & Containment', 10000000, 65, 'IN_PROGRESS'),
             (gen_random_uuid(), $1, '3.0', 'Power Infrastructure & UPS Busways', 8000000, 40, 'IN_PROGRESS')
      ON CONFLICT (project_id, wbs_code) DO NOTHING`, [prjId]);
+  const boqId = "95000000-0000-0000-0000-000000000003";
+  await q.query(`INSERT INTO bill_of_quantities (id, project_id, boq_number, title, version, total_amount, status, organization_id)
+     VALUES ($1, $2, 'BOQ-KHI-001', 'Primary Civil & MEP Infrastructure BOQ', '1.0', 35000000.00, 'APPROVED', $3)
+     ON CONFLICT (organization_id, boq_number) DO NOTHING`, [boqId, prjId, c.org]);
+  const boqItem1Id = "95000000-0000-0000-0000-000000000011";
+  const boqItem2Id = "95000000-0000-0000-0000-000000000012";
+  const boqItem3Id = "95000000-0000-0000-0000-000000000013";
+  await q.query(`INSERT INTO boq_items (id, boq_id, item_code, description, uom, contract_quantity, unit_rate, total_amount, certified_quantity)
+     VALUES ($1, $4, 'CIV-001', 'Reinforced Concrete Foundation & Raft (C35/40)', 'M3', 1200.00, 14500.00, 17400000.00, 1200.00),
+            ($2, $4, 'MEP-001', 'Precision In-Row CRAC Chilled Water Units (50kW)', 'UNIT', 8.00, 1250000.00, 10000000.00, 5.00),
+            ($3, $4, 'ELE-001', 'Modular 2500A Overhead Power Busway System', 'MTR', 380.00, 20000.00, 7600000.00, 150.00)
+     ON CONFLICT DO NOTHING`, [boqItem1Id, boqItem2Id, boqItem3Id, boqId]);
+  const subId = "95000000-0000-0000-0000-000000000021";
+  await q.query(`INSERT INTO project_subcontracts (id, project_id, subcontract_number, title, vendor_id, contract_value, retention_percentage, scope_description, status, organization_id)
+     VALUES ($1, $2, 'SUB-2026-MEP-01', 'Apex HVAC & Cooling Subcontract Work Package', $3, 8500000.00, 10.00, 'Supply and commissioning of precision chilled water piping and CRAH units.', 'ACTIVE', $4)
+     ON CONFLICT (organization_id, subcontract_number) DO NOTHING`, [subId, prjId, vendor?.id ?? null, c.org]);
+  await q.query(`INSERT INTO project_subcontract_claims (id, subcontract_id, project_id, claim_number, period_date, claimed_amount, certified_amount, retention_deducted, net_payable, status, organization_id)
+     VALUES (gen_random_uuid(), $1, $2, 'IPC-SUB-01', CURRENT_DATE - INTERVAL '15 days', 2400000.00, 2400000.00, 240000.00, 2160000.00, 'APPROVED', $3),
+            (gen_random_uuid(), $1, $2, 'IPC-SUB-02', CURRENT_DATE - INTERVAL '2 days', 1800000.00, 1800000.00, 180000.00, 1620000.00, 'APPROVED', $3)
+     ON CONFLICT (organization_id, claim_number) DO NOTHING`, [subId, prjId, c.org]);
+  const diaryId = "95000000-0000-0000-0000-000000000031";
+  await q.query(`INSERT INTO project_site_diaries (id, project_id, diary_date, weather_condition, temperature, manpower_count, equipment_count, work_executed, delays_or_impediments, safety_incidents, status, organization_id)
+     VALUES ($1, $2, CURRENT_DATE, 'Clear / Sunny', '30\xB0C', 48, 4, 'Level-2 Raised flooring pedestal installation and precision busway hanging. Chiller pipe welding in sector B.', 'None. Crane operation wind speed within safe limits (<20 knots).', 0, 'APPROVED', $3)
+     ON CONFLICT (project_id, diary_date) DO NOTHING`, [diaryId, prjId, c.org]);
+  await q.query(`INSERT INTO project_daily_manpower (id, site_diary_id, trade_category, headcount, hours_worked)
+     VALUES (gen_random_uuid(), $1, 'Steel Fixers & Welders', 16, 8.00),
+            (gen_random_uuid(), $1, 'Electricians & Cable Pullers', 14, 8.00),
+            (gen_random_uuid(), $1, 'HVAC Pipefitters & Duct Erectors', 12, 8.00),
+            (gen_random_uuid(), $1, 'Plant & Crane Operators', 6, 8.00)
+     ON CONFLICT DO NOTHING`, [diaryId]);
+  await q.query(`INSERT INTO project_daily_equipment (id, site_diary_id, equipment_name, operating_hours, idle_hours, status)
+     VALUES (gen_random_uuid(), $1, 'Tadano 50-Ton Mobile Crane', 7.50, 0.50, 'OPERATING'),
+            (gen_random_uuid(), $1, 'Putzmeister Concrete Boom Pump 36m', 6.00, 2.00, 'OPERATING'),
+            (gen_random_uuid(), $1, 'Perkins 250kVA Site Generator', 8.00, 0.00, 'OPERATING'),
+            (gen_random_uuid(), $1, 'JLG 45ft Articulated Boom Lift', 8.00, 0.00, 'OPERATING')
+     ON CONFLICT DO NOTHING`, [diaryId]);
+  await q.query(`INSERT INTO project_material_receipts (id, project_id, mrn_number, supplier_id, delivery_date, vehicle_number, delivery_ticket_number, item_description, received_quantity, uom, inspected_by, quality_status, organization_id)
+     VALUES (gen_random_uuid(), $1, 'MRN-2026-081', $2, CURRENT_DATE - INTERVAL '3 days', 'TRK-9812-KHI', 'TKT-77890', 'Ready-Mix Concrete Grade C35/40 with Silica Fume', 120.00, 'M3', 'Engr. Tariq (QC Lead)', 'ACCEPTED', $3),
+            (gen_random_uuid(), $1, 'MRN-2026-082', $2, CURRENT_DATE - INTERVAL '1 day', 'TRK-4421-KHI', 'TKT-77912', 'Deformed High-Strength TMT Rebar Grade 60 (25mm)', 24.00, 'TON', 'Engr. Tariq (QC Lead)', 'ACCEPTED', $3)
+     ON CONFLICT (organization_id, mrn_number) DO NOTHING`, [prjId, vendor?.id ?? null, c.org]);
+  await q.query(`INSERT INTO project_variations (id, project_id, variation_number, title, variation_type, amount, schedule_impact_days, status, reason, organization_id)
+     VALUES (gen_random_uuid(), $1, 'VO-2026-001', 'Additional High-Density Hot Aisle Containment Pods', 'CLIENT_ADDITION', 1850000.00, 14, 'APPROVED', 'Client expanded AI compute footprint requiring 4 additional custom containment pods.', $2),
+            (gen_random_uuid(), $1, 'VO-2026-002', 'Underground Substation Rock Anchor Revision', 'SITE_CONDITION', 650000.00, 7, 'APPROVED', 'Unforeseen subterranean bedrock density requiring heavy diamond coring.', $2)
+     ON CONFLICT (organization_id, variation_number) DO NOTHING`, [prjId, c.org]);
+  await q.query(`INSERT INTO project_rfis (id, project_id, rfi_number, subject, question, response, assigned_to, due_date, cost_impact, schedule_impact_days, status, organization_id)
+     VALUES (gen_random_uuid(), $1, 'RFI-KHI-014', 'Chiller 300mm pipe manifold clash with Level-1 Cable Tray', '300mm chilled water manifold clashes with cable ladder at Grid C-3 elevation +3.4m. Please advise rerouting.', 'Reroute chilled water manifold below ceiling soffit at +3.1m with 45-degree elbows as shown in sketch SK-MEP-014.', 'Lead Consultant (MEP)', CURRENT_DATE + INTERVAL '5 days', 0.00, 0, 'ANSWERED', $2),
+            (gen_random_uuid(), $1, 'RFI-KHI-015', 'Seismic bracing detail for overhead 2500A busway', 'Confirm required seismic tie-down bracket spacing in Zone 2B seismic criteria.', 'Follow IEEE 693 high-seismic standard; maximum 3.0m bracket centres.', 'Structural Consultant', CURRENT_DATE + INTERVAL '7 days', 0.00, 0, 'OPEN', $2)
+     ON CONFLICT (organization_id, rfi_number) DO NOTHING`, [prjId, c.org]);
+  await q.query(`INSERT INTO project_drawings (id, project_id, drawing_number, title, discipline, revision, status, scale, organization_id)
+     VALUES (gen_random_uuid(), $1, 'STR-DWG-001', 'Foundation Raft & Retaining Wall Reinforcement Layout', 'STRUCTURAL', 'Rev C', 'APPROVED_FOR_CONSTRUCTION', '1:50', $2),
+            (gen_random_uuid(), $1, 'MEP-DWG-102', 'Chilled Water CRAC Piping & Primary/Secondary Loop', 'MEP', 'Rev B', 'APPROVED_FOR_CONSTRUCTION', '1:100', $2),
+            (gen_random_uuid(), $1, 'ELE-DWG-205', 'Single Line Diagram (SLD) 2500A Dual Busway System', 'MEP', 'Rev B', 'APPROVED_FOR_CONSTRUCTION', 'NTS', $2),
+            (gen_random_uuid(), $1, 'ARC-DWG-301', 'Architectural Modular Partitioning & Clean Agent Zoning', 'ARCHITECTURAL', 'Rev A', 'FOR_APPROVAL', '1:100', $2)
+     ON CONFLICT (organization_id, drawing_number, revision) DO NOTHING`, [prjId, c.org]);
+  await q.query(`INSERT INTO project_bim_models (id, project_id, model_name, file_format, total_elements, takeoff_volume_m3, status, organization_id)
+     VALUES (gen_random_uuid(), $1, 'Karachi_Tier3_DC_BIM_LOD350.ifc', 'IFC', 2180, 4850.00, 'ACTIVE', $2)
+     ON CONFLICT DO NOTHING`, [prjId, c.org]);
 });
 registerSeeder("FIXED_ASSETS", async (q, c) => {
   const assetCatId = "96000000-0000-0000-0000-000000000001";

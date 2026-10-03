@@ -1531,3 +1531,172 @@ export interface StandardSuccessResponse<T> {
   };
 }
 
+// Enterprise Construction Contracts (Inspired by OpenConstructionERP & EPC Standards)
+export interface ProjectSubcontract {
+  id: string;
+  project_id: string;
+  subcontract_number: string;
+  title: string;
+  vendor_id?: string | null;
+  vendor_name?: string | null;
+  contract_value: string;
+  retention_percentage: string;
+  scope_description?: string | null;
+  status: 'DRAFT' | 'ACTIVE' | 'COMPLETED' | 'TERMINATED';
+  organization_id: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProjectSubcontractClaim {
+  id: string;
+  subcontract_id: string;
+  project_id: string;
+  claim_number: string;
+  period_date: string;
+  claimed_amount: string;
+  certified_amount: string;
+  retention_deducted: string;
+  net_payable: string;
+  status: 'SUBMITTED' | 'VERIFIED' | 'APPROVED' | 'PAID';
+  organization_id: string;
+  subcontract_title?: string;
+  vendor_name?: string;
+  created_at?: string;
+}
+
+export interface ProjectSiteDiary {
+  id: string;
+  project_id: string;
+  diary_date: string;
+  weather_condition: string;
+  temperature: string;
+  manpower_count: number;
+  equipment_count: number;
+  work_executed: string;
+  delays_or_impediments?: string | null;
+  safety_incidents: number;
+  status: 'DRAFT' | 'SUBMITTED' | 'APPROVED';
+  organization_id: string;
+  manpower_breakdown?: ProjectDailyManpower[];
+  equipment_breakdown?: ProjectDailyEquipment[];
+  created_at?: string;
+}
+
+export interface ProjectDailyManpower {
+  id: string;
+  site_diary_id: string;
+  trade_category: string;
+  headcount: number;
+  hours_worked: string;
+}
+
+export interface ProjectDailyEquipment {
+  id: string;
+  site_diary_id: string;
+  equipment_name: string;
+  operating_hours: string;
+  idle_hours: string;
+  status: string;
+}
+
+export interface ProjectMaterialReceipt {
+  id: string;
+  project_id: string;
+  mrn_number: string;
+  supplier_id?: string | null;
+  supplier_name?: string | null;
+  boq_item_id?: string | null;
+  delivery_date: string;
+  vehicle_number?: string | null;
+  delivery_ticket_number?: string | null;
+  item_description: string;
+  received_quantity: string;
+  uom: string;
+  inspected_by?: string | null;
+  quality_status: 'ACCEPTED' | 'CONDITIONALLY_ACCEPTED' | 'REJECTED';
+  organization_id: string;
+  created_at?: string;
+}
+
+export interface ProjectVariation {
+  id: string;
+  project_id: string;
+  variation_number: string;
+  title: string;
+  variation_type: 'CLIENT_ADDITION' | 'SITE_CONDITION' | 'DESIGN_CHANGE' | 'VALUE_ENGINEERING';
+  amount: string;
+  schedule_impact_days: number;
+  status: 'PROPOSED' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
+  reason?: string | null;
+  organization_id: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProjectRFI {
+  id: string;
+  project_id: string;
+  rfi_number: string;
+  subject: string;
+  question: string;
+  response?: string | null;
+  assigned_to?: string | null;
+  due_date?: string | null;
+  cost_impact: string;
+  schedule_impact_days: number;
+  status: 'OPEN' | 'UNDER_REVIEW' | 'ANSWERED' | 'CLOSED';
+  organization_id: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProjectDrawing {
+  id: string;
+  project_id: string;
+  drawing_number: string;
+  title: string;
+  discipline: 'ARCHITECTURAL' | 'STRUCTURAL' | 'MEP' | 'CIVIL' | 'LANDSCAPE';
+  revision: string;
+  status: 'PRELIMINARY' | 'FOR_APPROVAL' | 'APPROVED_FOR_CONSTRUCTION' | 'SUPERSEDED';
+  scale?: string | null;
+  organization_id: string;
+  created_at?: string;
+}
+
+export interface ProjectBIMModel {
+  id: string;
+  project_id: string;
+  model_name: string;
+  file_format: string;
+  total_elements: number;
+  takeoff_volume_m3: string;
+  status: string;
+  organization_id: string;
+  created_at?: string;
+}
+
+export interface ProjectEVMAnalytics {
+  project_id: string;
+  project_code: string;
+  project_name: string;
+  budget_at_completion: string; // BAC
+  planned_value: string; // PV
+  earned_value: string; // EV
+  actual_cost: string; // AC
+  cost_variance: string; // CV = EV - AC
+  schedule_variance: string; // SV = EV - PV
+  cpi: number; // CPI = EV / AC
+  spi: number; // SPI = EV / PV
+  estimate_at_completion: string; // EAC = BAC / CPI
+  variance_at_completion: string; // VAC = BAC - EAC
+  percent_complete: number;
+  s_curve_points: Array<{
+    period: string;
+    planned_value: number;
+    earned_value: number;
+    actual_cost: number;
+  }>;
+}
+
+
