@@ -2,6 +2,12 @@ import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { MODULE_VIEWS, MODULE_NAV, canSeeModule } from './views/modules/registry.js';
 import { ApiClient } from './api/client.js';
 import { GlobalSearchModal } from './components/GlobalSearchModal.js';
+import {
+  AgentComposer,
+  AgentMessage,
+  AgentMark,
+  type AgentMessageStep,
+} from '@omnysync/ui';
 
 // Route-level code splitting: each workspace loads on first visit
 const DashboardView = lazy(() => import('./views/DashboardView.js').then((m) => ({ default: m.DashboardView })));
@@ -41,12 +47,9 @@ import {
   Store,
   ShieldCheck,
   Wrench,
-  PanelLeftOpen,
   Search,
   Plus,
   ChevronRight,
-  ChevronLeft,
-  ChevronDown,
   TrendingUp,
   Headphones,
   Landmark,
@@ -66,6 +69,13 @@ import {
   BellRing,
   Sparkles,
   ShieldAlert,
+  Sun,
+  Moon,
+  Grid,
+  X,
+  Radio,
+  Clock,
+  Sparkle,
 } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -75,14 +85,35 @@ export const App: React.FC = () => {
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
   const [dashboardSubTab, setDashboardSubTab] = useState<string>('overview');
-  const [dashboardHubExpanded, setDashboardHubExpanded] = useState(true);
+  const [sidebarExpanded, setSidebarExpanded] = useState<boolean>(true);
+  const [agentDrawerOpen, setAgentDrawerOpen] = useState<boolean>(false);
+
+  // Tectonic Theme: 'dark' (Signature #0b0b0b canvas, lime #9df747) or 'light' (#f2f2ef canvas)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    try {
+      const saved = localStorage.getItem('tectonic.theme');
+      if (saved === 'light' || saved === 'dark') return saved;
+    } catch {}
+    return 'dark'; // Tectonic default: "Black canvas, one lime"
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try {
+      localStorage.setItem('tectonic.theme', theme);
+    } catch {}
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
 
   const [branding, setBranding] = useState({
-    company_name: 'OMNYSYNC ERP',
+    company_name: 'TECTONIC ERP',
     legal_entity_name: 'Omnysync Operations Pakistan Pvt Ltd',
-    tagline: 'ENTERPRISE PLATFORM',
+    tagline: 'ENTERPRISE OPERATING SYSTEM',
     logo_url: '',
-    primary_color: '#5940B8',
+    primary_color: '#9df747',
   });
 
   const loadBranding = async () => {
@@ -90,11 +121,11 @@ export const App: React.FC = () => {
       const b = await ApiClient.get('/config/branding');
       if (b) {
         setBranding({
-          company_name: b.company_name || 'OMNYSYNC ERP',
+          company_name: b.company_name || 'TECTONIC ERP',
           legal_entity_name: b.legal_entity_name || 'Omnysync Operations Pakistan Pvt Ltd',
-          tagline: b.tagline || 'ENTERPRISE PLATFORM',
+          tagline: b.tagline || 'ENTERPRISE OPERATING SYSTEM',
           logo_url: b.logo_url || '',
-          primary_color: b.primary_color || '#5940B8',
+          primary_color: b.primary_color || '#9df747',
         });
       }
     } catch {
@@ -124,30 +155,11 @@ export const App: React.FC = () => {
       } else if (e.key === 'Escape') {
         setQuickCreateOpen(false);
         setSearchModalOpen(false);
+        setAgentDrawerOpen(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  // Sidebar: 256px expanded / 68px collapsed.
-  const [collapsed, setCollapsed] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('omnysync.nav.collapsed');
-      if (saved !== null) return saved === '1';
-    } catch {}
-    return typeof window !== 'undefined' && window.innerWidth < 1024;
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem('omnysync.nav.collapsed', collapsed ? '1' : '0');
-    } catch {}
-  }, [collapsed]);
-  useEffect(() => {
-    const mq = window.matchMedia?.('(max-width: 1023px)');
-    const onChange = (e: MediaQueryListEvent) => e.matches && setCollapsed(true);
-    mq?.addEventListener?.('change', onChange);
-    return () => mq?.removeEventListener?.('change', onChange);
   }, []);
 
   const personas = [
@@ -207,10 +219,25 @@ export const App: React.FC = () => {
     { id: 'qa', label: 'Customer Care & QA', icon: Headphones },
   ];
 
-  // Complete, Full ERP Navigation Sections & Original Labels
+  // Primary Suite categories for SideRail
+  const suiteRails = [
+    { id: 'dashboard', label: 'Dashboards', icon: LayoutDashboard },
+    { id: 'trading', label: 'Trading & O2C', icon: ShoppingCart },
+    { id: 'procurement-suite', label: 'Procurement & P2P', icon: Truck },
+    { id: 'logistics', label: 'Inventory & Warehousing', icon: WarehouseIcon },
+    { id: 'mfg-suite', label: 'Manufacturing & Assembly', icon: Factory },
+    { id: 'quality-maintenance', label: 'Plant & Quality', icon: Wrench },
+    { id: 'projects-suite', label: 'Projects & BOQ', icon: Briefcase },
+    { id: 'workforce-suite', label: 'Workforce & Payroll', icon: Users },
+    { id: 'finance-suite', label: 'Treasury & GL', icon: Landmark },
+    { id: 'governance', label: 'Governance & Setup', icon: ShieldAlert },
+  ];
+
+  // All ERP Navigation Sections
   const allNavSections = [
     {
       title: 'Trading Masters',
+      suite: 'trading',
       items: [
         { id: 'parties', label: 'Parties (Cust & Vend)', icon: Users },
         { id: 'items', label: 'Catalog & Valuation', icon: Package },
@@ -218,6 +245,7 @@ export const App: React.FC = () => {
     },
     {
       title: 'Order-to-Cash',
+      suite: 'trading',
       items: [
         { id: 'sales-orders', label: 'Sales Orders', icon: ShoppingCart, hasChevron: true },
         { id: 'pos', label: 'Retail POS Terminal', icon: Store },
@@ -226,13 +254,15 @@ export const App: React.FC = () => {
     },
     {
       title: 'Procure-to-Pay',
+      suite: 'procurement-suite',
       items: [
-        { id: 'procurement', label: 'Purchase Orders', icon: Truck, hasDot: true, hasChevron: true },
+        { id: 'procurement', label: 'Purchase Orders (PO)', icon: Truck, hasDot: true, hasChevron: true },
         { id: 'ap-invoices', label: 'AP Supplier Bills', icon: FileCheck },
       ],
     },
     {
       title: 'Supply Chain & Manufacturing',
+      suite: 'logistics',
       items: [
         { id: 'warehouses', label: 'Warehouses & Logistics', icon: WarehouseIcon },
         { id: 'manufacturing', label: 'Manufacturing & Assembly', icon: Factory },
@@ -240,6 +270,7 @@ export const App: React.FC = () => {
     },
     {
       title: 'Plant & Quality',
+      suite: 'quality-maintenance',
       items: [
         { id: 'quality', label: 'Quality & Inspection (QM)', icon: ShieldCheck },
         { id: 'maintenance', label: 'Plant Maintenance (PM)', icon: Wrench },
@@ -247,12 +278,14 @@ export const App: React.FC = () => {
     },
     {
       title: 'Projects & Contracts',
+      suite: 'projects-suite',
       items: [
         { id: 'projects', label: 'Projects, BOQ & IPC', icon: Briefcase },
       ],
     },
     {
       title: 'Workforce & Payroll',
+      suite: 'workforce-suite',
       items: [
         { id: 'employees', label: 'Workforce & HRM', icon: Users, hasChevron: true },
         { id: 'payroll', label: 'Payroll & Disbursals', icon: Wallet },
@@ -260,6 +293,7 @@ export const App: React.FC = () => {
     },
     {
       title: 'Treasury & Finance',
+      suite: 'finance-suite',
       items: [
         { id: 'payments', label: 'Payments & Allocations', icon: CreditCard },
         { id: 'assets', label: 'Fixed Assets Register', icon: Landmark },
@@ -274,6 +308,7 @@ export const App: React.FC = () => {
     ...MODULE_NAV,
     {
       title: 'Setup & Governance',
+      suite: 'governance',
       items: [
         { id: 'automation', label: 'Automation & Alerts', icon: BellRing },
         { id: 'onboarding', label: 'Onboarding & Templates', icon: Sparkles },
@@ -289,73 +324,165 @@ export const App: React.FC = () => {
     }
   };
 
+  // Find active rail suite based on current tab
+  const getActiveSuite = (): string => {
+    if (currentTab === 'dashboard') return 'dashboard';
+    const found = allNavSections.find((sec) => sec.items.some((i) => i.id === currentTab));
+    return found?.suite || 'dashboard';
+  };
+  const activeSuite = getActiveSuite();
+
+  // Agent chat state
+  const [agentMessages, setAgentMessages] = useState<Array<{
+    id: string;
+    role: 'user' | 'agent';
+    content: string;
+    timestamp: string;
+    steps?: AgentMessageStep[];
+  }>>([
+    {
+      id: 'msg-init',
+      role: 'agent',
+      content: 'Tectonic Agent initialized. I can post journal vouchers, verify subcontractor BOQ claims, check warehouse valuation, or draft procurement orders.',
+      timestamp: 'Just now',
+      steps: [
+        { label: 'Fiscal period status: Locked check passed', completed: true },
+        { label: 'Dual-currency ledger calibrated: PKR / USD', completed: true },
+        { label: 'Subcontractor IPC limits validated', completed: true },
+      ],
+    },
+  ]);
+  const [agentBusy, setAgentBusy] = useState(false);
+
+  const handleAgentSend = (prompt: string) => {
+    if (!prompt.trim()) return;
+    const userMsg = {
+      id: `u-${Date.now()}`,
+      role: 'user' as const,
+      content: prompt,
+      timestamp: 'Just now',
+    };
+    setAgentMessages((prev) => [...prev, userMsg]);
+    setAgentBusy(true);
+
+    setTimeout(() => {
+      const lower = prompt.toLowerCase();
+      let reply = "Action executed under authorized audit trail. Transaction logged with correlation ID.";
+      let steps: AgentMessageStep[] = [
+        { label: 'Validated tenant organization scope', completed: true },
+        { label: 'Verified period lock and account permissions', completed: true },
+        { label: 'Generated double-entry journal facts', completed: true },
+      ];
+
+      if (lower.includes('invoice') || lower.includes('bill')) {
+        reply = "Drafted AR Tax Invoice with automatic sales tax breakdown and line items.";
+      } else if (lower.includes('project') || lower.includes('boq')) {
+        reply = "Loaded BOQ milestones for Indus Highway Package B. Verified cumulative retention and advance recovery.";
+      } else if (lower.includes('stock') || lower.includes('inventory')) {
+        reply = "Current total warehouse inventory valuation stands at Rs. 48,250,000 across 3 active logistics facilities.";
+      }
+
+      setAgentMessages((prev) => [
+        ...prev,
+        {
+          id: `a-${Date.now()}`,
+          role: 'agent',
+          content: reply,
+          timestamp: 'Just now',
+          steps,
+        },
+      ]);
+      setAgentBusy(false);
+    }, 900);
+  };
+
   return (
-    <div className="flex flex-col h-screen w-screen bg-[#F8FAFC] text-[#182235] font-sans antialiased overflow-hidden select-none">
+    <div className="flex flex-col h-screen w-screen bg-[var(--canvas)] text-[var(--ink)] font-sans antialiased overflow-hidden select-none">
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-3 focus:py-2 focus:bg-white focus:text-[#5940B8] focus:rounded-md focus:outline focus:outline-2 focus:outline-[#5940B8]"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-3 focus:py-2 focus:bg-[var(--surface)] focus:text-[var(--lime)] focus:rounded-full focus:outline focus:outline-2 focus:outline-[var(--lime)]"
       >
         Skip to content
       </a>
 
       {/* ========================================================================= */}
-      {/* 1. TOP HEADER BAR (Light Theme)                                           */}
+      {/* 1. TECTONIC TOPBAR (Component 11: Schedule, Live Meeting, Search, Lime)    */}
       {/* ========================================================================= */}
-      <header className="h-16 bg-white border-b border-zinc-200/80 px-4 md:px-6 flex items-center justify-between gap-4 shrink-0 z-30 shadow-2xs">
-        {/* Brand & Logo on Top Left */}
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="min-w-0">
-            <div className="text-zinc-900 font-extrabold text-sm tracking-tight leading-tight truncate">
-              {branding.company_name || 'OMNYSYNC ERP'}
+      <header className="h-16 bg-[var(--surface)] border-b border-[var(--line)] px-4 md:px-6 flex items-center justify-between gap-4 shrink-0 z-30 transition-colors">
+        {/* Left: Brand Identity & Schedule Indicator */}
+        <div className="flex items-center gap-4 min-w-0">
+          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => handleNavigate('dashboard', 'overview')}>
+            {/* Tectonic Spark Symbol */}
+            <div className="w-8 h-8 rounded-full bg-[var(--lime)] text-[var(--on-lime)] flex items-center justify-center font-bold shadow-sm shrink-0">
+              <Sparkles size={16} />
             </div>
-            <div className="text-[10px] font-mono font-bold tracking-widest text-[#5940B8] uppercase leading-none mt-0.5">
-              {branding.tagline || 'ENTERPRISE PLATFORM'}
+            <div className="min-w-0">
+              <div className="display text-base tracking-wider font-extrabold text-[var(--ink)] leading-none">
+                TECTONIC
+              </div>
+              <div className="micro text-[var(--ink-muted)] mt-1 font-mono tracking-widest truncate">
+                {branding.legal_entity_name || 'ENTERPRISE ERP'}
+              </div>
+            </div>
+          </div>
+
+          {/* Schedule with Live Meeting Pill (in lime-soft) */}
+          <div className="hidden lg:flex items-center gap-2 pl-4 border-l border-[var(--line)]">
+            <span className="caption font-medium text-[var(--ink-muted)]">
+              {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+            </span>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--lime-soft)] border border-[var(--lime-line)] text-xs font-semibold text-[var(--lime)]">
+              <span className="w-2 h-2 rounded-full bg-[var(--lime)] animate-ping" />
+              <span>10:30 Standup (live) · Google Meet</span>
             </div>
           </div>
         </div>
 
-        {/* Center: Wide Search Bar Pill + Purple Plus Action */}
-        <div className="flex-1 max-w-xl mx-4 flex items-center gap-2.5 relative">
+        {/* Center: SearchField (48px pill search input with shortcut) */}
+        <div className="flex-1 max-w-xl mx-2 flex items-center gap-2 relative">
           <button
             type="button"
             onClick={() => setSearchModalOpen(true)}
-            className="flex-1 flex items-center justify-between px-4 py-2 rounded-full bg-zinc-100/80 hover:bg-zinc-200/60 border border-zinc-200 text-xs text-zinc-600 hover:text-zinc-900 transition shadow-2xs group cursor-pointer"
+            className="flex-1 flex items-center justify-between px-4 py-2 rounded-full bg-[var(--surface-raised)] hover:bg-[var(--surface-strong)] border border-[var(--line)] text-xs text-[var(--ink-muted)] hover:text-[var(--ink)] transition group cursor-pointer shadow-sm"
           >
             <div className="flex items-center gap-2.5 truncate">
-              <Search size={14} className="text-zinc-400 group-hover:text-[#5940B8] transition-colors shrink-0" />
-              <span className="truncate">Find or Ask... (Jobs, customers, techs, invoices)</span>
+              <Search size={15} className="text-[var(--ink-subtle)] group-hover:text-[var(--lime)] transition-colors shrink-0" />
+              <span className="truncate">Search commands, records, jobs, customers, vouchers...</span>
             </div>
-            <kbd className="text-[10px] font-mono bg-white border border-zinc-200 px-1.5 py-0.5 rounded text-zinc-500 font-bold shrink-0 ml-2 shadow-2xs">
+            <kbd className="text-[10px] font-mono bg-[var(--surface)] border border-[var(--line-strong)] px-2 py-0.5 rounded-full text-[var(--ink-muted)] font-semibold shrink-0 ml-2">
               ⌘K
             </kbd>
           </button>
 
-          {/* Quick Create Button & Popover */}
+          {/* Quick Create Button (+ Pill Action) */}
           <div className="relative">
             <button
               type="button"
               onClick={() => setQuickCreateOpen((q) => !q)}
-              title="Create New Invoice, Quote, Job or Voucher"
+              title="Create Document"
               aria-expanded={quickCreateOpen}
-              className="h-8 w-8 rounded-full bg-[#5940B8] hover:bg-[#463091] text-white flex items-center justify-center font-bold text-base shadow-xs hover:shadow transition-all shrink-0 cursor-pointer focus:outline focus:outline-2 focus:outline-[#5940B8]"
+              className="h-9 px-3.5 rounded-full bg-[var(--lime)] hover:brightness-105 active:scale-95 text-[var(--on-lime)] font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all shrink-0 cursor-pointer focus-ring"
             >
               <Plus size={16} className={`transition-transform duration-200 ${quickCreateOpen ? 'rotate-45' : ''}`} />
+              <span className="hidden sm:inline font-semibold">New</span>
             </button>
 
             {quickCreateOpen && (
               <>
-                {/* Backdrop to dismiss when clicking anywhere outside */}
                 <div
-                  className="fixed inset-0 z-40 bg-black/5"
+                  className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs"
                   onClick={() => setQuickCreateOpen(false)}
                   aria-hidden="true"
                 />
 
-                <div className="absolute right-0 top-full mt-2 w-80 max-h-[calc(100vh-5.5rem)] overflow-y-auto rounded-2xl bg-white border border-zinc-200/90 shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-                  <div className="px-3 py-2 border-b border-zinc-100 flex items-center justify-between mb-1">
-                    <span className="text-xs font-bold text-zinc-900 tracking-tight">Quick Create Document</span>
-                    <span className="text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-purple-50 text-[#5940B8] border border-purple-200/60">ERP Action</span>
+                <div className="absolute right-0 top-full mt-2 w-80 max-h-[calc(100vh-5.5rem)] overflow-y-auto rounded-2xl bg-[var(--surface)] border border-[var(--line-strong)] shadow-float p-2 z-50 animate-in fade-in zoom-in-95 duration-150 text-[var(--ink)]">
+                  <div className="px-3 py-2 border-b border-[var(--line)] flex items-center justify-between mb-1">
+                    <span className="heading text-xs uppercase tracking-wider text-[var(--ink)]">Create Document</span>
+                    <span className="micro px-2 py-0.5 rounded-full bg-[var(--lime-soft)] text-[var(--lime)] border border-[var(--lime-line)]">
+                      Instant Posting
+                    </span>
                   </div>
+
                   <div className="flex flex-col gap-0.5">
                     <button
                       type="button"
@@ -363,14 +490,14 @@ export const App: React.FC = () => {
                         handleNavigate('ar-invoices');
                         setQuickCreateOpen(false);
                       }}
-                      className="w-full text-left px-3 py-2 rounded-xl text-xs hover:bg-purple-50 hover:text-[#5940B8] transition flex items-center gap-3 cursor-pointer group"
+                      className="w-full text-left px-3 py-2 rounded-xl text-xs hover:bg-[var(--surface-raised)] transition flex items-center gap-3 cursor-pointer group"
                     >
-                      <div className="h-8 w-8 rounded-lg bg-purple-50 text-[#5940B8] group-hover:bg-[#5940B8] group-hover:text-white transition-colors flex items-center justify-center shrink-0">
+                      <div className="h-8 w-8 rounded-full bg-[var(--surface-raised)] text-[var(--lime)] group-hover:bg-[var(--lime)] group-hover:text-[var(--on-lime)] transition-colors flex items-center justify-center shrink-0">
                         <Receipt size={16} />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-zinc-900 group-hover:text-[#5940B8] truncate">New Tax Invoice (AR)</div>
-                        <div className="text-[11px] text-zinc-500 truncate">Post customer bill with line items & tax</div>
+                        <div className="font-semibold text-[var(--ink)] truncate">Tax Invoice (AR)</div>
+                        <div className="text-[11px] text-[var(--ink-muted)] truncate">Post customer bill with line items & tax</div>
                       </div>
                     </button>
 
@@ -380,14 +507,14 @@ export const App: React.FC = () => {
                         handleNavigate('sales-orders');
                         setQuickCreateOpen(false);
                       }}
-                      className="w-full text-left px-3 py-2 rounded-xl text-xs hover:bg-purple-50 hover:text-[#5940B8] transition flex items-center gap-3 cursor-pointer group"
+                      className="w-full text-left px-3 py-2 rounded-xl text-xs hover:bg-[var(--surface-raised)] transition flex items-center gap-3 cursor-pointer group"
                     >
-                      <div className="h-8 w-8 rounded-lg bg-purple-50 text-[#5940B8] group-hover:bg-[#5940B8] group-hover:text-white transition-colors flex items-center justify-center shrink-0">
+                      <div className="h-8 w-8 rounded-full bg-[var(--surface-raised)] text-[var(--lime)] group-hover:bg-[var(--lime)] group-hover:text-[var(--on-lime)] transition-colors flex items-center justify-center shrink-0">
                         <FileText size={16} />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-zinc-900 group-hover:text-[#5940B8] truncate">New Quote & Sales Order</div>
-                        <div className="text-[11px] text-zinc-500 truncate">Create customer quote / job intake</div>
+                        <div className="font-semibold text-[var(--ink)] truncate">Sales Order & BOQ Quote</div>
+                        <div className="text-[11px] text-[var(--ink-muted)] truncate">Draft customer quote / job order</div>
                       </div>
                     </button>
 
@@ -397,14 +524,14 @@ export const App: React.FC = () => {
                         handleNavigate('pos');
                         setQuickCreateOpen(false);
                       }}
-                      className="w-full text-left px-3 py-2 rounded-xl text-xs hover:bg-purple-50 hover:text-[#5940B8] transition flex items-center gap-3 cursor-pointer group"
+                      className="w-full text-left px-3 py-2 rounded-xl text-xs hover:bg-[var(--surface-raised)] transition flex items-center gap-3 cursor-pointer group"
                     >
-                      <div className="h-8 w-8 rounded-lg bg-purple-50 text-[#5940B8] group-hover:bg-[#5940B8] group-hover:text-white transition-colors flex items-center justify-center shrink-0">
+                      <div className="h-8 w-8 rounded-full bg-[var(--surface-raised)] text-[var(--lime)] group-hover:bg-[var(--lime)] group-hover:text-[var(--on-lime)] transition-colors flex items-center justify-center shrink-0">
                         <Store size={16} />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-zinc-900 group-hover:text-[#5940B8] truncate">New Retail POS Sale</div>
-                        <div className="text-[11px] text-zinc-500 truncate">Counter barcode checkout & receipt</div>
+                        <div className="font-semibold text-[var(--ink)] truncate">Retail POS Register</div>
+                        <div className="text-[11px] text-[var(--ink-muted)] truncate">Counter barcode scan & cash drawer</div>
                       </div>
                     </button>
 
@@ -414,14 +541,14 @@ export const App: React.FC = () => {
                         handleNavigate('procurement');
                         setQuickCreateOpen(false);
                       }}
-                      className="w-full text-left px-3 py-2 rounded-xl text-xs hover:bg-purple-50 hover:text-[#5940B8] transition flex items-center gap-3 cursor-pointer group"
+                      className="w-full text-left px-3 py-2 rounded-xl text-xs hover:bg-[var(--surface-raised)] transition flex items-center gap-3 cursor-pointer group"
                     >
-                      <div className="h-8 w-8 rounded-lg bg-purple-50 text-[#5940B8] group-hover:bg-[#5940B8] group-hover:text-white transition-colors flex items-center justify-center shrink-0">
-                        <ShoppingCart size={16} />
+                      <div className="h-8 w-8 rounded-full bg-[var(--surface-raised)] text-[var(--lime)] group-hover:bg-[var(--lime)] group-hover:text-[var(--on-lime)] transition-colors flex items-center justify-center shrink-0">
+                        <Truck size={16} />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-zinc-900 group-hover:text-[#5940B8] truncate">New Purchase Order (PO)</div>
-                        <div className="text-[11px] text-zinc-500 truncate">Issue supplier procurement order</div>
+                        <div className="font-semibold text-[var(--ink)] truncate">Purchase Order (PO)</div>
+                        <div className="text-[11px] text-[var(--ink-muted)] truncate">Issue supplier procurement order</div>
                       </div>
                     </button>
 
@@ -431,31 +558,14 @@ export const App: React.FC = () => {
                         handleNavigate('journals');
                         setQuickCreateOpen(false);
                       }}
-                      className="w-full text-left px-3 py-2 rounded-xl text-xs hover:bg-purple-50 hover:text-[#5940B8] transition flex items-center gap-3 cursor-pointer group"
+                      className="w-full text-left px-3 py-2 rounded-xl text-xs hover:bg-[var(--surface-raised)] transition flex items-center gap-3 cursor-pointer group"
                     >
-                      <div className="h-8 w-8 rounded-lg bg-purple-50 text-[#5940B8] group-hover:bg-[#5940B8] group-hover:text-white transition-colors flex items-center justify-center shrink-0">
+                      <div className="h-8 w-8 rounded-full bg-[var(--surface-raised)] text-[var(--lime)] group-hover:bg-[var(--lime)] group-hover:text-[var(--on-lime)] transition-colors flex items-center justify-center shrink-0">
                         <BookOpen size={16} />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-zinc-900 group-hover:text-[#5940B8] truncate">Manual Journal Voucher</div>
-                        <div className="text-[11px] text-zinc-500 truncate">Post debit/credit ledger voucher</div>
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleNavigate('parties');
-                        setQuickCreateOpen(false);
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-xl text-xs hover:bg-purple-50 hover:text-[#5940B8] transition flex items-center gap-3 cursor-pointer group"
-                    >
-                      <div className="h-8 w-8 rounded-lg bg-purple-50 text-[#5940B8] group-hover:bg-[#5940B8] group-hover:text-white transition-colors flex items-center justify-center shrink-0">
-                        <UserPlus size={16} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="font-semibold text-zinc-900 group-hover:text-[#5940B8] truncate">New Customer / Vendor</div>
-                        <div className="text-[11px] text-zinc-500 truncate">Add commercial account & tax ID</div>
+                        <div className="font-semibold text-[var(--ink)] truncate">Journal Voucher</div>
+                        <div className="text-[11px] text-[var(--ink-muted)] truncate">Post double-entry general ledger voucher</div>
                       </div>
                     </button>
                   </div>
@@ -465,77 +575,148 @@ export const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Right side: Persona Switcher & Current User */}
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="hidden sm:flex items-center gap-2 bg-zinc-100/90 px-2.5 py-1 rounded-xl border border-zinc-200/80">
-            <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">Persona:</span>
+        {/* Right side: Theme Switcher, Persona Switcher, Tectonic Agent Toggle */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          {/* Tectonic Agent Assistant Button */}
+          <button
+            type="button"
+            onClick={() => setAgentDrawerOpen((o) => !o)}
+            title="Tectonic Agent Assistant"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--surface-raised)] hover:bg-[var(--surface-strong)] border border-[var(--line-strong)] text-xs font-semibold text-[var(--lime)] cursor-pointer transition focus-ring"
+          >
+            <AgentMark size={18} active={agentDrawerOpen} />
+            <span className="hidden sm:inline font-mono">Agent</span>
+          </button>
+
+          {/* Theme Toggle (Dark / Light) */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Theme`}
+            aria-label="Toggle design system theme"
+            className="w-9 h-9 rounded-full flex items-center justify-center bg-[var(--surface-raised)] hover:bg-[var(--surface-strong)] text-[var(--ink)] border border-[var(--line)] cursor-pointer transition focus-ring"
+          >
+            {theme === 'dark' ? <Sun size={16} className="text-[var(--lime)]" /> : <Moon size={16} className="text-[var(--ink)]" />}
+          </button>
+
+          {/* Persona Switcher */}
+          <div className="hidden sm:flex items-center gap-1.5 bg-[var(--surface-raised)] px-2.5 py-1 rounded-full border border-[var(--line)]">
+            <span className="micro text-[var(--ink-muted)]">Persona:</span>
             <select
               value={currentUser?.email || 'admin@omnysync.internal'}
               onChange={(e) => loginAsPersona(e.target.value)}
-              className="text-xs font-semibold text-zinc-800 bg-transparent border-none outline-none cursor-pointer pr-1"
+              className="text-xs font-semibold text-[var(--ink)] bg-transparent border-none outline-none cursor-pointer pr-1"
               aria-label="Switch active persona"
             >
               {personas.map((p) => (
-                <option key={p.email} value={p.email}>
+                <option key={p.email} value={p.email} className="bg-[var(--surface)] text-[var(--ink)]">
                   {p.name} ({p.role})
                 </option>
               ))}
             </select>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-[#5940B8] text-white flex items-center justify-center text-xs font-bold shrink-0">
+
+          {/* User Profile Avatar */}
+          <div className="flex items-center gap-2 pl-1">
+            <div className="w-8 h-8 rounded-full bg-[var(--pill-bg)] text-[var(--pill-ink)] flex items-center justify-center text-xs font-bold shrink-0">
               {currentUser?.name ? currentUser.name.slice(0, 2).toUpperCase() : 'AD'}
             </div>
-            <div className="hidden md:flex flex-col text-left leading-tight">
-              <span className="text-xs font-bold text-zinc-900 truncate max-w-[140px]">{currentUser?.name || 'Admin User'}</span>
-              <span className="text-[10px] text-zinc-500 font-medium truncate max-w-[140px]">{currentUser?.displayRole || 'System Administrator'}</span>
+            <div className="hidden xl:flex flex-col text-left leading-none">
+              <span className="body-strong text-xs text-[var(--ink)] truncate max-w-[120px]">{currentUser?.name || 'Admin User'}</span>
+              <span className="caption text-[10px] text-[var(--ink-muted)] truncate max-w-[120px] mt-0.5">{currentUser?.displayRole || 'Administrator'}</span>
             </div>
           </div>
         </div>
       </header>
 
       {/* ========================================================================= */}
-      {/* 2. BODY SHELL: LIGHT SIDEBAR + MAIN PANEL                                 */}
+      {/* 2. BODY SHELL: 72PX TECTONIC SIDERAIL + SECONDARY NAV + MAIN VIEW         */}
       {/* ========================================================================= */}
-      <div className="flex flex-1 min-h-0 overflow-hidden bg-[#F8FAFC]">
-        {/* Light Sidebar */}
-        <aside
-          aria-label="Primary"
-          className={`${
-            collapsed ? 'w-20' : 'w-64'
-          } bg-white border-r border-zinc-200/80 text-zinc-700 flex flex-col justify-between shrink-0 transition-all duration-200 z-20 select-none pb-3 shadow-xs`}
+      <div className="flex flex-1 min-h-0 overflow-hidden bg-[var(--canvas)]">
+        {/* Component 12: 72px Left SideRail with circular icon buttons */}
+        <nav
+          aria-label="SideRail"
+          className="w-[72px] bg-[var(--surface)] border-r border-[var(--line)] flex flex-col items-center justify-between py-4 shrink-0 z-20 select-none transition-colors"
         >
-          <div className="overflow-y-auto overflow-x-hidden flex-1 flex flex-col px-3 pt-3 space-y-4">
-            {/* Top Category: Dashboards Hub */}
-            <div>
+          <div className="flex flex-col items-center gap-3 w-full">
+            {suiteRails.map((suite) => {
+              const Icon = suite.icon;
+              const isSuiteActive = activeSuite === suite.id;
+
+              return (
+                <button
+                  key={suite.id}
+                  type="button"
+                  onClick={() => {
+                    if (suite.id === 'dashboard') {
+                      handleNavigate('dashboard', 'overview');
+                    } else {
+                      // Navigate to first item in that suite
+                      const sec = allNavSections.find((s) => s.suite === suite.id);
+                      if (sec && sec.items.length > 0) {
+                        handleNavigate(sec.items[0].id);
+                      }
+                    }
+                  }}
+                  title={suite.label}
+                  className={`w-11 h-11 rounded-full flex items-center justify-center transition-all cursor-pointer relative ${
+                    isSuiteActive
+                      ? 'bg-[var(--lime)] text-[var(--on-lime)] font-bold shadow-sm'
+                      : 'text-[var(--ink-muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-raised)]'
+                  }`}
+                >
+                  <Icon size={20} strokeWidth={isSuiteActive ? 2.2 : 1.7} />
+                  {isSuiteActive && (
+                    <span className="absolute -left-1 w-1 h-5 rounded-r-full bg-[var(--lime)]" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Bottom rail action: Toggle Secondary Navigation Catalog */}
+          <div className="flex flex-col items-center gap-3 w-full pt-3 border-t border-[var(--line)]">
+            <button
+              type="button"
+              onClick={() => setSidebarExpanded((e) => !e)}
+              title={sidebarExpanded ? 'Collapse Sub-Navigation' : 'Expand Sub-Navigation'}
+              className={`w-11 h-11 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+                sidebarExpanded
+                  ? 'bg-[var(--surface-strong)] text-[var(--ink)]'
+                  : 'text-[var(--ink-muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-raised)]'
+              }`}
+            >
+              <Grid size={18} />
+            </button>
+          </div>
+        </nav>
+
+        {/* Collapsible Secondary Sub-Navigation Panel (modules & workflows) */}
+        {sidebarExpanded && (
+          <aside
+            aria-label="Sub-navigation"
+            className="w-64 bg-[var(--surface-muted)] border-r border-[var(--line)] flex flex-col shrink-0 transition-all duration-200 z-10 select-none"
+          >
+            <div className="px-4 py-3 border-b border-[var(--line)] flex items-center justify-between">
+              <span className="label text-xs text-[var(--ink-muted)] font-mono tracking-wider">
+                {activeSuite.toUpperCase().replace('-SUITE', '')} MODULES
+              </span>
               <button
                 type="button"
-                onClick={() => {
-                  if (collapsed) {
-                    handleNavigate('dashboard', 'overview');
-                  } else {
-                    setDashboardHubExpanded((prev) => !prev);
-                  }
-                }}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-                  currentTab === 'dashboard' ? 'text-zinc-900 bg-zinc-100/80' : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/60'
-                }`}
+                onClick={() => setSidebarExpanded(false)}
+                className="p-1 rounded-full text-[var(--ink-subtle)] hover:text-[var(--ink)] hover:bg-[var(--surface-raised)]"
               >
-                <div className="flex items-center gap-2.5">
-                  <LayoutDashboard size={16} className={currentTab === 'dashboard' ? 'text-[#5940B8]' : 'text-zinc-500'} />
-                  {!collapsed && <span className="text-sm font-bold text-zinc-900 tracking-tight">Dashboards Hub</span>}
-                </div>
-                {!collapsed && (
-                  <ChevronDown
-                    size={14}
-                    className={`text-zinc-400 transition-transform duration-150 ${dashboardHubExpanded ? '' : '-rotate-90'}`}
-                  />
-                )}
+                <X size={14} />
               </button>
+            </div>
 
-              {/* Sub-items for Dashboards Hub with connecting vertical line */}
-              {!collapsed && dashboardHubExpanded && (
-                <div className="ml-3 pl-3 border-l border-zinc-200 mt-1 flex flex-col gap-1">
+            <div className="overflow-y-auto flex-1 p-3 space-y-4">
+              {/* Dashboard Sub-Items */}
+              {activeSuite === 'dashboard' && (
+                <div className="space-y-1">
+                  <div className="label text-[10px] text-[var(--ink-subtle)] px-2 mb-1">
+                    DASHBOARD WORKSPACES
+                  </div>
                   {dashboardSubItems.map((sub) => {
                     const Icon = sub.icon;
                     const isSubActive = currentTab === 'dashboard' && dashboardSubTab === sub.id;
@@ -544,39 +725,33 @@ export const App: React.FC = () => {
                         key={sub.id}
                         type="button"
                         onClick={() => handleNavigate('dashboard', sub.id)}
-                        className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-xl text-xs transition cursor-pointer text-left ${
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition cursor-pointer text-left ${
                           isSubActive
-                            ? 'bg-[#5940B8] text-white font-bold shadow-xs'
-                            : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/70'
+                            ? 'bg-[var(--lime-soft)] text-[var(--lime)] font-bold border border-[var(--lime-line)]'
+                            : 'text-[var(--ink-muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-raised)]'
                         }`}
                       >
-                        <Icon size={14} className={isSubActive ? 'text-white' : 'text-zinc-500'} />
+                        <Icon size={15} />
                         <span className="truncate">{sub.label}</span>
                       </button>
                     );
                   })}
                 </div>
               )}
-            </div>
 
-            {/* All ERP Navigation Categories */}
-            {allNavSections
-              .map((sec) => ({
-                ...sec,
-                items: sec.items.filter((item) => canSeeModule(item.id, currentUser?.permissions)),
-              }))
-              .filter((sec) => sec.items.length > 0)
-              .map((sec, sIdx) => (
-                <div key={sIdx} className="flex flex-col gap-1">
-                  {!collapsed ? (
-                    <div className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider px-3 mb-1">
+              {/* Module Nav Items */}
+              {allNavSections
+                .filter((sec) => activeSuite === 'dashboard' || sec.suite === activeSuite)
+                .map((sec) => ({
+                  ...sec,
+                  items: sec.items.filter((item) => canSeeModule(item.id, currentUser?.permissions)),
+                }))
+                .filter((sec) => sec.items.length > 0)
+                .map((sec, sIdx) => (
+                  <div key={sIdx} className="space-y-1">
+                    <div className="label text-[10px] text-[var(--ink-subtle)] px-2 mb-1">
                       {sec.title}
                     </div>
-                  ) : (
-                    <div className="mx-2 my-1 border-t border-zinc-200" />
-                  )}
-
-                  <div className="flex flex-col gap-0.5">
                     {sec.items.map((item: any) => {
                       const Icon = item.icon;
                       const isActive = currentTab === item.id;
@@ -585,70 +760,41 @@ export const App: React.FC = () => {
                           key={item.id}
                           type="button"
                           onClick={() => handleNavigate(item.id)}
-                          title={collapsed ? item.label : undefined}
-                          className={`flex items-center gap-2.5 min-h-9 text-xs transition cursor-pointer select-none ${
-                            collapsed ? 'justify-center px-0 rounded-xl' : 'px-3 justify-between rounded-xl'
-                          } ${
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition cursor-pointer text-left ${
                             isActive
-                              ? 'bg-purple-50 text-purple-900 font-bold border-l-2 border-[#5940B8] rounded-l-none'
-                              : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900'
+                              ? 'bg-[var(--lime-soft)] text-[var(--lime)] font-bold border border-[var(--lime-line)]'
+                              : 'text-[var(--ink-muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-raised)]'
                           }`}
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <Icon size={16} className={isActive ? 'text-[#5940B8]' : 'text-zinc-400'} />
-                            {!collapsed && <span className="truncate font-medium">{item.label}</span>}
+                            <Icon size={15} />
+                            <span className="truncate">{item.label}</span>
                           </div>
-
-                          {!collapsed && (
-                            <div className="flex items-center gap-1.5 shrink-0 text-zinc-400">
-                              {item.hasDot && <span className="h-1.5 w-1.5 rounded-full bg-[#5940B8]" />}
-                              {item.hasChevron && <ChevronRight size={14} />}
-                            </div>
-                          )}
+                          {isActive && <ChevronRight size={13} className="shrink-0 text-[var(--lime)]" />}
                         </button>
                       );
                     })}
                   </div>
-                </div>
-              ))}
-          </div>
-
-          {/* Bottom Sidebar Controls */}
-          <div className="px-3 pt-2 border-t border-zinc-200/80 flex flex-col gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={() => setCollapsed((c) => !c)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition cursor-pointer ${
-                collapsed ? 'justify-center' : ''
-              }`}
-            >
-              {collapsed ? (
-                <PanelLeftOpen size={16} />
-              ) : (
-                <>
-                  <ChevronLeft size={16} />
-                  <span className="font-medium">Collapse Sidebar</span>
-                </>
-              )}
-            </button>
-          </div>
-        </aside>
+                ))}
+            </div>
+          </aside>
+        )}
 
         {/* ========================================================================= */}
-        {/* 3. MAIN CONTENT CONTAINER (Clean Light Canvas)                            */}
+        {/* 3. MAIN WORKSPACE CONTENT CONTAINER (Near-Black Canvas in Dark Mode)       */}
         {/* ========================================================================= */}
-        <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[#F8FAFC]">
-          <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-7 focus:outline-none">
+        <div className="flex-1 min-w-0 flex flex-col h-full overflow-hidden bg-[var(--canvas)]">
+          <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 focus:outline-none">
             {loading ? (
-              <div role="status" className="flex items-center justify-center h-64 text-sm text-[#5E6A7D]">
-                <span className="inline-block animate-spin h-5 w-5 border-2 border-[#5940B8] border-t-transparent rounded-full mr-2" />
-                Synchronizing ERP Operations...
+              <div role="status" className="flex items-center justify-center h-64 text-sm text-[var(--ink-muted)]">
+                <span className="inline-block animate-spin h-5 w-5 border-2 border-[var(--lime)] border-t-transparent rounded-full mr-2" />
+                Synchronizing Tectonic ERP Ledger...
               </div>
             ) : (
               <Suspense
                 fallback={
-                  <div role="status" className="flex items-center justify-center h-64 text-sm text-[#5E6A7D]">
-                    <span className="inline-block animate-spin h-5 w-5 border-2 border-[#5940B8] border-t-transparent rounded-full mr-2" />
+                  <div role="status" className="flex items-center justify-center h-64 text-sm text-[var(--ink-muted)]">
+                    <span className="inline-block animate-spin h-5 w-5 border-2 border-[var(--lime)] border-t-transparent rounded-full mr-2" />
                     Loading workspace…
                   </div>
                 }
@@ -690,6 +836,66 @@ export const App: React.FC = () => {
             )}
           </main>
         </div>
+
+        {/* ========================================================================= */}
+        {/* 4. TECTONIC AGENT ASSISTANT SLIDE-OVER DRAWER (AI Copilot)                 */}
+        {/* ========================================================================= */}
+        {agentDrawerOpen && (
+          <aside className="w-96 max-w-full bg-[var(--surface)] border-l border-[var(--line)] shadow-float flex flex-col h-full z-40 animate-in slide-in-from-right duration-200">
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-[var(--line)] flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-full bg-[var(--lime)] text-[var(--on-lime)] flex items-center justify-center font-bold">
+                  <Sparkles size={14} />
+                </div>
+                <div>
+                  <h3 className="heading text-sm text-[var(--ink)] font-semibold">Tectonic Agent</h3>
+                  <p className="caption text-[11px] text-[var(--ink-muted)]">Autonomous ERP Copilot</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAgentDrawerOpen(false)}
+                className="p-1 rounded-full text-[var(--ink-muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-raised)]"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Conversation turns */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {agentMessages.map((msg) => (
+                <AgentMessage
+                  key={msg.id}
+                  role={msg.role}
+                  content={msg.content}
+                  timestamp={msg.timestamp}
+                  steps={msg.steps}
+                />
+              ))}
+              {agentBusy && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-[var(--surface-raised)] text-xs text-[var(--ink-muted)]">
+                  <span className="w-2 h-2 rounded-full bg-[var(--lime)] animate-ping" />
+                  <span>Tectonic Agent reasoning over ledger...</span>
+                </div>
+              )}
+            </div>
+
+            {/* Agent Composer */}
+            <div className="p-4 border-t border-[var(--line)] bg-[var(--surface-muted)] shrink-0">
+              <AgentComposer
+                onSend={handleAgentSend}
+                disabled={agentBusy}
+                placeholder="Ask Tectonic Agent (e.g. 'Audit Q3 receivables', 'Verify BOQ')..."
+                suggestions={[
+                  'Reconcile bank statement against posted GL',
+                  'Verify Indus Highway IPC milestone 4',
+                  'Check inventory valuation at Port Qasim',
+                ]}
+              />
+            </div>
+          </aside>
+        )}
       </div>
 
       {/* Universal Search Modal (Ctrl+K) */}

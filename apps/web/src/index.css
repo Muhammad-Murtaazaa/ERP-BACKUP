@@ -2,30 +2,348 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+/* ==========================================================================
+   Tectonic Design System Tokens (Version 1 · October 2026)
+   Philosophy: "Black canvas, one lime"
+   ========================================================================== */
+
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Grounds */
+  --canvas: #0b0b0b;
+  --surface: #121212;
+  --surface-raised: #171717;
+  --surface-strong: #1f1f1f;
+  --surface-muted: #151515;
+
+  /* Lines */
+  --line: #202020;
+  --line-strong: #2c2c2c;
+
+  /* Ink */
+  --ink: #f5f5f5;
+  --ink-muted: #9a9a9a;
+  --ink-subtle: #5f5f5f;
+  --ink-faint: #333333;
+
+  /* Contrast Pill */
+  --pill-bg: #f2f2ef;
+  --pill-ink: #0b0b0b;
+
+  /* Paper (Floating Summary & Sheets) */
+  --paper-bg: #f5f5f1;
+  --paper-line: #dfdfd7;
+
+  /* Single Brand Color: Lime */
+  --lime: #9df747;
+  --lime-soft: #233413;
+  --lime-line: #37531c;
+  --lime-tint: #141c0c;
+  --on-lime: #0b0b0b;
+
+  /* Semantic Status Tokens */
+  --positive: #52c41a;
+  --positive-fill: #193812;
+  --positive-soft: #14240f;
+  --positive-line: #27481a;
+  --positive-text: #c2f59a;
+
+  --warning: #faad14;
+  --warning-fill: #3b280c;
+  --warning-soft: #271a09;
+  --warning-line: #4e3512;
+  --warning-text: #ffbe73;
+
+  --danger: #ff4d4f;
+  --danger-fill: #3d1416;
+  --danger-soft: #260d0e;
+  --danger-line: #521c1f;
+  --danger-text: #ff9f87;
+
+  --info: #177ddc;
+  --info-fill: #0f2742;
+  --info-soft: #0b1a2b;
+  --info-line: #16365c;
+  --info-text: #91d5ff;
+
+  /* Chart Series */
+  --chart-series-1: #9df747;
+  --chart-series-2: #ffffff;
+  --chart-series-3: #5f5f5f;
+  --chart-series-4: #37531c;
+  --chart-series-5: #faad14;
+  --chart-series-6: #177ddc;
+
+  /* Heat Meter */
+  --heat-cold: #333333;
+  --heat-cool: #5f5f5f;
+  --heat-warm: #9a9a9a;
+  --heat-hot: #9df747;
+  --heat-burning: #52c41a;
+
+  /* Shadows & Rings */
+  --shadow-float: 0 20px 48px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --focus-ring: 0 0 0 2px #0b0b0b, 0 0 0 4px #9df747;
+}
+
+[data-theme="light"] {
   color-scheme: light;
+
+  /* Grounds */
+  --canvas: #f2f2ef;
+  --surface: #ffffff;
+  --surface-raised: #f7f7f4;
+  --surface-strong: #ebebe6;
+  --surface-muted: #fbfbf9;
+
+  /* Lines */
+  --line: #e3e3dc;
+  --line-strong: #cfcfc6;
+
+  /* Ink */
+  --ink: #111111;
+  --ink-muted: #666660;
+  --ink-subtle: #9c9c94;
+  --ink-faint: #d4d4cc;
+
+  /* Contrast Pill */
+  --pill-bg: #0b0b0b;
+  --pill-ink: #f2f2ef;
+
+  /* Paper */
+  --paper-bg: #ffffff;
+  --paper-line: #e3e3dc;
+
+  /* Single Brand Color: Lime */
+  --lime: #80db26;
+  --lime-soft: #eaf8d8;
+  --lime-line: #c5ed98;
+  --lime-tint: #f4fbe9;
+  --on-lime: #0b0b0b;
+
+  /* Semantic Status Tokens */
+  --positive: #389e0d;
+  --positive-fill: #e6f7e2;
+  --positive-soft: #f6ffed;
+  --positive-line: #b7eb8f;
+  --positive-text: #237804;
+
+  --warning: #d48806;
+  --warning-fill: #fff1d6;
+  --warning-soft: #fffbe6;
+  --warning-line: #ffe58f;
+  --warning-text: #ad6800;
+
+  --danger: #cf1322;
+  --danger-fill: #ffe8e6;
+  --danger-soft: #fff1f0;
+  --danger-line: #ffa39e;
+  --danger-text: #a8071a;
+
+  --info: #096dd9;
+  --info-fill: #e6f1fc;
+  --info-soft: #e6f7ff;
+  --info-line: #91d5ff;
+  --info-text: #0050b3;
+
+  /* Chart Series */
+  --chart-series-1: #80db26;
+  --chart-series-2: #111111;
+  --chart-series-3: #9c9c94;
+  --chart-series-4: #c5ed98;
+  --chart-series-5: #d48806;
+  --chart-series-6: #096dd9;
+
+  /* Heat Meter */
+  --heat-cold: #d4d4cc;
+  --heat-cool: #9c9c94;
+  --heat-warm: #666660;
+  --heat-hot: #80db26;
+  --heat-burning: #389e0d;
+
+  /* Shadows & Rings */
+  --shadow-float: 0 20px 40px -12px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px #80db26;
+}
+
+/* ==========================================================================
+   Global Base & Typography
+   ========================================================================== */
+
+* {
+  border-color: var(--line);
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background-color: #F7F8FC;
-  color: #182235;
+  background-color: var(--canvas);
+  color: var(--ink);
+  font-family: 'Instrument Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom scrollbars */
+/* Tabular Numerals & Monospace */
+.mono,
+.tabular-nums,
+code,
+pre,
+kbd {
+  font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-feature-settings: 'tnum' on, 'zero' on;
+}
+
+/* Tectonic Display & Metric Helpers */
+.display {
+  font-family: 'Instrument Sans', sans-serif;
+  font-size: 2.25rem;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+}
+
+.metric {
+  font-family: 'Geist Mono', monospace;
+  font-size: 2.75rem;
+  line-height: 1;
+  font-weight: 600;
+  font-feature-settings: 'tnum' on;
+  letter-spacing: -0.04em;
+}
+
+.title {
+  font-family: 'Instrument Sans', sans-serif;
+  font-size: 1.25rem;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.heading {
+  font-family: 'Instrument Sans', sans-serif;
+  font-size: 0.9375rem;
+  line-height: 1.35;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.body {
+  font-family: 'Instrument Sans', sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  font-weight: 400;
+}
+
+.body-strong {
+  font-family: 'Instrument Sans', sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  font-weight: 600;
+}
+
+.label {
+  font-family: 'Instrument Sans', sans-serif;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.caption {
+  font-family: 'Instrument Sans', sans-serif;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+
+.micro {
+  font-family: 'Instrument Sans', sans-serif;
+  font-size: 0.625rem;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ==========================================================================
+   Tectonic Notch Styling (.tt-notch and .tt-notch--2)
+   "Cards that open a record carry a circular bite out of their top-right
+    corner with the open arrow inside."
+   ========================================================================== */
+
+.tt-notch {
+  position: relative;
+  overflow: visible;
+}
+
+.tt-notch::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 32px;
+  height: 32px;
+  background-color: var(--canvas);
+  border-bottom-left-radius: 16px;
+  border-left: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.tt-notch--2 {
+  position: relative;
+  overflow: visible;
+}
+
+.tt-notch--2::after {
+  content: '';
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 44px;
+  height: 44px;
+  background-color: var(--canvas);
+  border-bottom-left-radius: 20px;
+  border-left: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Focus Ring */
+.focus-ring:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Floating Paper Surface */
+.paper {
+  background-color: var(--paper-bg);
+  border: 1px solid var(--paper-line);
+  box-shadow: var(--shadow-float);
+  color: #111111 !important;
+}
+
+/* Custom Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #F1F4F9;
+  background: var(--surface);
 }
 ::-webkit-scrollbar-thumb {
-  background: #D9DFEA;
-  border-radius: 3px;
+  background: var(--line-strong);
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #7D8799;
+  background: var(--ink-subtle);
 }

@@ -15,7 +15,7 @@ export const Badge: React.FC<BadgeProps> = ({
   size = 'md',
   className,
 }) => {
-  const baseStyles = 'inline-flex items-center gap-1 font-medium rounded-full whitespace-nowrap leading-4';
+  const baseStyles = 'inline-flex items-center gap-1 font-medium rounded-full whitespace-nowrap leading-4 transition-colors';
 
   const sizeStyles = {
     sm: 'px-2 py-0.5 text-xs',
@@ -23,12 +23,12 @@ export const Badge: React.FC<BadgeProps> = ({
   };
 
   const variantStyles = {
-    neutral: 'bg-[#F1F4F9] text-[#46536B] border border-[#D9DFEA]',
-    brand: 'bg-[#F2EEFF] text-[#5940B8] border border-[#d2c7fc]',
-    success: 'bg-[#EAF7EF] text-[#146341] border border-[#c3edd2]',
-    warning: 'bg-[#FFF4D6] text-[#7A4700] border border-[#fae29f]',
-    danger: 'bg-[#FDECEF] text-[#A82430] border border-[#f7c2c9]',
-    info: 'bg-[#EDF3FF] text-[#234FA3] border border-[#cbe0ff]',
+    neutral: 'bg-[var(--surface-raised)] text-[var(--ink-muted)] border border-[var(--line)]',
+    brand: 'bg-[var(--lime-soft)] text-[var(--lime)] border border-[var(--lime-line)]',
+    success: 'bg-[var(--positive-soft)] text-[var(--positive)] border border-[var(--positive-line)]',
+    warning: 'bg-[var(--warning-soft)] text-[var(--warning)] border border-[var(--warning-line)]',
+    danger: 'bg-[var(--danger-soft)] text-[var(--danger)] border border-[var(--danger-line)]',
+    info: 'bg-[var(--info-soft)] text-[var(--info)] border border-[var(--info-line)]',
   };
 
   return (

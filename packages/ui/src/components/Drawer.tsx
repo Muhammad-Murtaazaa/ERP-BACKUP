@@ -4,8 +4,8 @@ import { twMerge } from 'tailwind-merge';
 import { X } from 'lucide-react';
 
 /**
- * Side drawer (Workman SideDrawer pattern, Omnysync tokens). Replaces centred
- * modals everywhere. Accessibility (design-system.md §Drawers, WCAG 2.2 AA):
+ * Side drawer (Tectonic Design System). Replaces centred
+ * modals everywhere. Accessibility (WCAG 2.2 AA):
  *  - role="dialog" + aria-modal, named by its title (aria-labelledby)
  *  - focus moves into the drawer on open, Tab/Shift+Tab are trapped inside it
  *  - Escape and backdrop click close it; when `dirty` is set the user must
@@ -53,68 +53,81 @@ export const Drawer: React.FC<DrawerProps> = ({
   size,
   maxWidth,
   dirty = false,
-  confirmMessage = 'Discard unsaved changes?',
+  confirmMessage = 'You have unsaved changes. Discard them and close?',
   initialFocusRef,
   className,
 }) => {
-  const panelRef = useRef<HTMLDivElement>(null);
-  const openerRef = useRef<HTMLElement | null>(null);
-  const titleId = useId();
-  const descId = useId();
   const [mounted, setMounted] = useState(isOpen);
   const [visible, setVisible] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const lastActiveRef = useRef<HTMLElement | null>(null);
+  const titleId = useId();
+  const descId = useId();
 
   const requestClose = useCallback(() => {
-    if (dirty && typeof window !== 'undefined' && !window.confirm(confirmMessage)) return;
+    if (dirty) {
+      if (!window.confirm(confirmMessage)) return;
+    }
     onClose();
   }, [dirty, confirmMessage, onClose]);
 
+  // Mount/unmount animation sequencing
   useEffect(() => {
-    let raf = 0;
-    let timer: ReturnType<typeof setTimeout> | undefined;
     if (isOpen) {
-      openerRef.current = (document.activeElement as HTMLElement) || null;
+      lastActiveRef.current = document.activeElement as HTMLElement | null;
       setMounted(true);
-      raf = requestAnimationFrame(() => {
-        timer = setTimeout(() => setVisible(true), 10);
-      });
+      const id = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(id);
     } else if (mounted) {
       setVisible(false);
-      timer = setTimeout(() => {
+      const timer = setTimeout(() => {
         setMounted(false);
-        openerRef.current?.focus?.();
+        lastActiveRef.current?.focus?.();
       }, 200);
+      return () => clearTimeout(timer);
     }
-    return () => {
-      cancelAnimationFrame(raf);
-      if (timer) clearTimeout(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+  }, [isOpen, mounted]);
 
-  // Initial focus once visible.
+  // Lock body scroll while open
   useEffect(() => {
-    if (!visible || !panelRef.current) return;
-    const target = initialFocusRef?.current || panelRef.current.querySelector<HTMLElement>(`[data-drawer-body] ${FOCUSABLE}`) || panelRef.current;
-    target.focus();
+    if (!mounted) return;
+    const orig = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = orig;
+    };
+  }, [mounted]);
+
+  // Focus placement on open
+  useEffect(() => {
+    if (!visible) return;
+    const timer = setTimeout(() => {
+      if (initialFocusRef?.current) {
+        initialFocusRef.current.focus();
+        return;
+      }
+      const first = panelRef.current?.querySelector<HTMLElement>(FOCUSABLE);
+      if (first) first.focus();
+      else panelRef.current?.focus();
+    }, 50);
+    return () => clearTimeout(timer);
   }, [visible, initialFocusRef]);
 
-  // Escape + focus trap.
+  // Trap focus & escape key
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        // Let an open combobox consume Escape first.
-        if ((e.target as HTMLElement)?.closest?.('[data-combobox-open="true"]')) return;
-        e.stopPropagation();
+        e.preventDefault();
         requestClose();
         return;
       }
       if (e.key !== 'Tab' || !panelRef.current) return;
-      const nodes = Array.from(panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((n) => n.offsetParent !== null || n === document.activeElement);
-      if (nodes.length === 0) {
+      const nodes = Array.from(panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (n) => n.offsetParent !== null,
+      );
+      if (!nodes.length) {
         e.preventDefault();
-        panelRef.current.focus();
         return;
       }
       const first = nodes[0];
@@ -137,7 +150,7 @@ export const Drawer: React.FC<DrawerProps> = ({
   return (
     <div
       className={clsx(
-        'fixed inset-0 z-50 flex justify-end bg-[#182235]/40 motion-safe:transition-opacity motion-safe:duration-200',
+        'fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm motion-safe:transition-opacity motion-safe:duration-200',
         visible ? 'opacity-100' : 'opacity-0',
       )}
       onMouseDown={(e) => {
@@ -153,7 +166,7 @@ export const Drawer: React.FC<DrawerProps> = ({
         tabIndex={-1}
         className={twMerge(
           clsx(
-            'w-full h-full bg-white shadow-2xl border-l border-[#D9DFEA] flex flex-col focus:outline-none',
+            'w-full h-full bg-[var(--surface)] text-[var(--ink)] shadow-2xl border-l border-[var(--line)] flex flex-col focus:outline-none',
             'motion-safe:transition-transform motion-safe:duration-200',
             visible ? 'translate-x-0' : 'translate-x-full',
             width,
@@ -161,39 +174,35 @@ export const Drawer: React.FC<DrawerProps> = ({
           ),
         )}
       >
-        <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-[#D9DFEA] shrink-0">
+        <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-[var(--line)] shrink-0">
           <div className="min-w-0">
-            <h2 id={titleId} className="text-base font-semibold text-[#182235] leading-6 truncate">
+            <h2 id={titleId} className="text-base font-semibold text-[var(--ink)] leading-6 truncate">
               {title}
             </h2>
             {subtitle && (
-              <p id={descId} className="text-[13px] text-[#5E6A7D] mt-0.5">
+              <p id={descId} className="text-[13px] text-[var(--ink-muted)] mt-0.5">
                 {subtitle}
               </p>
             )}
           </div>
           <button
             type="button"
-            onClick={requestClose}
             aria-label="Close panel"
-            className="p-1.5 -mr-1.5 rounded-md text-[#5E6A7D] hover:text-[#182235] hover:bg-[#F1F4F9] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5B3CC4]"
+            onClick={requestClose}
+            className="p-1.5 -mr-1.5 -mt-1 rounded-full text-[var(--ink-muted)] hover:text-[var(--ink)] hover:bg-[var(--surface-raised)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--lime)]"
           >
             <X size={18} aria-hidden="true" />
           </button>
         </div>
-        <div data-drawer-body className="flex-1 overflow-y-auto px-6 py-6">
-          {children}
-        </div>
-        {footer && <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#D9DFEA] bg-[#F7F8FC] shrink-0">{footer}</div>}
+
+        <div className="flex-1 overflow-y-auto px-6 py-5 text-[var(--ink)]">{children}</div>
+
+        {footer && (
+          <div className="px-6 py-4 border-t border-[var(--line)] bg-[var(--surface-strong)] shrink-0 flex items-center justify-end gap-2">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );
 };
-
-/**
- * @deprecated Centred modals are retired (design-system.md §Drawers). `Modal`
- * now renders the side Drawer so any remaining call site gets the same
- * accessible behaviour.
- */
-export const Modal = Drawer;
-export type ModalProps = DrawerProps;
